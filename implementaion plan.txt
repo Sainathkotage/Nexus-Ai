@@ -1,0 +1,394 @@
+
+# Nexus AI — AI-Powered Workspace
+
+Build a premium, production-ready AI workspace prototype inspired by Notion, NotebookLM, and Linear. The app will feature rich sample data, polished animations, and enterprise-grade design.
+
+## Tech Stack
+
+| Layer           | Technology                          |
+| --------------- | ----------------------------------- |
+| Framework       | Next.js 15 (App Router, TypeScript) |
+| Styling         | Tailwind CSS v4                     |
+| Components      | Shadcn UI                           |
+| Charts          | Recharts                            |
+| Animations      | Framer Motion                       |
+| Drag & Drop     | @dnd-kit                            |
+| Knowledge Graph | react-force-graph-2d                |
+| Icons           | Lucide React                        |
+| Date Handling   | date-fns                            |
+
+---
+
+## User Review Required
+
+> [!IMPORTANT]
+> **Scope**: This is a **frontend prototype** with realistic sample data and simulated AI interactions. There is no real backend, AI model, or email sending. All AI responses, document summaries, and email drafts are pre-built sample data that simulate production behavior.
+
+> [!IMPORTANT]
+> **Dark Mode**: The spec mentions both a "clean white/light theme" and "dark mode support". I will implement both with a theme toggle, defaulting to the **light theme**.
+
+> [!WARNING]
+> **This is a very large build.** I will implement it in a phased approach, building the full application in one pass but prioritizing structural completeness and visual polish. Some advanced interactions (e.g., actual drag-and-drop block editing, real PDF parsing) will be simulated.
+
+---
+
+## Open Questions
+
+> [!NOTE]
+> **Package Manager**: I'll use **npm** by default. Let me know if you prefer pnpm, yarn, or bun.
+
+> [!NOTE]
+> **Shadcn UI Theme**: I'll use the default Shadcn "New York" style with a neutral color palette customized to match the premium Notion/Linear aesthetic. Is there a specific accent color preference? I'll default to an indigo/violet accent.
+
+---
+
+## Proposed Changes
+
+### Phase 1: Project Scaffolding & Design System
+
+#### [NEW] Next.js Project Initialization
+- Run `npx -y create-next-app@latest ./ --typescript --tailwind --app --src-dir --use-npm --yes`
+- Initialize Shadcn UI with `npx -y shadcn@latest init`
+- Install dependencies: `framer-motion`, `recharts`, `@dnd-kit/core`, `@dnd-kit/sortable`, `react-force-graph-2d`, `date-fns`, `lucide-react`
+
+#### [NEW] [globals.css](file:///c:/Users/srush/Desktop/Nexus%20AI/src/app/globals.css)
+- Custom CSS variables for the design system (colors, spacing, typography)
+- Light and dark theme tokens
+- Smooth scrollbar styling
+- Animation keyframes for micro-interactions
+- Premium typography with Inter/Plus Jakarta Sans from Google Fonts
+
+#### [NEW] [layout.tsx](file:///c:/Users/srush/Desktop/Nexus%20AI/src/app/layout.tsx)
+- Root layout with font loading, theme provider, metadata
+- Three-panel layout structure (left sidebar, main, right sidebar)
+
+---
+
+### Phase 2: Core Layout Components
+
+#### [NEW] [src/components/layout/left-sidebar.tsx](file:///c:/Users/srush/Desktop/Nexus%20AI/src/components/layout/left-sidebar.tsx)
+- Workspace logo/branding ("Nexus AI" with icon)
+- Navigation items: Dashboard, Documents, AI Chat, Tasks, Calendar, Emails, Settings
+- Active state indicators with smooth transitions
+- "Create New Page" button with gradient accent
+- Collapsible sidebar with animation
+- User avatar/profile section at bottom
+
+#### [NEW] [src/components/layout/right-sidebar.tsx](file:///c:/Users/srush/Desktop/Nexus%20AI/src/components/layout/right-sidebar.tsx)
+- AI Insights panel with animated cards
+- Upcoming Deadlines with color-coded urgency
+- Suggested Actions (clickable, with icons)
+- Recent Activity feed with timestamps
+- Collapsible/toggleable
+
+#### [NEW] [src/components/layout/top-bar.tsx](file:///c:/Users/srush/Desktop/Nexus%20AI/src/components/layout/top-bar.tsx)
+- Breadcrumb navigation
+- Search bar (⌘K style)
+- Theme toggle (light/dark)
+- Notification bell
+- User avatar
+
+---
+
+### Phase 3: Dashboard Page
+
+#### [NEW] [src/app/page.tsx](file:///c:/Users/srush/Desktop/Nexus%20AI/src/app/page.tsx)
+Dashboard with:
+
+**Stat Cards** (4 cards in a row):
+- Total Documents (with file icon, count, trend)
+- Pending Tasks (with checklist icon, count, urgency indicator)
+- Upcoming Meetings (with calendar icon, count, next meeting preview)
+- Emails Awaiting Approval (with mail icon, count)
+
+**AI Generated Insights** card:
+- Animated typing-style insights display
+- Priority-coded suggestions
+- Action buttons on each insight
+
+**Charts Section** (2x2 grid):
+1. **Project Progress** — Stacked bar chart (Recharts)
+2. **Deadlines Timeline** — Horizontal timeline with color-coded dots
+3. **Team Workload** — Radial bar chart showing team member capacity
+4. **Knowledge Graph Mini** — Small interactive force graph preview
+
+All cards use Framer Motion staggered entrance animations, glassmorphism effects, and hover interactions.
+
+---
+
+### Phase 4: Documents Page
+
+#### [NEW] [src/app/documents/page.tsx](file:///c:/Users/srush/Desktop/Nexus%20AI/src/app/documents/page.tsx)
+- Modern grid layout with document cards
+- Each card shows: thumbnail/icon, title, type badge, date, AI summary snippet
+- Filter/sort controls (by type, date, name)
+- File upload dropzone with drag-and-drop animation
+- Beautiful empty state with illustration
+
+#### [NEW] [src/components/documents/document-card.tsx](file:///c:/Users/srush/Desktop/Nexus%20AI/src/components/documents/document-card.tsx)
+- Glassmorphism card with hover lift effect
+- Document type icon (PDF, DOCX, TXT, etc.)
+- Progress indicator for AI processing status
+- Click to open document detail view
+
+#### [NEW] [src/components/documents/upload-zone.tsx](file:///c:/Users/srush/Desktop/Nexus%20AI/src/components/documents/upload-zone.tsx)
+- Drag-and-drop file upload area
+- Animated border on drag-over
+- File type validation display
+- Upload progress animation
+
+#### [NEW] [src/components/documents/document-detail.tsx](file:///c:/Users/srush/Desktop/Nexus%20AI/src/components/documents/document-detail.tsx)
+- Full document viewer panel (slide-in from right)
+- AI-generated summary section
+- Key points extraction cards
+- Extracted tasks list
+- Extracted deadlines
+- People & organizations tags
+- Generated timeline visualization
+- Mind map visualization (simplified force graph)
+- Tabs: Summary | Key Points | Tasks | Timeline | Mind Map
+
+---
+
+### Phase 5: AI Chat Page
+
+#### [NEW] [src/app/chat/page.tsx](file:///c:/Users/srush/Desktop/Nexus%20AI/src/app/chat/page.tsx)
+- NotebookLM-style conversational UI
+- Chat message list with user/AI bubbles
+- Message input with rich formatting hints
+- Suggested prompts carousel
+- Source reference cards inline
+- Conversation history sidebar
+
+#### [NEW] [src/components/chat/chat-message.tsx](file:///c:/Users/srush/Desktop/Nexus%20AI/src/components/chat/chat-message.tsx)
+- User message bubble (right-aligned, accent color)
+- AI message bubble (left-aligned, with avatar)
+- Source citation chips (clickable, linking to documents)
+- Streaming text animation (typewriter effect)
+- Code block rendering
+- Action item extraction buttons
+
+#### [NEW] [src/components/chat/suggested-prompts.tsx](file:///c:/Users/srush/Desktop/Nexus%20AI/src/components/chat/suggested-prompts.tsx)
+- Horizontally scrollable prompt chips
+- Category grouping (Summarize, Compare, Extract, etc.)
+- Animated appearance
+
+#### [NEW] [src/components/chat/source-reference.tsx](file:///c:/Users/srush/Desktop/Nexus%20AI/src/components/chat/source-reference.tsx)
+- Inline document citation card
+- Shows document name, page, relevant excerpt
+- Hover to preview, click to navigate
+
+---
+
+### Phase 6: Tasks Page
+
+#### [NEW] [src/app/tasks/page.tsx](file:///c:/Users/srush/Desktop/Nexus%20AI/src/app/tasks/page.tsx)
+- View toggle: Kanban | List | Calendar
+- Filter bar (status, priority, assignee, date range)
+- AI-extracted task badge (shows origin document)
+
+#### [NEW] [src/components/tasks/kanban-board.tsx](file:///c:/Users/srush/Desktop/Nexus%20AI/src/components/tasks/kanban-board.tsx)
+- Columns: Backlog, Todo, In Progress, Review, Done
+- Draggable task cards using @dnd-kit
+- Column task counts
+- Add task button per column
+- Smooth drag animations
+
+#### [NEW] [src/components/tasks/task-card.tsx](file:///c:/Users/srush/Desktop/Nexus%20AI/src/components/tasks/task-card.tsx)
+- Priority indicator (colored dot/border)
+- Title, assignee avatar, due date
+- Labels/tags
+- Source document reference
+- Hover to show quick actions
+
+#### [NEW] [src/components/tasks/list-view.tsx](file:///c:/Users/srush/Desktop/Nexus%20AI/src/components/tasks/list-view.tsx)
+- Table-style list with sortable columns
+- Inline editing support
+- Checkbox for completion
+- Priority, status, assignee columns
+
+---
+
+### Phase 7: Calendar Page
+
+#### [NEW] [src/app/calendar/page.tsx](file:///c:/Users/srush/Desktop/Nexus%20AI/src/app/calendar/page.tsx)
+- Monthly calendar grid view
+- Events displayed as colored pills on dates
+- AI-extracted events highlighted with a special badge
+- Click date to see day detail
+- Event creation modal
+- Side panel showing today's schedule
+
+#### [NEW] [src/components/calendar/calendar-grid.tsx](file:///c:/Users/srush/Desktop/Nexus%20AI/src/components/calendar/calendar-grid.tsx)
+- Full month grid with day cells
+- Event pills with category colors
+- Navigation (prev/next month)
+- Today highlight
+
+#### [NEW] [src/components/calendar/event-card.tsx](file:///c:/Users/srush/Desktop/Nexus%20AI/src/components/calendar/event-card.tsx)
+- Event detail card with time, title, attendees
+- AI-extracted badge showing source document
+- "Add to Calendar" one-click button
+- Edit/delete actions
+
+---
+
+### Phase 8: Emails Page
+
+#### [NEW] [src/app/emails/page.tsx](file:///c:/Users/srush/Desktop/Nexus%20AI/src/app/emails/page.tsx)
+- Email actions panel
+- Status filter tabs: All | Draft | Pending Approval | Sent
+- Email list with status badges
+- AI compose input area
+
+#### [NEW] [src/components/emails/email-card.tsx](file:///c:/Users/srush/Desktop/Nexus%20AI/src/components/emails/email-card.tsx)
+- Email preview card showing recipient, subject, status
+- Status badge (Draft/Pending/Sent) with color coding
+- Click to expand full email content
+
+#### [NEW] [src/components/emails/email-approval-modal.tsx](file:///c:/Users/srush/Desktop/Nexus%20AI/src/components/emails/email-approval-modal.tsx)
+- Full email preview modal (Shadcn Dialog)
+- To, Subject, Message body fields
+- Three action buttons: Send Email (primary), Edit (secondary), Cancel
+- Animated entrance
+- Success/confirmation toast on send
+
+#### [NEW] [src/components/emails/compose-email.tsx](file:///c:/Users/srush/Desktop/Nexus%20AI/src/components/emails/compose-email.tsx)
+- AI compose area: user types natural language instruction
+- AI generates email fields with typing animation
+- Shows generated email in approval modal
+
+---
+
+### Phase 9: Settings Page
+
+#### [NEW] [src/app/settings/page.tsx](file:///c:/Users/srush/Desktop/Nexus%20AI/src/app/settings/page.tsx)
+- Profile settings card
+- Workspace settings
+- Theme toggle (Light/Dark/System)
+- Notification preferences
+- Connected integrations list (Google, Outlook, Slack — decorative)
+- API keys section (masked)
+
+---
+
+### Phase 10: Knowledge Graph
+
+#### [NEW] [src/components/knowledge-graph/knowledge-graph.tsx](file:///c:/Users/srush/Desktop/Nexus%20AI/src/components/knowledge-graph/knowledge-graph.tsx)
+- Interactive force-directed graph using react-force-graph-2d
+- Node types: Documents (blue), Projects (purple), People (green), Tasks (orange), Meetings (pink)
+- Edges showing relationships
+- Click node to see detail panel
+- Zoom/pan controls
+- Legend panel
+- Sample data with ~30 nodes and ~50 edges
+
+---
+
+### Phase 11: Sample Data & State Management
+
+#### [NEW] [src/lib/sample-data.ts](file:///c:/Users/srush/Desktop/Nexus%20AI/src/lib/sample-data.ts)
+Comprehensive sample data including:
+- 8-10 sample documents (PDFs, DOCX, meeting notes, research papers)
+- 15-20 tasks across all kanban stages
+- 10-12 calendar events (some AI-extracted)
+- 6-8 email drafts in various states
+- 5-6 AI insights
+- Knowledge graph nodes and edges
+- Dashboard statistics
+- Chat conversation history with source citations
+- Team members with avatars
+
+#### [NEW] [src/lib/store.ts](file:///c:/Users/srush/Desktop/Nexus%20AI/src/lib/store.ts)
+- React Context-based state management
+- Workspace state (active page, sidebar states, theme)
+- Documents state
+- Tasks state (with kanban column management)
+- Calendar events state
+- Emails state
+- Chat messages state
+
+#### [NEW] [src/lib/utils.ts](file:///c:/Users/srush/Desktop/Nexus%20AI/src/lib/utils.ts)
+- Utility functions (cn, formatDate, etc.)
+- Type definitions for all data models
+
+---
+
+### Phase 12: Theme & Dark Mode
+
+#### [NEW] [src/components/theme-provider.tsx](file:///c:/Users/srush/Desktop/Nexus%20AI/src/components/theme-provider.tsx)
+- next-themes integration for dark/light mode
+- System preference detection
+- Smooth theme transition
+
+---
+
+## File Structure Summary
+
+```
+src/
+├── app/
+│   ├── layout.tsx              # Root layout with three-panel structure
+│   ├── page.tsx                # Dashboard
+│   ├── globals.css             # Design system & theme
+│   ├── documents/page.tsx      # Documents page
+│   ├── chat/page.tsx           # AI Chat page
+│   ├── tasks/page.tsx          # Tasks page
+│   ├── calendar/page.tsx       # Calendar page
+│   ├── emails/page.tsx         # Emails page
+│   └── settings/page.tsx       # Settings page
+├── components/
+│   ├── layout/
+│   │   ├── left-sidebar.tsx
+│   │   ├── right-sidebar.tsx
+│   │   └── top-bar.tsx
+│   ├── documents/
+│   │   ├── document-card.tsx
+│   │   ├── upload-zone.tsx
+│   │   └── document-detail.tsx
+│   ├── chat/
+│   │   ├── chat-message.tsx
+│   │   ├── suggested-prompts.tsx
+│   │   └── source-reference.tsx
+│   ├── tasks/
+│   │   ├── kanban-board.tsx
+│   │   ├── task-card.tsx
+│   │   └── list-view.tsx
+│   ├── calendar/
+│   │   ├── calendar-grid.tsx
+│   │   └── event-card.tsx
+│   ├── emails/
+│   │   ├── email-card.tsx
+│   │   ├── email-approval-modal.tsx
+│   │   └── compose-email.tsx
+│   ├── knowledge-graph/
+│   │   └── knowledge-graph.tsx
+│   ├── ui/                     # Shadcn UI components
+│   └── theme-provider.tsx
+├── lib/
+│   ├── sample-data.ts
+│   ├── store.ts
+│   └── utils.ts
+└── types/
+    └── index.ts
+```
+
+## Verification Plan
+
+### Automated Tests
+1. `npm run build` — Ensure the project compiles without TypeScript errors
+2. `npm run lint` — Verify linting passes
+3. `npm run dev` — Start dev server and verify all pages render
+
+### Manual Verification
+- Navigate to each page (Dashboard, Documents, AI Chat, Tasks, Calendar, Emails, Settings)
+- Toggle dark/light mode and verify theme consistency
+- Test sidebar collapse/expand
+- Test Kanban drag-and-drop
+- Test document upload UI (drag-and-drop zone)
+- Test email approval modal workflow
+- Test knowledge graph interaction (zoom, click nodes)
+- Verify responsive layout on different viewport sizes
+- Verify animations are smooth (Framer Motion)
+- Verify all sample data renders correctly
+	

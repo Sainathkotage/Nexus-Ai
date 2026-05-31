@@ -1,0 +1,100 @@
+{
+  "people": [
+    {
+      "id": "p1",
+      "name": "Sarah Chen",
+      "email": "sarah@nexus.ai",
+      "avatar": "",
+      "role": "Product Lead"
+    },
+    {
+      "id": "p2",
+      "name": "Marcus Johnson",
+      "email": "marcus@nexus.ai",
+      "avatar": "",
+      "role": "Engineering Manager"
+    },
+    {
+      "id": "p3",
+      "name": "Elena Rodriguez",
+      "email": "elena@nexus.ai",
+      "avatar": "",
+      "role": "Design Director"
+    },
+    {
+      "id": "p4",
+      "name": "Alex Kim",
+      "email": "alex@nexus.ai",
+      "avatar": "",
+      "role": "Senior Developer"
+    },
+    {
+      "id": "p5",
+      "name": "James Wilson",
+      "email": "james@nexus.ai",
+      "avatar": "",
+      "role": "Data Scientist"
+    },
+    {
+      "id": "p6",
+      "name": "Priya Patel",
+      "email": "priya@nexus.ai",
+      "avatar": "",
+      "role": "UX Researcher"
+    },
+    {
+      "id": "p7",
+      "name": "David Lee",
+      "email": "david@nexus.ai",
+      "avatar": "",
+      "role": "DevOps Lead"
+    },
+    {
+      "id": "p8",
+      "name": "Nina Kowalski",
+      "email": "nina@nexus.ai",
+      "avatar": "",
+      "role": "Content Strategist"
+    }
+  ],
+  "currentUser": {
+    "id": "p1",
+    "name": "Sarah Chen",
+    "email": "sarah@nexus.ai",
+    "avatar": "",
+    "role": "Product Lead"
+  },
+  "documents": [],
+  "tasks": [],
+  "calendarEvents": [],
+  "emails": [],
+  "conversations": [
+    {
+      "id": "c-welcome",
+      "title": "Welcome to Nexus AI",
+      "messages": [
+        {
+          "id": "m-welcome-1",
+          "role": "assistant",
+          "content": "Hello! I am your Nexus AI assistant. Upload your own documents in the **Documents** tab, then check them on the sidebar here to ask me questions, summarize, find mistakes, create infographics, or draft emails!",
+          "timestamp": "2026-05-30T20:00:00.000Z"
+        },
+        {
+          "role": "user",
+          "content": "largest star in the milkyway ",
+          "id": "58165bc7-f9f3-4d58-a821-dba880491098",
+          "timestamp": "2026-05-30T21:03:32.278Z"
+        },
+        {
+          "role": "assistant",
+          "content": "The largest known star by radius in the Milky Way galaxy is **UY Scuti**.",
+          "id": "fea7c651-135f-4ead-87fc-c39d24728459",
+          "timestamp": "2026-05-30T21:03:34.447Z"
+        }
+      ],
+      "createdAt": "2026-05-30T20:00:00.000Z",
+      "updatedAt": "2026-05-30T21:03:34.453Z"
+    }
+  ],
+  "aiInsights": []
+}

@@ -7,16 +7,23 @@ import { TopBar } from './top-bar';
 import { CommandPalette } from './command-palette';
 import { useWorkspace } from '@/lib/store';
 import { LoginScreen } from './login-screen';
+import { AppShellSkeleton, LoginScreenSkeleton } from './app-shell-skeleton';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { Mail, Copy, ExternalLink, AlertTriangle } from 'lucide-react';
 
+import { usePathname } from 'next/navigation';
+
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
-  const { user, emailRedirect, setEmailRedirect } = useWorkspace();
+  const { user, emailRedirect, setEmailRedirect, isAppLoading } = useWorkspace();
+  const pathname = usePathname();
+
+  const isLandingPage = pathname === '/landing';
 
   useEffect(() => {
+    if (isLandingPage) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
@@ -25,7 +32,18 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [isLandingPage]);
+
+  if (isLandingPage) {
+    return <div className="min-h-screen w-full bg-background text-foreground overflow-x-hidden">{children}</div>;
+  }
+
+  if (isAppLoading) {
+    if (!user) {
+      return <LoginScreenSkeleton />;
+    }
+    return <AppShellSkeleton />;
+  }
 
   const handleGmailWeb = () => {
     if (!emailRedirect) return;

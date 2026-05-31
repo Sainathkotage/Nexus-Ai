@@ -268,6 +268,7 @@ interface WorkspaceState {
 
   // Connectivity
   isOnline: boolean;
+  isAppLoading: boolean;
 
   // Documents
   documents: DocumentFile[];
@@ -411,6 +412,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   // Connectivity
   const [isOnline, setIsOnline] = useState(true);
+  const [isAppLoading, setIsAppLoading] = useState(true);
 
   // Documents
   const [documents, setDocuments] = useState<DocumentFile[]>([]);
@@ -584,6 +586,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // Hydration & initial fetch from Supabase
   useEffect(() => {
     const fetchData = async () => {
+      setIsAppLoading(true);
       let localDocs: DocumentFile[] = [];
       let localTasks: Task[] = [];
       let localEvents: CalendarEvent[] = [];
@@ -1057,6 +1060,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         if (finalConvos.length > 0 && !activeConversationId) {
           setActiveConversationId(finalConvos[0].id);
         }
+      } finally {
+        setIsAppLoading(false);
       }
     };
 
@@ -2824,6 +2829,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     leftSidebarOpen, toggleLeftSidebar,
     rightSidebarOpen, toggleRightSidebar,
     isOnline,
+    isAppLoading,
     documents, addDocument, deleteDocument, selectedDocumentId, setSelectedDocumentId,
     tasks, addTask, deleteTask, moveTask, updateTask, taskView, setTaskView,
     calendarEvents, selectedDate, setSelectedDate, addEventToCalendar, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent,

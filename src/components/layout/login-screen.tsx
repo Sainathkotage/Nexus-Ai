@@ -3,8 +3,9 @@
 import React, { useState } from 'react';
 import { useWorkspace } from '@/lib/store';
 import { Button } from '@/components/ui/button';
-import { Sparkles, Mail, Lock, User, Tag, Briefcase, Eye, EyeOff, Check } from 'lucide-react';
+import { Sparkles, Mail, Lock, User, Tag, Briefcase, Eye, EyeOff, Check, Building2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { signInWithEnterpriseSso } from '@/lib/enterprise/sso';
 
 export function LoginScreen() {
   const { login, register, roles } = useWorkspace();
@@ -18,6 +19,7 @@ export function LoginScreen() {
   const [username, setUsername] = useState('');
   const [tag, setTag] = useState('');
   const [role, setRole] = useState('Member');
+  const [ssoDomain, setSsoDomain] = useState('');
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -68,6 +70,31 @@ export function LoginScreen() {
       }
     } catch (err) {
       toast.error('Registration failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEnterpriseSso = async () => {
+    const domain = ssoDomain.trim().replace(/^@/, '').toLowerCase();
+    if (!domain || !domain.includes('.')) {
+      toast.error('Enter your company email domain (e.g. acme.com)');
+      return;
+    }
+    setLoading(true);
+    try {
+      const result = await signInWithEnterpriseSso(
+        { provider: 'google_workspace', domain },
+        `${window.location.origin}/auth/callback`
+      );
+      if ('url' in result) {
+        window.location.href = result.url;
+        return;
+      }
+      const fallback = `/api/enterprise/sso?domain=${encodeURIComponent(domain)}`;
+      window.location.href = fallback;
+    } catch {
+      window.location.href = `/api/enterprise/sso?domain=${encodeURIComponent(domain)}`;
     } finally {
       setLoading(false);
     }
@@ -279,6 +306,35 @@ export function LoginScreen() {
             </Button>
           </form>
         )}
+
+        {/* Enterprise SSO */}
+        <div className="flex flex-col gap-2 p-3 rounded-lg border border-border/60 bg-[#fcfcfb] dark:bg-[#252525]/80">
+          <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+            <Building2 className="w-3.5 h-3.5" />
+            Enterprise SSO (SAML / OIDC)
+          </span>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={ssoDomain}
+              onChange={(e) => setSsoDomain(e.target.value)}
+              placeholder="yourcompany.com"
+              className="flex-1 bg-background border border-border/80 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary/40"
+            />
+            <Button
+              type="button"
+              variant="outline"
+              disabled={loading}
+              onClick={() => void handleEnterpriseSso()}
+              className="shrink-0 text-xs h-9"
+            >
+              SSO Sign In
+            </Button>
+          </div>
+          <p className="text-[9px] text-muted-foreground leading-relaxed">
+            Google Workspace, Microsoft Azure AD, or SAML via Supabase Auth. Your admin must enable SSO for your domain.
+          </p>
+        </div>
 
         {/* Divider */}
         <div className="flex items-center gap-3 my-1">

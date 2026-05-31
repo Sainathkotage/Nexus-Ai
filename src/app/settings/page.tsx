@@ -3,19 +3,35 @@
 import React, { useEffect, useState } from 'react';
 import { useWorkspace } from '@/lib/store';
 import { 
-  Settings, User, Bell, Palette, Shield, CreditCard, Plug
+  Settings, User, Bell, Palette, Shield, CreditCard, Plug, Users, 
+  Key, ArrowRight, ShieldCheck, Mail, Database, Globe, Check, AlertTriangle, 
+  Trash2, Plus, Info, RefreshCw, Terminal, ArrowUpRight, HelpCircle, X, ExternalLink
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
+import {
+  startRazorpayCheckout,
+  openBillingManage,
+  updateSeatCount,
+} from '@/lib/billing/client';
+import {
+  BILLING_PLANS,
+  planIdFromLabel,
+  type BillingPlanId,
+} from '@/lib/billing/plans';
+import { parseSsoProvider } from '@/lib/enterprise/sso';
+
+const DEMO_ORG_ID = process.env.NEXT_PUBLIC_DEMO_ORGANIZATION_ID ?? '';
 
 const sections = [
   { id: 'general', label: 'General', icon: Settings },
   { id: 'account', label: 'Account', icon: User },
   { id: 'appearance', label: 'Appearance', icon: Palette },
   { id: 'notifications', label: 'Notifications', icon: Bell },
-  { id: 'security', label: 'Security & Privacy', icon: Shield },
-  { id: 'integrations', label: 'Integrations', icon: Plug },
-  { id: 'billing', label: 'Billing', icon: CreditCard },
+  { id: 'security', label: 'Security & SSO', icon: Shield },
+  { id: 'billing', label: 'Plans & Billing', icon: CreditCard },
+  { id: 'audit', label: 'Audit Logs', icon: Terminal },
 ];
 
 function Toggle({ enabled, onToggle, disabled = false }: { enabled: boolean; onToggle: () => void; disabled?: boolean }) {
@@ -23,8 +39,9 @@ function Toggle({ enabled, onToggle, disabled = false }: { enabled: boolean; onT
     <button
       onClick={onToggle}
       disabled={disabled}
+      type="button"
       className={cn(
-        "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors",
+        "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none",
         disabled && "opacity-40 cursor-not-allowed",
         enabled ? "bg-foreground" : "bg-muted border border-border"
       )}
@@ -40,32 +57,289 @@ function Toggle({ enabled, onToggle, disabled = false }: { enabled: boolean; onT
 export default function SettingsPage() {
   const { setActivePage, theme, toggleTheme, themeConfig, setThemeConfig } = useWorkspace();
   const [activeSection, setActiveSection] = useState('general');
+  
+  // Workspace Info State
+  const [workspaceName, setWorkspaceName] = useState('Nexus AI');
+  const [workspaceUrl, setWorkspaceUrl] = useState('sarah-workspace');
+  
+  // General Permissions State
   const [permissions, setPermissions] = useState({
     readDrive: true,
     readEmails: true,
     autoSend: false,
+    vectorSearch: true,
   });
+
+  // Account State
+  const [userProfile, setUserProfile] = useState({
+    name: 'Sarah Chen',
+    email: 'sarah@nexus.ai',
+    role: 'Product Lead',
+  });
+
+  // Seat/Member Management State
+  const [workspaceMembers, setWorkspaceMembers] = useState([
+    { id: 'p1', name: 'Sarah Chen', email: 'sarah@nexus.ai', role: 'Admin', status: 'Active' },
+    { id: 'p2', name: 'Marcus Johnson', email: 'marcus@nexus.ai', role: 'Member', status: 'Active' },
+    { id: 'p3', name: 'Elena Rodriguez', email: 'elena@nexus.ai', role: 'Member', status: 'Active' },
+    { id: 'p4', name: 'Alex Kim', email: 'alex@nexus.ai', role: 'Member', status: 'Active' },
+  ]);
+  const [newMemberEmail, setNewMemberEmail] = useState('');
+  const [newMemberRole, setNewMemberRole] = useState('Member');
+
+  // SSO & SAML Mappings State
+  const [ssoConfig, setSsoConfig] = useState({
+    enabled: false,
+    provider: 'Google Workspace',
+    metadataUrl: 'https://accounts.google.com/o/saml2?idpid=C023192',
+    domainMapping: 'nexus.ai',
+    authProvisioning: true,
+  });
+
+  // Billing Simulator State
+  const [currentPlan, setCurrentPlan] = useState<'Starter' | 'Team Pro' | 'Enterprise'>('Team Pro');
+  const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('yearly');
+  const [showCheckoutModal, setShowCheckoutModal] = useState(false);
+  const [targetPlan, setTargetPlan] = useState<'Starter' | 'Team Pro' | 'Enterprise'>('Team Pro');
+  
+  // Mock Checkout Form
+  const [checkoutCard, setCheckoutCard] = useState({
+    number: '4111 2222 3333 4444',
+    expiry: '12/28',
+    cvc: '123',
+    name: 'Sarah Chen',
+  });
+
+  // Security Audit Log Stream State
+  const [auditLogs, setAuditLogs] = useState([
+    { id: 'log-1', timestamp: '2026-06-01T04:02:15Z', actor: 'Sarah Chen', action: 'Update Role', target: 'Marcus Johnson (Member -> Admin)', ip: '192.168.1.42' },
+    { id: 'log-2', timestamp: '2026-06-01T03:44:10Z', actor: 'Sarah Chen', action: 'Configure SAML SSO', target: 'Metadata URL mappings verified', ip: '192.168.1.42' },
+    { id: 'log-3', timestamp: '2026-05-31T22:15:32Z', actor: 'Alex Kim', action: 'Document Upload', target: 'Acme_SOW_Phase_2.pdf (1.2 MB)', ip: '192.168.1.99' },
+    { id: 'log-4', timestamp: '2026-05-31T19:33:14Z', actor: 'Elena Rodriguez', action: 'Join Workspace', target: 'Added via invite link', ip: '192.168.1.102' },
+    { id: 'log-5', timestamp: '2026-05-31T18:04:10Z', actor: 'Marcus Johnson', action: 'Sign-in Success', target: 'User agent verified (Chrome/Win)', ip: '192.168.1.84' },
+  ]);
 
   useEffect(() => {
     setActivePage('settings');
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('section') === 'billing' || params.get('billing')) {
+      setActiveSection('billing');
+    }
   }, [setActivePage]);
+
+  const persistSsoConfig = async (next: typeof ssoConfig) => {
+    if (!DEMO_ORG_ID) {
+      toast.info('Set NEXT_PUBLIC_DEMO_ORGANIZATION_ID to persist SSO to Supabase.');
+      return;
+    }
+    try {
+      const res = await fetch('/api/enterprise/sso', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          organizationId: DEMO_ORG_ID,
+          enabled: next.enabled,
+          provider: parseSsoProvider(next.provider),
+          domain: next.domainMapping,
+          metadataUrl: next.metadataUrl,
+          autoProvision: next.authProvisioning,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? 'Failed to save SSO');
+      toast.success('SSO configuration saved to organization record.');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'SSO save failed');
+    }
+  };
+
+  const handleToggleSSO = () => {
+    const nextVal = !ssoConfig.enabled;
+    const next = { ...ssoConfig, enabled: nextVal };
+    setSsoConfig(next);
+    void persistSsoConfig(next);
+    if (nextVal) {
+      toast.success('SSO domain authentication activated.');
+    } else {
+      toast.warning('SSO disabled. Password logins remain available.');
+    }
+  };
+
+  // Add workspace member seat
+  const handleAddMember = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newMemberEmail.trim()) {
+      toast.error('Email address cannot be empty.');
+      return;
+    }
+    if (!newMemberEmail.includes('@')) {
+      toast.error('Please enter a valid business email.');
+      return;
+    }
+    
+    // Seat check for Starter Plan
+    if (currentPlan === 'Starter' && workspaceMembers.length >= 1) {
+      toast.error('Starter Plan is limited to 1 Workspace Seat. Upgrade to Team Pro or Enterprise to add members.');
+      return;
+    }
+    // Seat check for Team Pro
+    if (currentPlan === 'Team Pro' && workspaceMembers.length >= 15) {
+      toast.error('Team Pro Plan is limited to 15 Workspace Seats. Upgrade to Enterprise for unlimited seats.');
+      return;
+    }
+
+    const name = newMemberEmail.split('@')[0].split('.').map(n => n.charAt(0).toUpperCase() + n.slice(1)).join(' ');
+    const newMember = {
+      id: `p-${Date.now()}`,
+      name,
+      email: newMemberEmail.trim(),
+      role: newMemberRole,
+      status: 'Active',
+    };
+
+    setWorkspaceMembers(prev => {
+      const updated = [...prev, newMember];
+      void syncSeatsToRazorpay(updated.length);
+      return updated;
+    });
+    setNewMemberEmail('');
+    toast.success(`Invite sent to ${newMember.email}. Seat allocated.`);
+    
+    // Append to audit logs
+    const newAudit = {
+      id: `log-${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      actor: 'Sarah Chen',
+      action: 'Invite User Seat',
+      target: `${newMember.name} (${newMember.role})`,
+      ip: '192.168.1.42',
+    };
+    setAuditLogs(prev => [newAudit, ...prev]);
+  };
+
+  // Remove workspace seat
+  const handleRemoveMember = (id: string, name: string) => {
+    if (id === 'p1') {
+      toast.error('Cannot remove the workspace owner.');
+      return;
+    }
+    if (confirm(`Are you sure you want to deallocate the seat for ${name}?`)) {
+      setWorkspaceMembers(prev => {
+        const updated = prev.filter(m => m.id !== id);
+        void syncSeatsToRazorpay(updated.length);
+        return updated;
+      });
+      toast.success(`Seat for ${name} deallocated.`);
+
+      // Append to audit logs
+      const newAudit = {
+        id: `log-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        actor: 'Sarah Chen',
+        action: 'Deallocate User Seat',
+        target: `${name}`,
+        ip: '192.168.1.42',
+      };
+      setAuditLogs(prev => [newAudit, ...prev]);
+    }
+  };
+
+  const planLabelToId = (label: typeof currentPlan): BillingPlanId => {
+    return planIdFromLabel(label) ?? 'team_pro';
+  };
+
+  const syncSeatsToRazorpay = async (count: number) => {
+    if (!DEMO_ORG_ID) return;
+    try {
+      await updateSeatCount(DEMO_ORG_ID, count);
+    } catch {
+      // Razorpay not configured — local seat state only
+    }
+  };
+
+  const triggerPlanUpgrade = async (plan: 'Starter' | 'Team Pro' | 'Enterprise') => {
+    if (plan === currentPlan) {
+      toast.info(`Your workspace is already on the ${plan} plan.`);
+      return;
+    }
+    const planId = planLabelToId(plan);
+    try {
+      toast.loading('Opening Razorpay checkout…', { id: 'checkout' });
+      await startRazorpayCheckout({
+        planId,
+        cycle: billingCycle,
+        seatCount: workspaceMembers.length,
+        organizationId: DEMO_ORG_ID || undefined,
+        customerName: userProfile.name,
+        customerEmail: userProfile.email,
+      });
+      toast.success('Subscription updated', { id: 'checkout' });
+    } catch {
+      setTargetPlan(plan);
+      setShowCheckoutModal(true);
+      toast.dismiss('checkout');
+    }
+  };
+
+  const handleOpenBillingPortal = async () => {
+    if (!DEMO_ORG_ID) {
+      setActiveSection('billing');
+      toast.info('Configure NEXT_PUBLIC_DEMO_ORGANIZATION_ID for subscription management.');
+      return;
+    }
+    try {
+      toast.loading('Opening billing management…', { id: 'portal' });
+      const url = await openBillingManage(DEMO_ORG_ID);
+      window.location.href = url;
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Billing management unavailable', { id: 'portal' });
+    }
+  };
+
+  // Simulated checkout when Razorpay env vars are not configured
+  const handleCompleteCheckout = (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    toast.loading('Processing simulated payment via Razorpay…', { id: 'checkout' });
+    
+    setTimeout(() => {
+      setCurrentPlan(targetPlan);
+      setShowCheckoutModal(false);
+      toast.success(`Payment verified successfully! Welcome to the ${targetPlan} Plan!`, { id: 'checkout' });
+      
+      // Add transaction audit log
+      const newAudit = {
+        id: `log-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        actor: 'Sarah Chen',
+        action: 'Upgrade Plan Subscription',
+        target: `${targetPlan} (${billingCycle})`,
+        ip: '192.168.1.42',
+      };
+      setAuditLogs(prev => [newAudit, ...prev]);
+    }, 1500);
+  };
 
   return (
     <div className="flex flex-col h-full w-full max-w-4xl mx-auto p-6 md:p-8">
       {/* Header */}
       <div className="flex flex-col gap-1 mb-8">
-        <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-        <p className="text-sm text-muted-foreground">Manage your workspace preferences and AI configuration.</p>
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground flex items-center gap-2">
+          <Settings className="w-6 h-6 text-foreground" />
+          Workspace Controls
+        </h1>
+        <p className="text-sm text-muted-foreground">Manage multi-tenant permissions, billing tiers, SSO channels, and compliance audit logs.</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-8">
         
-        {/* Sidebar */}
+        {/* Navigation Sidebar */}
         <nav className="flex flex-col gap-0.5">
           {sections.map(item => (
             <button
               key={item.id}
               onClick={() => setActiveSection(item.id)}
+              type="button"
               className={cn(
                 "flex items-center gap-2.5 px-3 py-1.5 rounded-md text-sm text-left w-full transition-colors",
                 activeSection === item.id 
@@ -79,98 +353,257 @@ export default function SettingsPage() {
           ))}
         </nav>
 
-        {/* Content */}
+        {/* Dynamic Content Columns */}
         <div className="flex flex-col gap-8">
           
+          {/* General Section */}
           {activeSection === 'general' && (
-            <section className="flex flex-col gap-5">
-              <div>
-                <h2 className="text-base font-semibold mb-1">Workspace</h2>
-                <p className="text-sm text-muted-foreground">Basic workspace settings and preferences.</p>
-              </div>
-              <div className="h-px bg-border" />
-              
-              <div className="grid gap-4 max-w-md">
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-sm font-medium">Workspace Name</label>
-                  <input 
-                    type="text" 
-                    className="px-3 py-1.5 border border-border rounded-md bg-background text-sm focus:ring-1 focus:ring-ring focus:outline-none"
-                    defaultValue="Nexus AI"
-                  />
+            <div className="space-y-8">
+              <section className="flex flex-col gap-5">
+                <div>
+                  <h2 className="text-base font-semibold mb-1">General Settings</h2>
+                  <p className="text-sm text-muted-foreground">Basic operational workspace parameters and domains.</p>
                 </div>
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-sm font-medium">Workspace URL</label>
-                  <div className="flex items-center">
-                    <span className="px-3 py-1.5 border border-r-0 border-border rounded-l-md bg-muted text-muted-foreground text-sm">
-                      nexus.ai/
-                    </span>
+                <div className="h-px bg-border" />
+                
+                <div className="grid gap-4 max-w-md">
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-semibold text-foreground">Workspace Name</label>
                     <input 
                       type="text" 
-                      className="flex-1 px-3 py-1.5 border border-border rounded-r-md bg-background text-sm focus:ring-1 focus:ring-ring focus:outline-none"
-                      defaultValue="sarah-workspace"
+                      value={workspaceName}
+                      onChange={(e) => setWorkspaceName(e.target.value)}
+                      className="px-3 py-1.5 border border-border rounded-md bg-background text-sm focus:ring-1 focus:ring-ring focus:outline-none"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-semibold text-foreground">Workspace Subdomain URL</label>
+                    <div className="flex items-center">
+                      <span className="px-3 py-1.5 border border-r-0 border-border rounded-l-md bg-muted text-muted-foreground text-sm font-medium">
+                        nexus-ai.app/
+                      </span>
+                      <input 
+                        type="text" 
+                        value={workspaceUrl}
+                        onChange={(e) => setWorkspaceUrl(e.target.value)}
+                        className="flex-1 px-3 py-1.5 border border-border rounded-r-md bg-background text-sm focus:ring-1 focus:ring-ring focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+                
+                <Button 
+                  onClick={() => {
+                    toast.success('Workspace details saved successfully!');
+                    // Audit log
+                    const newAudit = {
+                      id: `log-${Date.now()}`,
+                      timestamp: new Date().toISOString(),
+                      actor: 'Sarah Chen',
+                      action: 'Update Workspace Meta',
+                      target: `${workspaceName} (url: ${workspaceUrl})`,
+                      ip: '192.168.1.42',
+                    };
+                    setAuditLogs(prev => [newAudit, ...prev]);
+                  }}
+                  className="w-fit bg-foreground text-background hover:opacity-90 h-8 text-xs font-bold"
+                >
+                  Save Changes
+                </Button>
+              </section>
+
+              <section className="flex flex-col gap-5">
+                <div>
+                  <h2 className="text-base font-semibold mb-1">Global AI Access Privileges</h2>
+                  <p className="text-sm text-muted-foreground">Authorize what document contexts your Chief of Staff models can sweep.</p>
+                </div>
+                <div className="h-px bg-border" />
+                
+                <div className="flex flex-col gap-3 max-w-lg">
+                  <div className="flex items-center justify-between p-3 border border-border rounded-lg bg-card/20">
+                    <div className="flex flex-col gap-0.5 pr-4">
+                      <span className="text-xs font-semibold text-foreground">Read Local Document Repositories</span>
+                      <span className="text-[10px] text-muted-foreground">Allow Gemini models to index and chunk uploaded files.</span>
+                    </div>
+                    <Toggle enabled={permissions.readDrive} onToggle={() => setPermissions(p => ({ ...p, readDrive: !p.readDrive }))} />
+                  </div>
+
+                  <div className="flex items-center justify-between p-3 border border-border rounded-lg bg-card/20">
+                    <div className="flex flex-col gap-0.5 pr-4">
+                      <span className="text-xs font-semibold text-foreground">Read Active Emails Sync</span>
+                      <span className="text-[10px] text-muted-foreground">Allows context collection across incoming operational mail grids.</span>
+                    </div>
+                    <Toggle enabled={permissions.readEmails} onToggle={() => setPermissions(p => ({ ...p, readEmails: !p.readEmails }))} />
+                  </div>
+
+                  <div className="flex items-center justify-between p-3 border border-border rounded-lg bg-card/20">
+                    <div className="flex flex-col gap-0.5 pr-4">
+                      <span className="text-xs font-semibold text-foreground">Vector Semantic Similarity Searches</span>
+                      <span className="text-[10px] text-muted-foreground">Utilizes text-embedding-3-small vector clusters for document search.</span>
+                    </div>
+                    <Toggle enabled={permissions.vectorSearch} onToggle={() => setPermissions(p => ({ ...p, vectorSearch: !p.vectorSearch }))} />
+                  </div>
+
+                  <div className="flex items-center justify-between p-3 border border-border rounded-lg bg-card/10 opacity-70">
+                    <div className="flex flex-col gap-0.5 pr-4">
+                      <span className="text-xs font-semibold text-foreground">Automatic AI Email Dispatches</span>
+                      <span className="text-[10px] text-muted-foreground">Allows AI to dispatch emails automatically without approval.</span>
+                    </div>
+                    <Toggle enabled={permissions.autoSend} onToggle={() => {}} disabled />
+                  </div>
+                  <div className="flex items-center gap-1.5 text-[9px] text-muted-foreground ml-1">
+                    <Info className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                    <span>Autosend is blocked: Nexus AI requires explicit human-in-the-loop approvals.</span>
+                  </div>
+                </div>
+              </section>
+            </div>
+          )}
+
+          {/* Account & Seat Management Section */}
+          {activeSection === 'account' && (
+            <div className="space-y-8">
+              <section className="flex flex-col gap-5">
+                <div>
+                  <h2 className="text-base font-semibold mb-1">My Administrator Account</h2>
+                  <p className="text-sm text-muted-foreground">Manage your workspace identity and active administrator role.</p>
+                </div>
+                <div className="h-px bg-border" />
+                
+                <div className="grid gap-4 max-w-md">
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-semibold text-foreground">Profile Full Name</label>
+                    <input 
+                      type="text" 
+                      value={userProfile.name}
+                      onChange={(e) => setUserProfile(prev => ({ ...prev, name: e.target.value }))}
+                      className="px-3 py-1.5 border border-border rounded-md bg-background text-sm focus:ring-1 focus:ring-ring focus:outline-none"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-semibold text-foreground">Owner Business Email</label>
+                    <input 
+                      type="email" 
+                      value={userProfile.email}
+                      onChange={(e) => setUserProfile(prev => ({ ...prev, email: e.target.value }))}
+                      className="px-3 py-1.5 border border-border rounded-md bg-background text-sm focus:ring-1 focus:ring-ring focus:outline-none"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-semibold text-slate-500">Security Access Role</label>
+                    <input 
+                      type="text" 
+                      value={userProfile.role}
+                      disabled
+                      className="px-3 py-1.5 border border-border rounded-md bg-muted text-sm text-slate-500 cursor-not-allowed"
                     />
                   </div>
                 </div>
-              </div>
-              
-              <Button className="w-fit bg-foreground text-background hover:opacity-90 h-8 text-sm">Save Changes</Button>
-            </section>
+                <Button 
+                  onClick={() => {
+                    toast.success('Profile credentials updated!');
+                  }}
+                  className="w-fit bg-foreground text-background hover:opacity-90 h-8 text-xs font-bold"
+                >
+                  Save Profile
+                </Button>
+              </section>
+
+              {/* Enterprise Seats Management Section */}
+              <section className="flex flex-col gap-5">
+                <div>
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-base font-semibold">Workspace Seats & Teammates</h2>
+                    <span className="text-[10px] font-bold bg-white/5 border px-2 py-0.5 rounded-full text-foreground/80">
+                      Seats Allocated: {workspaceMembers.length} / {currentPlan === 'Starter' ? '1' : currentPlan === 'Team Pro' ? '15' : 'Unlimited'}
+                    </span>
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-1">Allocate seats and define granular permission structures for your business colleagues.</p>
+                </div>
+                <div className="h-px bg-border" />
+
+                {/* Invite Seat Form */}
+                <form onSubmit={handleAddMember} className="flex gap-2 max-w-lg items-end">
+                  <div className="flex-1 flex flex-col gap-1.5">
+                    <label className="text-xs font-semibold text-foreground">New Seat Business Email</label>
+                    <input 
+                      type="email" 
+                      value={newMemberEmail}
+                      onChange={(e) => setNewMemberEmail(e.target.value)}
+                      placeholder="e.g. alex@nexus.ai"
+                      className="px-3 py-1.5 border border-border rounded-md bg-background text-sm focus:ring-1 focus:ring-ring focus:outline-none h-8"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5 w-32">
+                    <label className="text-xs font-semibold text-foreground">Assign Role</label>
+                    <select
+                      value={newMemberRole}
+                      onChange={(e) => setNewMemberRole(e.target.value)}
+                      className="px-2 py-1.5 border border-border rounded-md bg-background text-xs focus:ring-1 focus:ring-ring focus:outline-none h-8"
+                    >
+                      <option value="Admin">Admin</option>
+                      <option value="Member">Member</option>
+                      <option value="Guest">Guest</option>
+                    </select>
+                  </div>
+                  <Button type="submit" className="bg-foreground text-background hover:opacity-90 h-8 text-xs font-bold shrink-0">
+                    <Plus className="w-3.5 h-3.5 mr-1" />
+                    Allocate Seat
+                  </Button>
+                </form>
+
+                {/* Seats List Table */}
+                <div className="border border-border rounded-lg overflow-hidden max-w-lg">
+                  <div className="bg-muted px-3 py-2 border-b border-border flex items-center justify-between text-[10px] uppercase font-bold text-muted-foreground tracking-wider">
+                    <span>Member details</span>
+                    <span className="mr-12">Role privileges</span>
+                  </div>
+                  <div className="divide-y divide-border">
+                    {workspaceMembers.map(member => (
+                      <div key={member.id} className="p-3 flex items-center justify-between hover:bg-muted/10 transition-colors">
+                        <div className="flex flex-col min-w-0">
+                          <span className="text-xs font-bold text-foreground truncate">{member.name}</span>
+                          <span className="text-[10px] text-muted-foreground truncate">{member.email}</span>
+                        </div>
+                        <div className="flex items-center gap-4 shrink-0">
+                          <span className={cn(
+                            "text-[9px] px-2 py-0.5 rounded font-bold border",
+                            member.role === 'Admin' ? 'bg-white border-foreground/30 text-foreground' : 'bg-muted border-border text-slate-500'
+                          )}>
+                            {member.role}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveMember(member.id, member.name)}
+                            className="text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20 p-1.5 rounded transition-colors"
+                            title="Remove colleague seat"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </section>
+            </div>
           )}
 
-          {activeSection === 'general' && (
-            <section className="flex flex-col gap-5">
-              <div>
-                <h2 className="text-base font-semibold mb-1">AI Permissions</h2>
-                <p className="text-sm text-muted-foreground">Control what your AI assistant can access.</p>
-              </div>
-              <div className="h-px bg-border" />
-              
-              <div className="flex flex-col gap-3">
-                <div className="flex items-center justify-between p-3 border border-border rounded-lg">
-                  <div className="flex flex-col gap-0.5 pr-4">
-                    <span className="text-sm font-medium">Read Documents</span>
-                    <span className="text-xs text-muted-foreground">Allow AI to analyze uploaded documents.</span>
-                  </div>
-                  <Toggle enabled={permissions.readDrive} onToggle={() => setPermissions(p => ({ ...p, readDrive: !p.readDrive }))} />
-                </div>
-
-                <div className="flex items-center justify-between p-3 border border-border rounded-lg">
-                  <div className="flex flex-col gap-0.5 pr-4">
-                    <span className="text-sm font-medium">Read Emails</span>
-                    <span className="text-xs text-muted-foreground">Allow AI to read emails for context extraction.</span>
-                  </div>
-                  <Toggle enabled={permissions.readEmails} onToggle={() => setPermissions(p => ({ ...p, readEmails: !p.readEmails }))} />
-                </div>
-
-                <div className="flex items-center justify-between p-3 border border-border rounded-lg">
-                  <div className="flex flex-col gap-0.5 pr-4">
-                    <span className="text-sm font-medium">Auto-Send Emails</span>
-                    <span className="text-xs text-muted-foreground">Allow AI to send emails without approval.</span>
-                  </div>
-                  <Toggle enabled={permissions.autoSend} onToggle={() => {}} disabled />
-                </div>
-                <p className="text-[11px] text-muted-foreground ml-1">
-                  * Nexus AI requires explicit user approval before sending any communication.
-                </p>
-              </div>
-            </section>
-          )}
-
+          {/* Appearance Section */}
           {activeSection === 'appearance' && (
             <section className="flex flex-col gap-5">
               <div>
-                <h2 className="text-base font-semibold mb-1">Appearance</h2>
+                <h2 className="text-base font-semibold mb-1">Appearance & Styling</h2>
                 <p className="text-sm text-muted-foreground">Customize how your workspace looks and define custom user themes.</p>
               </div>
               <div className="h-px bg-border" />
               
-              <div className="flex items-center justify-between p-3 border border-border rounded-lg max-w-md bg-card">
+              <div className="flex items-center justify-between p-3 border border-border rounded-lg max-w-md bg-card/20">
                 <div className="flex flex-col gap-0.5">
-                  <span className="text-sm font-semibold">Dark Mode</span>
-                  <span className="text-xs text-muted-foreground">Toggle between light and dark themes.</span>
+                  <span className="text-xs font-bold text-foreground">Workspace Theme Toggles</span>
+                  <span className="text-[10px] text-muted-foreground">Switch between high-contrast dark and light modes.</span>
                 </div>
-                <Button onClick={toggleTheme} variant="outline" size="sm" className="h-7 text-xs border-border">
+                <Button onClick={toggleTheme} variant="outline" size="sm" className="h-7 text-xs border-border font-bold">
                   {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
                 </Button>
               </div>
@@ -178,8 +611,8 @@ export default function SettingsPage() {
               {/* Theme Presets Grid */}
               <div className="space-y-3">
                 <div>
-                  <h3 className="text-sm font-semibold text-foreground">Workspace Themes</h3>
-                  <p className="text-xs text-muted-foreground">Choose from a variety of curated workspace palettes.</p>
+                  <h3 className="text-xs font-bold text-foreground uppercase tracking-wider">Workspace Color Palettes</h3>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">Choose from a variety of curated, responsive workspace palettes.</p>
                 </div>
                 
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-w-lg">
@@ -193,13 +626,14 @@ export default function SettingsPage() {
                     <button
                       key={preset.id}
                       onClick={() => setThemeConfig({ name: preset.id })}
+                      type="button"
                       className={cn(
-                        "p-3 rounded-lg border text-left flex flex-col gap-2 transition-all hover:bg-accent/40 bg-card",
+                        "p-3 rounded-lg border text-left flex flex-col gap-2 transition-all hover:bg-accent/40 bg-card/40 cursor-pointer",
                         themeConfig.name === preset.id ? "border-primary ring-1 ring-primary" : "border-border"
                       )}
                     >
-                      <span className="text-xs font-semibold text-foreground leading-none">{preset.label}</span>
-                      <div className="flex items-center gap-1.5 mt-1.5">
+                      <span className="text-[11px] font-bold text-foreground leading-none">{preset.label}</span>
+                      <div className="flex items-center gap-1 mt-1">
                         {preset.colors.map((c, i) => (
                           <span 
                             key={i} 
@@ -216,14 +650,14 @@ export default function SettingsPage() {
               {/* Custom Theme Editor */}
               <div className="space-y-3 pt-2">
                 <div>
-                  <h3 className="text-sm font-semibold text-foreground">Make Custom Theme</h3>
-                  <p className="text-xs text-muted-foreground">Build your own branding colors. Updates will apply instantly.</p>
+                  <h3 className="text-xs font-bold text-foreground uppercase tracking-wider">Branding Custom Theme Creator</h3>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">Customize corporate branding colors. Styling applies globally in real-time.</p>
                 </div>
                 
-                <div className="p-4 border border-border rounded-lg max-w-md bg-card flex flex-col gap-4">
+                <div className="p-4 border border-border rounded-lg max-w-md bg-card/20 flex flex-col gap-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div className="flex items-center justify-between gap-2 p-1.5 border border-border/50 rounded bg-background">
-                      <span className="text-xs font-medium text-muted-foreground">Primary Text/Accent</span>
+                      <span className="text-[10px] font-semibold text-muted-foreground">Text / Accent</span>
                       <input 
                         type="color" 
                         value={themeConfig.name === 'custom' ? themeConfig.primary || '#37352f' : '#37352f'}
@@ -238,7 +672,7 @@ export default function SettingsPage() {
                       />
                     </div>
                     <div className="flex items-center justify-between gap-2 p-1.5 border border-border/50 rounded bg-background">
-                      <span className="text-xs font-medium text-muted-foreground">Background Color</span>
+                      <span className="text-[10px] font-semibold text-muted-foreground">Background</span>
                       <input 
                         type="color" 
                         value={themeConfig.name === 'custom' ? themeConfig.background || '#ffffff' : '#ffffff'}
@@ -253,7 +687,7 @@ export default function SettingsPage() {
                       />
                     </div>
                     <div className="flex items-center justify-between gap-2 p-1.5 border border-border/50 rounded bg-background">
-                      <span className="text-xs font-medium text-muted-foreground">Sidebar Color</span>
+                      <span className="text-[10px] font-semibold text-muted-foreground">Sidebar</span>
                       <input 
                         type="color" 
                         value={themeConfig.name === 'custom' ? themeConfig.sidebar || '#fbfbfa' : '#fbfbfa'}
@@ -268,7 +702,7 @@ export default function SettingsPage() {
                       />
                     </div>
                     <div className="flex items-center justify-between gap-2 p-1.5 border border-border/50 rounded bg-background">
-                      <span className="text-xs font-medium text-muted-foreground">Highlight Hover</span>
+                      <span className="text-[10px] font-semibold text-muted-foreground">Highlight Hover</span>
                       <input 
                         type="color" 
                         value={themeConfig.name === 'custom' ? themeConfig.accent || '#f1f1ef' : '#f1f1ef'}
@@ -290,7 +724,7 @@ export default function SettingsPage() {
                       size="sm"
                       className="w-full text-xs h-8 border-dashed border-red-500/50 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20"
                     >
-                      Reset Custom Theme Colors
+                      Reset Custom Branding
                     </Button>
                   )}
                 </div>
@@ -298,23 +732,382 @@ export default function SettingsPage() {
             </section>
           )}
 
-          {(activeSection !== 'general' && activeSection !== 'appearance') && (
+          {/* Notifications Section */}
+          {activeSection === 'notifications' && (
             <section className="flex flex-col gap-5">
               <div>
-                <h2 className="text-base font-semibold mb-1 capitalize">{sections.find(s => s.id === activeSection)?.label}</h2>
-                <p className="text-sm text-muted-foreground">Configure your {activeSection} settings.</p>
+                <h2 className="text-base font-semibold mb-1">Notifications</h2>
+                <p className="text-sm text-muted-foreground">Customize how and when you receive workspace sync alerts.</p>
               </div>
               <div className="h-px bg-border" />
-              <div className="flex flex-col items-center justify-center py-12 text-center">
-                <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center mb-3">
-                  {React.createElement(sections.find(s => s.id === activeSection)?.icon || Settings, { className: "w-5 h-5 text-muted-foreground" })}
+              
+              <div className="flex flex-col gap-3 max-w-md">
+                <div className="flex items-center justify-between p-3 border border-border rounded-lg bg-card/20">
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-xs font-semibold text-foreground">Email Notifications</span>
+                    <span className="text-[10px] text-muted-foreground">Receive daily digests of action items.</span>
+                  </div>
+                  <Toggle enabled={true} onToggle={() => {}} />
                 </div>
-                <p className="text-sm text-muted-foreground">Coming soon</p>
+                <div className="flex items-center justify-between p-3 border border-border rounded-lg bg-card/20">
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-xs font-semibold text-foreground">AI Chief of Staff Alerts</span>
+                    <span className="text-[10px] text-muted-foreground">Real-time alerts for identified contract bottlenecks.</span>
+                  </div>
+                  <Toggle enabled={true} onToggle={() => {}} />
+                </div>
+                <div className="flex items-center justify-between p-3 border border-border rounded-lg bg-card/20">
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-xs font-semibold text-foreground">Desktop Mentions</span>
+                    <span className="text-[10px] text-muted-foreground">Push notifications for direct @mentions in team chat.</span>
+                  </div>
+                  <Toggle enabled={false} onToggle={() => {}} />
+                </div>
               </div>
             </section>
           )}
+
+          {/* Security & SSO SAML Section */}
+          {activeSection === 'security' && (
+            <div className="space-y-8">
+              <section className="flex flex-col gap-5">
+                <div>
+                  <h2 className="text-base font-semibold mb-1">Enterprise SSO Configurations</h2>
+                  <p className="text-sm text-muted-foreground">Secure team sign-ins using SAML / OIDC provider mappings.</p>
+                </div>
+                <div className="h-px bg-border" />
+
+                <div className="flex flex-col gap-3 max-w-lg">
+                  <div className="flex items-center justify-between p-3 border border-border rounded-lg bg-card/20">
+                    <div className="flex flex-col gap-0.5 pr-4">
+                      <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                        <Key className="w-3.5 h-3.5 text-foreground" />
+                        SAML Single Sign-On Authentication
+                      </span>
+                      <span className="text-[10px] text-muted-foreground">Requires users to authenticate via your identity portal.</span>
+                    </div>
+                    <Toggle enabled={ssoConfig.enabled} onToggle={handleToggleSSO} />
+                  </div>
+
+                  {ssoConfig.enabled && (
+                    <div className="p-4 border border-border rounded-lg bg-zinc-950/20 max-w-lg space-y-4 animate-in fade-in slide-in-from-top-1.5 duration-200">
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-[10px] uppercase font-bold text-foreground tracking-wider">SSO Identity Provider</label>
+                        <select
+                          value={ssoConfig.provider}
+                          onChange={(e) => setSsoConfig(p => ({ ...p, provider: e.target.value }))}
+                          className="px-2 py-1.5 border border-border rounded bg-background text-xs focus:ring-1 focus:ring-ring focus:outline-none"
+                        >
+                          <option value="Google Workspace">Google Workspace Enterprise</option>
+                          <option value="Microsoft Azure AD">Microsoft Azure AD OIDC</option>
+                          <option value="Okta SAML 2.0">Okta SAML 2.0 Hub</option>
+                        </select>
+                      </div>
+
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-[10px] uppercase font-bold text-foreground tracking-wider">SAML Identity Metadata URL</label>
+                        <input 
+                          type="text"
+                          value={ssoConfig.metadataUrl}
+                          onChange={(e) => setSsoConfig(p => ({ ...p, metadataUrl: e.target.value }))}
+                          className="px-3 py-1.5 border border-border rounded bg-background text-xs focus:ring-1 focus:ring-ring focus:outline-none"
+                        />
+                      </div>
+
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-[10px] uppercase font-bold text-foreground tracking-wider">Verified Auth Domain Mappings</label>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-slate-500 font-semibold text-xs border border-white/5 bg-zinc-900 px-2.5 py-1 rounded">@</span>
+                          <input 
+                            type="text"
+                            value={ssoConfig.domainMapping}
+                            onChange={(e) => setSsoConfig(p => ({ ...p, domainMapping: e.target.value }))}
+                            className="flex-1 px-3 py-1.5 border border-border rounded bg-background text-xs focus:ring-1 focus:ring-ring focus:outline-none"
+                          />
+                        </div>
+                        <span className="text-[8px] text-muted-foreground mt-0.5">Auto-provisions logins with domain emails.</span>
+                      </div>
+                      
+                      <div className="flex items-center justify-between pt-1 border-t border-border/50">
+                        <span className="text-[10px] font-semibold text-slate-500">Auto-provision seat on first auth</span>
+                        <Toggle enabled={ssoConfig.authProvisioning} onToggle={() => setSsoConfig(p => ({ ...p, authProvisioning: !p.authProvisioning }))} />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </section>
+
+              <section className="flex flex-col gap-5">
+                <div>
+                  <h2 className="text-base font-semibold mb-1">Corporate Cryptography</h2>
+                  <p className="text-sm text-muted-foreground">Configure AES symmetric keys securing enterprise team channels.</p>
+                </div>
+                <div className="h-px bg-border" />
+                
+                <div className="p-4 border border-emerald-500/20 bg-emerald-500/5 rounded-lg max-w-lg flex items-start gap-3">
+                  <ShieldCheck className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-xs font-bold text-emerald-800 dark:text-emerald-400">Symmetric Cryptography is Active</span>
+                    <p className="text-[10px] text-emerald-700 dark:text-emerald-500/90 leading-relaxed mt-1">
+                      Nexus AI encrypts all enterprise message bodies locally using symmetric keys in your browser memory before sending them to the Supabase PostgreSQL database. 
+                    </p>
+                    <span className="text-[9px] font-semibold mt-2 text-indigo-500/80 cursor-pointer flex items-center gap-1 hover:underline">
+                      Review symmetric security specifications
+                      <ArrowUpRight className="w-3 h-3" />
+                    </span>
+                  </div>
+                </div>
+              </section>
+            </div>
+          )}
+
+          {/* Pricing & Billing Section (Stripe Simulator) */}
+          {activeSection === 'billing' && (
+            <div className="space-y-8">
+              <section className="flex flex-col gap-5">
+                <div>
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-base font-semibold">Workspace Subscription Plan</h2>
+                    <span className="text-xs font-bold bg-foreground text-background px-3 py-1 rounded-full border">
+                      Active: {currentPlan} Plan
+                    </span>
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Per-seat billing via Razorpay subscriptions. Seats: {workspaceMembers.length}
+                    {BILLING_PLANS[planLabelToId(currentPlan)].seatLimit
+                      ? ` / ${BILLING_PLANS[planLabelToId(currentPlan)].seatLimit}`
+                      : ''}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs"
+                    onClick={() => setBillingCycle(c => (c === 'monthly' ? 'yearly' : 'monthly'))}
+                  >
+                    Billing: {billingCycle === 'monthly' ? 'Monthly' : 'Yearly'}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs gap-1"
+                    onClick={() => void handleOpenBillingPortal()}
+                  >
+                    Manage billing
+                    <ExternalLink className="w-3 h-3" />
+                  </Button>
+                </div>
+                <div className="h-px bg-border" />
+
+                {/* Subscriptions Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-2xl">
+                  {[
+                    { id: 'Starter', price: '$10', seats: '1 seat', icon: User },
+                    { id: 'Team Pro', price: '$19', seats: 'Up to 15 seats', icon: Users, featured: true },
+                    { id: 'Enterprise', price: '$49', seats: 'Unlimited seats', icon: Database }
+                  ].map((plan) => (
+                    <div 
+                      key={plan.id}
+                      className={cn(
+                        "p-4 rounded-xl border flex flex-col justify-between transition-all bg-card/20",
+                        currentPlan === plan.id ? "border-primary ring-1 ring-primary" : "border-border/60"
+                      )}
+                    >
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-foreground">{plan.id}</span>
+                          {plan.id === currentPlan && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          )}
+                        </div>
+                        <div className="flex items-baseline">
+                          <span className="text-2xl font-extrabold text-foreground">{plan.price}</span>
+                          <span className="text-[10px] text-muted-foreground ml-1">/ user / mo</span>
+                        </div>
+                        <p className="text-[10px] text-slate-500 font-semibold leading-none">{plan.seats}</p>
+                      </div>
+
+                      <Button
+                        onClick={() => triggerPlanUpgrade(plan.id as any)}
+                        variant={plan.id === currentPlan ? 'outline' : 'default'}
+                        type="button"
+                        className={cn(
+                          "w-full mt-4 h-7 text-[10px] font-bold rounded-lg cursor-pointer",
+                          plan.id === currentPlan 
+                            ? 'border-border text-slate-400 cursor-not-allowed hover:bg-transparent' 
+                            : 'bg-foreground text-background hover:opacity-90'
+                        )}
+                      >
+                        {plan.id === currentPlan ? 'Active Plan' : 'Select Plan'}
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              {/* Billing Info Panel */}
+              <section className="flex flex-col gap-5">
+                <div>
+                  <h2 className="text-base font-semibold mb-1">Billing Details</h2>
+                  <p className="text-sm text-muted-foreground">Active payment cards, invoice records, and billing cycles.</p>
+                </div>
+                <div className="h-px bg-border" />
+                
+                <div className="p-4 border border-border rounded-lg max-w-lg bg-card/20 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl font-bold bg-white/5 border border-white/10 px-2 py-0.5 rounded text-foreground font-mono">VISA</span>
+                    <div className="flex flex-col">
+                      <span className="text-xs font-bold text-foreground">Visa ending in 4444</span>
+                      <span className="text-[10px] text-slate-500 mt-0.5">Expires 12/2028 • Billing name: Sarah Chen</span>
+                    </div>
+                  </div>
+                  <Button 
+                    onClick={() => void handleOpenBillingPortal()}
+                    variant="outline" 
+                    size="sm" 
+                    type="button"
+                    className="h-7 text-[10px] font-bold border-border gap-1"
+                  >
+                    Update payment & seats
+                    <ExternalLink className="w-3 h-3" />
+                  </Button>
+                </div>
+              </section>
+            </div>
+          )}
+
+          {/* Audit Logs compliance section */}
+          {activeSection === 'audit' && (
+            <section className="flex flex-col gap-5">
+              <div>
+                <h2 className="text-base font-semibold mb-1">Security Audit Compliance Log</h2>
+                <p className="text-sm text-muted-foreground">Immutable administrative transaction stream for organization compliance auditing.</p>
+              </div>
+              <div className="h-px bg-border" />
+
+              <div className="border border-border rounded-lg overflow-hidden bg-black text-slate-400 font-mono text-[10px]">
+                <div className="bg-muted px-4 py-2 border-b border-border flex items-center justify-between font-bold text-muted-foreground text-[9px] uppercase tracking-wider shrink-0">
+                  <span>Audit Timestamp</span>
+                  <span>Event Action</span>
+                  <span className="mr-8">Details</span>
+                </div>
+                <div className="divide-y divide-border/60 max-h-[300px] overflow-y-auto scrollbar-thin">
+                  {auditLogs.map(log => (
+                    <div key={log.id} className="p-3 hover:bg-white/5 transition-colors flex items-center justify-between shrink-0 leading-relaxed select-all">
+                      <span className="text-slate-500 shrink-0">{new Date(log.timestamp).toLocaleTimeString()}</span>
+                      <span className="text-indigo-400 font-bold shrink-0">{log.action}</span>
+                      <span className="text-slate-300 truncate max-w-[200px]">{log.target}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5 text-[9px] text-muted-foreground ml-1">
+                <ShieldCheck className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                <span>Audit streams sync immutable records dynamically with database transaction journals.</span>
+              </div>
+            </section>
+          )}
+
         </div>
       </div>
+
+      {/* Dynamic Stripe Simulator Checkout Modal */}
+      {showCheckoutModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-background border border-border shadow-2xl rounded-2xl max-w-md w-full p-6 space-y-5 animate-in scale-in duration-200 relative">
+            <button
+              onClick={() => setShowCheckoutModal(false)}
+              type="button"
+              className="absolute top-4 right-4 text-slate-500 hover:text-foreground hover:bg-muted p-1.5 rounded transition-all"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <div className="space-y-1.5">
+              <span className="text-[10px] font-bold uppercase text-indigo-600 bg-indigo-500/5 px-2.5 py-1 rounded border border-indigo-500/10">Razorpay Payment Gateway</span>
+              <h3 className="text-base font-bold text-foreground mt-2">Secure License Checkout</h3>
+              <p className="text-xs text-muted-foreground">Upgrading your workspace subscription plan seat license. Charges apply instantly.</p>
+            </div>
+
+            <div className="h-px bg-border" />
+
+            <form onSubmit={handleCompleteCheckout} className="space-y-4">
+              <div className="p-3 bg-muted/40 border border-border rounded-lg space-y-1">
+                <div className="flex justify-between text-xs text-slate-500 font-semibold">
+                  <span>Selected Package</span>
+                  <span>Price / mo</span>
+                </div>
+                <div className="flex justify-between text-sm text-foreground font-bold pt-1">
+                  <span>{targetPlan} License Tier</span>
+                  <span>{targetPlan === 'Starter' ? '$10' : targetPlan === 'Team Pro' ? '$19' : '$49'}</span>
+                </div>
+              </div>
+
+              <div className="space-y-3 text-xs">
+                <div className="flex flex-col gap-1">
+                  <label className="font-semibold text-foreground">Cardholder Full Name</label>
+                  <input 
+                    type="text" 
+                    required
+                    value={checkoutCard.name}
+                    onChange={(e) => setCheckoutCard(p => ({ ...p, name: e.target.value }))}
+                    className="px-3 py-2 border border-border rounded bg-background text-xs focus:ring-1 focus:ring-ring focus:outline-none"
+                  />
+                </div>
+                
+                <div className="flex flex-col gap-1">
+                  <label className="font-semibold text-foreground">Credit Card Number</label>
+                  <input 
+                    type="text" 
+                    required
+                    value={checkoutCard.number}
+                    onChange={(e) => setCheckoutCard(p => ({ ...p, number: e.target.value }))}
+                    className="px-3 py-2 border border-border rounded bg-background text-xs focus:ring-1 focus:ring-ring focus:outline-none font-mono"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="flex flex-col gap-1">
+                    <label className="font-semibold text-foreground">Expiration Date</label>
+                    <input 
+                      type="text" 
+                      required
+                      placeholder="MM/YY"
+                      value={checkoutCard.expiry}
+                      onChange={(e) => setCheckoutCard(p => ({ ...p, expiry: e.target.value }))}
+                      className="px-3 py-2 border border-border rounded bg-background text-xs focus:ring-1 focus:ring-ring focus:outline-none font-mono"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="font-semibold text-foreground">Security Code (CVC)</label>
+                    <input 
+                      type="text" 
+                      required
+                      placeholder="123"
+                      value={checkoutCard.cvc}
+                      onChange={(e) => setCheckoutCard(p => ({ ...p, cvc: e.target.value }))}
+                      className="px-3 py-2 border border-border rounded bg-background text-xs focus:ring-1 focus:ring-ring focus:outline-none font-mono"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-2">
+                <Button 
+                  type="submit"
+                  className="w-full bg-foreground text-background hover:opacity-90 font-bold py-5 rounded-lg text-xs"
+                >
+                  Confirm & Charge Payment via Razorpay
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

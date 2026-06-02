@@ -389,7 +389,7 @@ interface WorkspaceState {
   auditLogs: AuditLogRecord[];
   feedbackItems: FeedbackRecord[];
   aiUsage: AiUsageRecord[];
-  createInviteLink: (email?: string, role?: string) => Promise<{ ok: boolean; message: string; url?: string }>;
+  createInviteLink: (email?: string, role?: string, customCode?: string) => Promise<{ ok: boolean; message: string; url?: string }>;
   submitFeedback: (message: string, page?: string) => Promise<{ ok: boolean; message: string }>;
   trackAiUsage: () => Promise<{ ok: boolean; message: string }>;
   teamMessages: Record<string, ChatMessage[]>;
@@ -2330,14 +2330,18 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     return { ok: true, message: `Added ${formatPersonTag(friend)} to ${activeWorkspace.name}.`, friend };
   }, [allUsers, appendAuditLog, user, workspace, workspaceMembers]);
 
-  const createInviteLink = useCallback(async (email = '', role = 'Member') => {
+  const createInviteLink = useCallback(async (email = '', role = 'Member', customCode?: string) => {
     if (!user || !workspace) return { ok: false, message: 'Create or join a workspace first.' };
     if (!isAdminLevelRole(user.role)) return { ok: false, message: 'Only admins can create invite links.' };
+
+    const inviteCode = customCode && customCode.trim()
+      ? customCode.trim().toUpperCase()
+      : Math.random().toString(36).slice(2, 10).toUpperCase();
 
     const invite: WorkspaceInviteRecord = {
       id: `invite-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       workspaceId: workspace.id,
-      code: Math.random().toString(36).slice(2, 10).toUpperCase(),
+      code: inviteCode,
       email: email.trim() || undefined,
       role: isAdminLevelRole(role) ? 'Member' : role,
       createdBy: user.id,
@@ -2789,7 +2793,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       }
 
       const nextRole = data.role || 'Member';
-      const updatedUser = { ...user, role: nextRole };
+      const updatedUser = { ...user, role: nextRole, emailVerified: true };
       setUser(updatedUser);
 
       const { data: dbProfiles } = await supabase.from('profiles').select('*');

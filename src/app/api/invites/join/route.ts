@@ -82,6 +82,15 @@ export async function POST(req: Request) {
     const nextRole = invite.role || 'Member';
     await supabase.from('profiles').update({ role: nextRole }).eq('id', user.id);
 
+    // Auto-confirm the user's email address since they joined via a valid invite code
+    try {
+      await supabase.auth.admin.updateUserById(user.id, {
+        email_confirm: true
+      });
+    } catch (authConfirmErr) {
+      console.warn('Could not auto-confirm user email:', authConfirmErr);
+    }
+
     return NextResponse.json({
       ok: true,
       message: 'Successfully joined the team workspace!',

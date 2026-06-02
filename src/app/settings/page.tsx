@@ -115,6 +115,7 @@ export default function SettingsPage() {
   >([]);
   const [newMemberEmail, setNewMemberEmail] = useState('');
   const [newMemberRole, setNewMemberRole] = useState('Member');
+  const [customInviteCode, setCustomInviteCode] = useState('');
   const [inviteLink, setInviteLink] = useState('');
   const [feedbackDraft, setFeedbackDraft] = useState('');
 
@@ -228,12 +229,13 @@ export default function SettingsPage() {
 
   const handleCreateInvite = async (e: React.FormEvent) => {
     e.preventDefault();
-    const result = await createInviteLink(newMemberEmail, newMemberRole);
+    const result = await createInviteLink(newMemberEmail, newMemberRole, customInviteCode);
     if (!result.ok) {
       toast.error(result.message);
       return;
     }
     setInviteLink(result.url || '');
+    setCustomInviteCode('');
     toast.success(result.message);
   };
 
@@ -658,7 +660,18 @@ export default function SettingsPage() {
                       className="px-3 py-1.5 border border-border rounded-md bg-background text-sm focus:ring-1 focus:ring-ring focus:outline-none h-8"
                     />
                   </div>
-                  <div className="flex flex-col gap-1.5 w-32">
+                  <div className="flex flex-col gap-1.5 w-32 font-mono">
+                    <label className="text-xs font-semibold text-foreground font-sans">Custom Code</label>
+                    <input 
+                      type="text" 
+                      value={customInviteCode}
+                      onChange={(e) => setCustomInviteCode(e.target.value.toUpperCase())}
+                      placeholder="e.g. MYCODE"
+                      disabled={!canManageTeamMembers}
+                      className="px-3 py-1.5 border border-border rounded-md bg-background text-sm focus:ring-1 focus:ring-ring focus:outline-none h-8 uppercase font-mono"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5 w-28">
                     <label className="text-xs font-semibold text-foreground">Assign Role</label>
                     <select
                       value={newMemberRole}

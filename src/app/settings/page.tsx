@@ -5,7 +5,8 @@ import { useWorkspace } from '@/lib/store';
 import { 
   Settings, User, Bell, Palette, Shield, CreditCard, Plug, Users, 
   Key, ArrowRight, ShieldCheck, Mail, Database, Globe, Check, AlertTriangle, 
-  Trash2, Plus, Info, RefreshCw, Terminal, ArrowUpRight, HelpCircle, X, ExternalLink
+  Trash2, Plus, Info, RefreshCw, Terminal, ArrowUpRight, HelpCircle, X, ExternalLink,
+  Copy
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';

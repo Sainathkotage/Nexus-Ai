@@ -23,17 +23,13 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const { user, emailRedirect, setEmailRedirect, isAppLoading, workspace } = useWorkspace();
   const pathname = usePathname();
   const router = useRouter();
-  const [hasAuthParam, setHasAuthParam] = useState<boolean>(false);
-
   const isLandingPage = pathname === '/landing';
   const isAuthCallbackOrInvite = pathname.startsWith('/auth') || pathname.startsWith('/invite');
 
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      setHasAuthParam(!!params.get('auth'));
-    }
-  }, [pathname]);
+  // Synchronous query check directly during render to prevent layout lag or hydration flashes
+  const hasAuthParam = typeof window !== 'undefined'
+    ? !!new URLSearchParams(window.location.search).get('auth')
+    : false;
 
   useEffect(() => {
     if (!isAppLoading) {

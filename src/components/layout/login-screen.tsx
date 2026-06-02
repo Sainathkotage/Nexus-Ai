@@ -10,17 +10,13 @@ import { signInWithEnterpriseSso } from '@/lib/enterprise/sso';
 export function LoginScreen() {
   const { login, register, roles } = useWorkspace();
   const signupRoles = (roles || []).filter((r) => !isAdminLevelRole(r));
-  const [activeTab, setActiveTab] = useState<'signin' | 'signup'>('signin');
-
-  useEffect(() => {
+  const [activeTab, setActiveTab] = useState<'signin' | 'signup'>(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
-      const authType = params.get('auth');
-      if (authType === 'signup') {
-        setActiveTab('signup');
-      }
+      return params.get('auth') === 'signup' ? 'signup' : 'signin';
     }
-  }, []);
+    return 'signin';
+  });
 
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);

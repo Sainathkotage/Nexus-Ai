@@ -396,7 +396,7 @@ interface WorkspaceState {
   login: (email: string, password: string) => Promise<boolean>;
   sendOtp: (emailOrPhone: string) => Promise<{ success: boolean; error?: string }>;
   verifyOtp: (emailOrPhone: string, token: string) => Promise<{ success: boolean; error?: string }>;
-  register: (email: string, username: string, tag: string, role: string, password: string) => Promise<boolean>;
+  register: (email: string, username: string, tag: string, role: string, password: string) => Promise<{ success: boolean; needsVerification?: boolean; error?: string }>;
   logout: () => Promise<void>;
   setUserStatus: (status: 'online' | 'offline' | 'idle' | 'dnd') => Promise<void>;
   addFriendByTag: (nameTag: string) => Promise<{ ok: boolean; message: string; friend?: Person }>;
@@ -1918,33 +1918,46 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           emailVerified: !!(data.user.email_confirmed_at || data.user.confirmed_at)
         };
         
-        await supabase.from('profiles').upsert({
-          id: newPerson.id,
-          email: newPerson.email,
-          username: newPerson.name,
-          tag: newPerson.tag,
-          role: newPerson.role,
-          status: 'online'
-        });
+        // Wrap profiles upsert in a safe try-catch so it won't crash signup if unauthenticated/blocked by RLS.
+        // Also note that database trigger handles public.profiles insertion automatically, so this is just a backup.
+        try {
+          await supabase.from('profiles').upsert({
+            id: newPerson.id,
+            email: newPerson.email,
+            username: newPerson.name,
+            tag: newPerson.tag,
+            role: newPerson.role,
+            status: 'online'
+          });
+        } catch (profileError) {
+          console.warn('Silent failure upserting profile in frontend:', profileError);
+        }
 
-        setUser(newPerson);
-        setUserStatusState('online');
-        setFriendIds([]);
-        localStorage.setItem('nexus_user_status', 'online');
-        recordLogin(newPerson);
+        // Only log user in automatically if session is active (email verification disabled)
+        if (data.session) {
+          setUser(newPerson);
+          setUserStatusState('online');
+          setFriendIds([]);
+          localStorage.setItem('nexus_user_status', 'online');
+          recordLogin(newPerson);
 
-        setAllUsers(prev => {
-          const filtered = prev.filter(u => u.email !== email && u.id !== newPerson.id);
-          return [...filtered, newPerson];
-        });
+          setAllUsers(prev => {
+            const filtered = prev.filter(u => u.email !== email && u.id !== newPerson.id);
+            return [...filtered, newPerson];
+          });
 
-        return true;
+          return { success: true, needsVerification: false };
+        } else {
+          // Verification email was sent, or verification is pending
+          return { success: true, needsVerification: true };
+        }
       }
-    } catch (e) {
+    } catch (e: any) {
       console.warn('Supabase sign-up failed or not configured:', e);
+      return { success: false, error: e.message || 'Registration failed' };
     }
 
-    return false;
+    return { success: false, error: 'Registration failed' };
   }, [appendAuditLog]);
 
   const login = useCallback(async (usernameOrEmail: string, password: string) => {

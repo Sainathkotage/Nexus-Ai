@@ -69,14 +69,18 @@ export function LoginScreen() {
 
     setLoading(true);
     try {
-      const success = await register(email, username, finalTag, role, password);
-      if (success) {
-        toast.success(`Registered successfully as ${username}#${finalTag}!`);
+      const result = await register(email, username, finalTag, role, password);
+      if (result.success) {
+        if (result.needsVerification) {
+          toast.success(`Verification email sent! Please check your email to confirm.`);
+        } else {
+          toast.success(`Registered successfully as ${username}#${finalTag}!`);
+        }
       } else {
-        toast.error('Registration failed');
+        toast.error(result.error || 'Registration failed');
       }
-    } catch (err) {
-      toast.error('Registration failed');
+    } catch (err: any) {
+      toast.error(err?.message || 'Registration failed');
     } finally {
       setLoading(false);
     }

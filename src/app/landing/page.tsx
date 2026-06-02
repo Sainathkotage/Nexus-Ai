@@ -4,6 +4,7 @@ import React, { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { useWorkspace } from '@/lib/store';
+import { MessageSquare, ClipboardList, Search } from 'lucide-react';
 
 export default function LandingPage() {
   const router = useRouter();
@@ -575,14 +576,18 @@ export default function LandingPage() {
 
             <div className="scenario-grid">
               <div className="scenario-card">
-                <div className="scenario-icon">💬</div>
+                <div className="scenario-icon">
+                  <MessageSquare className="w-5 h-5 text-indigo-500 dark:text-indigo-400" />
+                </div>
                 <h3>Team chat gets lost</h3>
                 <p>
                   That decision you made in Slack? Your PM tool has no idea. You end up explaining it again.
                 </p>
               </div>
               <div className="scenario-card">
-                <div className="scenario-icon">📋</div>
+                <div className="scenario-icon">
+                  <ClipboardList className="w-5 h-5 text-indigo-500 dark:text-indigo-400" />
+                </div>
                 <h3>Tasks don&apos;t match reality</h3>
                 <p>
                   What&apos;s in your task board doesn&apos;t reflect what actually happened in meetings, calls,
@@ -590,7 +595,9 @@ export default function LandingPage() {
                 </p>
               </div>
               <div className="scenario-card">
-                <div className="scenario-icon">🔍</div>
+                <div className="scenario-icon">
+                  <Search className="w-5 h-5 text-indigo-500 dark:text-indigo-400" />
+                </div>
                 <h3>Context is everywhere and nowhere</h3>
                 <p>
                   Information is spread across whiteboards, docs, chat, and notes. Good luck finding it when

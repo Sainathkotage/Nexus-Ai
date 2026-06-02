@@ -16,20 +16,20 @@ import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { Mail, Copy, ExternalLink, AlertTriangle } from 'lucide-react';
 
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const { user, emailRedirect, setEmailRedirect, isAppLoading, workspace } = useWorkspace();
   const pathname = usePathname();
   const router = useRouter();
+  const searchParams = useSearchParams();
+
   const isLandingPage = pathname === '/landing';
   const isAuthCallbackOrInvite = pathname.startsWith('/auth') || pathname.startsWith('/invite');
 
   // Synchronous query check directly during render to prevent layout lag or hydration flashes
-  const hasAuthParam = typeof window !== 'undefined'
-    ? !!new URLSearchParams(window.location.search).get('auth')
-    : false;
+  const hasAuthParam = searchParams ? !!searchParams.get('auth') : false;
 
   useEffect(() => {
     if (!isAppLoading) {

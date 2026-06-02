@@ -7,6 +7,8 @@ import { AppLayout } from "@/components/layout/app-layout";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 
+import { Suspense } from "react";
+
 const inter = Inter({
   subsets: ["latin"],
   variable: "--font-inter",
@@ -30,9 +32,11 @@ export default function RootLayout({
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
           <WorkspaceProvider>
             <TooltipProvider>
-              <AppLayout>
-                {children}
-              </AppLayout>
+              <Suspense fallback={<div className="min-h-screen w-full bg-[#f7f6f3] dark:bg-[#121212]" />}>
+                <AppLayout>
+                  {children}
+                </AppLayout>
+              </Suspense>
               <Toaster />
             </TooltipProvider>
           </WorkspaceProvider>

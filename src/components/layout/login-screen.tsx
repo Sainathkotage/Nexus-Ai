@@ -1,21 +1,20 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { isAdminLevelRole, useWorkspace } from '@/lib/store';
 import { Button } from '@/components/ui/button';
 import { Mail, Lock, User, Tag, Briefcase, Eye, EyeOff, Building2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { signInWithEnterpriseSso } from '@/lib/enterprise/sso';
+import { useSearchParams } from 'next/navigation';
 
 export function LoginScreen() {
   const { login, register, roles } = useWorkspace();
   const signupRoles = (roles || []).filter((r) => !isAdminLevelRole(r));
+  const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<'signin' | 'signup'>(() => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      return params.get('auth') === 'signup' ? 'signup' : 'signin';
-    }
-    return 'signin';
+    const authType = searchParams ? searchParams.get('auth') : null;
+    return authType === 'signup' ? 'signup' : 'signin';
   });
 
   const [loading, setLoading] = useState(false);

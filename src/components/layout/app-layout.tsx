@@ -7,6 +7,7 @@ import { TopBar } from './top-bar';
 import { CommandPalette } from './command-palette';
 import { useWorkspace } from '@/lib/store';
 import { LoginScreen } from './login-screen';
+import { GuestAutoJoin } from './guest-auto-join';
 import { NoWorkspaceScreen } from './no-workspace-screen';
 import { VerifyEmailScreen } from './verify-email-screen';
 import { AppShellSkeleton, LoginScreenSkeleton } from './app-shell-skeleton';
@@ -24,6 +25,15 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
+
+  const inviteCodeParam = searchParams ? searchParams.get('inviteCode') : null;
+  const [guestMode, setGuestMode] = useState(true);
+
+  useEffect(() => {
+    if (inviteCodeParam) {
+      setGuestMode(true);
+    }
+  }, [inviteCodeParam]);
 
   const isLandingPage = pathname === '/landing';
   const isAuthCallbackOrInvite = pathname.startsWith('/auth') || pathname.startsWith('/invite');
@@ -99,6 +109,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   };
 
   if (!user) {
+    if (hasInviteParam && guestMode && inviteCodeParam) {
+      return <GuestAutoJoin code={inviteCodeParam} onCancel={() => setGuestMode(false)} />;
+    }
     if (hasAuthParam || hasInviteParam || isAuthCallbackOrInvite) {
       return <LoginScreen />;
     }

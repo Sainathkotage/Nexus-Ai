@@ -30,13 +30,14 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   // Synchronous query check directly during render to prevent layout lag or hydration flashes
   const hasAuthParam = searchParams ? !!searchParams.get('auth') : false;
+  const hasInviteParam = searchParams ? !!searchParams.get('inviteCode') : false;
 
   useEffect(() => {
     if (!isAppLoading) {
       const inviteCode = searchParams ? searchParams.get('inviteCode') : null;
       const inviteQuery = inviteCode ? `inviteCode=${inviteCode}` : '';
 
-      if (!user && !isLandingPage && !hasAuthParam && !isAuthCallbackOrInvite) {
+      if (!user && !isLandingPage && !hasAuthParam && !hasInviteParam && !isAuthCallbackOrInvite) {
         const query = inviteQuery ? `?${inviteQuery}` : '';
         router.push(`/landing${query}`);
       } else if (user && isLandingPage) {
@@ -44,7 +45,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         router.push(`/${query}`);
       }
     }
-  }, [user, isAppLoading, isLandingPage, hasAuthParam, isAuthCallbackOrInvite, router, searchParams]);
+  }, [user, isAppLoading, isLandingPage, hasAuthParam, hasInviteParam, isAuthCallbackOrInvite, router, searchParams]);
 
   useEffect(() => {
     if (isLandingPage) return;
@@ -98,7 +99,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   };
 
   if (!user) {
-    if (hasAuthParam || isAuthCallbackOrInvite) {
+    if (hasAuthParam || hasInviteParam || isAuthCallbackOrInvite) {
       return <LoginScreen />;
     }
     return <LoginScreenSkeleton />;

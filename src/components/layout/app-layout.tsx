@@ -86,6 +86,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     return <AppShellSkeleton />;
   }
 
+  // Allow invite paths to bypass user authentication, workspace, and verification gates
+  if (pathname.startsWith('/invite')) {
+    return <div className="min-h-screen w-full overflow-x-hidden">{children}</div>;
+  }
+
   const handleGmailWeb = () => {
     if (!emailRedirect) return;
     const url = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(emailRedirect.to)}&su=${encodeURIComponent(emailRedirect.subject)}&body=${encodeURIComponent(emailRedirect.body)}`;

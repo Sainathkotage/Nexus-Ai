@@ -2986,6 +2986,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     if (!code || !code.trim()) return { ok: false, message: 'Code cannot be empty.' };
 
     try {
+      // 1. Try to join directly as an individual invitee first
       const response = await fetch('/api/invites/join', {
         method: 'POST',
         headers: {
@@ -2995,29 +2996,49 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       });
 
       const data = await response.json();
-      if (!response.ok || !data.ok) {
-        return { ok: false, message: data.error || data.message || 'Failed to join the workspace.' };
+      if (response.ok && data.ok) {
+        const nextRole = data.role || 'Member';
+        const updatedUser = { ...user, role: nextRole, emailVerified: true };
+        setUser(updatedUser);
+
+        const { data: dbProfiles } = await supabase.from('profiles').select('*');
+        const profiles = (dbProfiles || []).map((p: any) => ({
+          id: p.id,
+          name: p.username,
+          email: p.email,
+          avatar: p.avatar || '',
+          role: p.role || 'Member',
+          tag: p.tag || '1000',
+          status: p.status || 'offline',
+          lastSeenAt: p.last_seen_at
+        }));
+        await hydrateTeamAccess(updatedUser, profiles);
+
+        appendAuditLog(updatedUser, 'Join workspace', `Joined workspace via invite code: ${code}`, data.workspaceId);
+        return { ok: true, message: data.message || 'Successfully joined the team!' };
       }
 
-      const nextRole = data.role || 'Member';
-      const updatedUser = { ...user, role: nextRole, emailVerified: true };
-      setUser(updatedUser);
+      // 2. If direct join failed, check if this is a general workspace invite code
+      const detailsRes = await fetch(`/api/invites/details?code=${code}`);
+      const detailsData = await detailsRes.json();
+      if (detailsRes.ok && detailsData.ok) {
+        // Submit a join request instead
+        const requestRes = await fetch('/api/invites/request', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ code }),
+        });
+        const requestData = await requestRes.json();
+        if (requestRes.ok && requestData.ok) {
+          return { ok: true, message: 'Join request submitted! Awaiting administrator approval. Please keep the invite link open to check status.' };
+        } else {
+          return { ok: false, message: requestData.error || 'Failed to submit join request.' };
+        }
+      }
 
-      const { data: dbProfiles } = await supabase.from('profiles').select('*');
-      const profiles = (dbProfiles || []).map((p: any) => ({
-        id: p.id,
-        name: p.username,
-        email: p.email,
-        avatar: p.avatar || '',
-        role: p.role || 'Member',
-        tag: p.tag || '1000',
-        status: p.status || 'offline',
-        lastSeenAt: p.last_seen_at
-      }));
-      await hydrateTeamAccess(updatedUser, profiles);
-
-      appendAuditLog(updatedUser, 'Join workspace', `Joined workspace via invite code: ${code}`, data.workspaceId);
-      return { ok: true, message: data.message || 'Successfully joined the team!' };
+      return { ok: false, message: data.error || data.message || 'Failed to join the workspace.' };
     } catch (err: any) {
       console.error('Failed to join workspace:', err);
       return { ok: false, message: err.message || 'An error occurred while joining the team.' };

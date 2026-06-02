@@ -33,13 +33,18 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!isAppLoading) {
+      const inviteCode = searchParams ? searchParams.get('inviteCode') : null;
+      const inviteQuery = inviteCode ? `inviteCode=${inviteCode}` : '';
+
       if (!user && !isLandingPage && !hasAuthParam && !isAuthCallbackOrInvite) {
-        router.push('/landing');
+        const query = inviteQuery ? `?${inviteQuery}` : '';
+        router.push(`/landing${query}`);
       } else if (user && isLandingPage) {
-        router.push('/');
+        const query = inviteQuery ? `?${inviteQuery}` : '';
+        router.push(`/${query}`);
       }
     }
-  }, [user, isAppLoading, isLandingPage, hasAuthParam, isAuthCallbackOrInvite, router]);
+  }, [user, isAppLoading, isLandingPage, hasAuthParam, isAuthCallbackOrInvite, router, searchParams]);
 
   useEffect(() => {
     if (isLandingPage) return;

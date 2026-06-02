@@ -26,7 +26,17 @@ export default function LandingPage() {
   }, [darkMode]);
 
   const goToWorkspace = (query?: string) => {
-    router.push(query ? `/?${query}` : '/');
+    const searchParams = new URLSearchParams(window.location.search);
+    const inviteCode = searchParams.get('inviteCode');
+
+    let finalQuery = query || '';
+    if (inviteCode) {
+      const params = new URLSearchParams(finalQuery);
+      params.set('inviteCode', inviteCode);
+      finalQuery = params.toString();
+    }
+
+    router.push(finalQuery ? `/?${finalQuery}` : '/');
   };
 
   const handleStartTrial = (e: React.MouseEvent) => {

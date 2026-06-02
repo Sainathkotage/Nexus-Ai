@@ -23,11 +23,30 @@ export function NoWorkspaceScreen() {
 
   useEffect(() => {
     if (inviteCodeParam) {
-      setInviteCode(inviteCodeParam.trim().toUpperCase());
+      const finalCode = inviteCodeParam.trim().toUpperCase();
+      setInviteCode(finalCode);
       setActiveTab('join');
-      toast.info('Workspace invite code detected! Click "Join Team" below.');
+
+      // Auto-join the workspace using the invite code
+      const autoJoin = async () => {
+        setLoading(true);
+        const toastId = toast.loading('Joining team workspace...', { duration: Infinity });
+        try {
+          const result = await joinWorkspaceByCode(finalCode);
+          if (result.ok) {
+            toast.success(result.message, { id: toastId });
+          } else {
+            toast.error(result.message, { id: toastId });
+          }
+        } catch (err) {
+          toast.error('An error occurred while joining the team.', { id: toastId });
+        } finally {
+          setLoading(false);
+        }
+      };
+      autoJoin();
     }
-  }, [inviteCodeParam]);
+  }, [inviteCodeParam, joinWorkspaceByCode]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();

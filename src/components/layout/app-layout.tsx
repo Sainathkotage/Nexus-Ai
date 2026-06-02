@@ -129,10 +129,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     return <LoginScreenSkeleton />;
   }
 
-  if (!workspace) {
-    return <NoWorkspaceScreen />;
-  }
-
   if (!user.emailVerified) {
     return <VerifyEmailScreen />;
   }

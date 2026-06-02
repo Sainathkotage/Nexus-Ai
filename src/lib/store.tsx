@@ -398,12 +398,15 @@ interface WorkspaceState {
   friendIds: string[];
   canManageTeamMembers: boolean;
   workspace: WorkspaceRecord | null;
+  setWorkspace: (workspace: WorkspaceRecord | null) => void;
+  myWorkspaces: WorkspaceRecord[];
   workspaceMembers: WorkspaceMemberRecord[];
   workspaceInvites: WorkspaceInviteRecord[];
   joinRequests: WorkspaceJoinRequestRecord[];
   auditLogs: AuditLogRecord[];
   feedbackItems: FeedbackRecord[];
   aiUsage: AiUsageRecord[];
+  switchWorkspace: (workspaceId: string) => Promise<void>;
   createInviteLink: (email?: string, role?: string, customCode?: string) => Promise<{ ok: boolean; message: string; url?: string }>;
   submitFeedback: (message: string, page?: string) => Promise<{ ok: boolean; message: string }>;
   trackAiUsage: () => Promise<{ ok: boolean; message: string }>;
@@ -582,6 +585,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   // Workspace readiness state
   const [workspace, setWorkspace] = useState<WorkspaceRecord | null>(null);
+  const [myWorkspaces, setMyWorkspaces] = useState<WorkspaceRecord[]>([]);
   const [workspaceMembers, setWorkspaceMembers] = useState<WorkspaceMemberRecord[]>([]);
   const [workspaceInvites, setWorkspaceInvites] = useState<WorkspaceInviteRecord[]>([]);
   const [joinRequests, setJoinRequests] = useState<WorkspaceJoinRequestRecord[]>([]);
@@ -722,25 +726,43 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     const visibleUserIds = new Set([person.id, ...teammateIds]);
     setAllUsers(profiles.filter(profile => visibleUserIds.has(profile.id)));
 
-    const firstWorkspaceRow = activeMemberships.find(member => member.user_id === person.id)?.workspaces;
-    if (firstWorkspaceRow) {
-      setWorkspace({
-        id: firstWorkspaceRow.id,
-        name: firstWorkspaceRow.name,
-        slug: firstWorkspaceRow.slug,
-        ownerId: firstWorkspaceRow.owner_id,
-        createdAt: firstWorkspaceRow.created_at,
-        inviteCode: firstWorkspaceRow.invite_code,
-      });
+    // Map workspaces to set myWorkspaces
+    const userWorkspaceRows = activeMemberships
+      .filter(member => member.user_id === person.id)
+      .map(member => member.workspaces)
+      .filter(Boolean);
+    const mappedWorkspaces: WorkspaceRecord[] = userWorkspaceRows.map((ws: any) => ({
+      id: ws.id,
+      name: ws.name,
+      slug: ws.slug,
+      ownerId: ws.owner_id,
+      createdAt: ws.created_at,
+      inviteCode: ws.invite_code,
+    }));
+    setMyWorkspaces(mappedWorkspaces);
+
+    // Keep active workspace if it exists in the new list, otherwise default to first
+    let currentWorkspaceId: string | null = null;
+    setWorkspace(prev => {
+      currentWorkspaceId = prev?.id || null;
+      return prev;
+    });
+
+    const hasCurrentWorkspace = currentWorkspaceId && mappedWorkspaces.some(ws => ws.id === currentWorkspaceId);
+    if (hasCurrentWorkspace) {
+      const targetWs = mappedWorkspaces.find(ws => ws.id === currentWorkspaceId)!;
+      setWorkspace(targetWs);
+    } else if (mappedWorkspaces.length > 0) {
+      setWorkspace(mappedWorkspaces[0]);
     } else {
-        setWorkspace(null);
-        setWorkspaceMembers([]);
-        setFriendIds([]);
-        setChannels([]);
-        setChannelMessages({});
-        setTeamMessages({});
+      setWorkspace(null);
+      setWorkspaceMembers([]);
+      setFriendIds([]);
+      setChannels([]);
+      setChannelMessages({});
+      setTeamMessages({});
     }
-  }, [bootstrapWorkspaceForUser]);
+  }, []);
 
   // Time Tracker Running Effect
   useEffect(() => {
@@ -2922,6 +2944,60 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     return id;
   }, [workspace]);
 
+  const switchWorkspace = useCallback(async (workspaceId: string) => {
+    if (!user) return;
+    const targetWs = myWorkspaces.find(ws => ws.id === workspaceId);
+    if (!targetWs) return;
+
+    setWorkspace(targetWs);
+    try {
+      const { data: memberships, error } = await supabase
+        .from('workspace_members')
+        .select('workspace_id, user_id, role, status, added_by, joined_at')
+        .eq('workspace_id', workspaceId)
+        .eq('status', 'active');
+
+      if (error) throw error;
+
+      const mappedMembers: WorkspaceMemberRecord[] = (memberships || []).map(member => ({
+        workspaceId: member.workspace_id,
+        userId: member.user_id,
+        role: member.role || 'Member',
+        status: member.status as any || 'active',
+        addedBy: member.added_by || undefined,
+        joinedAt: member.joined_at || undefined,
+      }));
+      setWorkspaceMembers(mappedMembers);
+
+      const teammateIds = Array.from(new Set(
+        mappedMembers
+          .filter(member => member.userId !== user.id)
+          .map(member => member.userId)
+      ));
+      setFriendIds(teammateIds);
+
+      const { data: dbProfiles } = await supabase.from('profiles').select('*');
+      if (dbProfiles) {
+        const mappedProfilesList: Person[] = dbProfiles.map((p: any) => ({
+          id: p.id,
+          name: p.username,
+          email: p.email,
+          avatar: p.avatar || '',
+          role: p.role || 'Member',
+          tag: p.tag || '1000',
+          status: p.status || 'offline',
+          lastSeenAt: p.last_seen_at
+        }));
+        const visibleUserIds = new Set([user.id, ...teammateIds]);
+        setAllUsers(mappedProfilesList.filter(profile => visibleUserIds.has(profile.id)));
+      }
+      toast.success(`Switched to workspace: ${targetWs.name}`);
+    } catch (err: any) {
+      console.error('Failed to switch workspace:', err);
+      toast.error('Failed to load workspace members.');
+    }
+  }, [myWorkspaces, user]);
+
   const createWorkspace = useCallback(async (name: string) => {
     if (!user) return false;
     try {
@@ -2954,14 +3030,16 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       const updatedUser = { ...user, role: 'Admin' };
       setUser(updatedUser);
 
-      setWorkspace({
+      const newWorkspaceRecord: WorkspaceRecord = {
         id: workspaceId,
         name,
         slug: newSlug,
         ownerId: user.id,
         createdAt: new Date().toISOString(),
         inviteCode: inviteCode
-      });
+      };
+      setWorkspace(newWorkspaceRecord);
+      setMyWorkspaces(prev => [...prev, newWorkspaceRecord]);
 
       setWorkspaceMembers([{
         workspaceId,
@@ -2986,7 +3064,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     if (!code || !code.trim()) return { ok: false, message: 'Code cannot be empty.' };
 
     try {
-      // 1. Try to join directly as an individual invitee first
+      // Try to join directly via the endpoint
       const response = await fetch('/api/invites/join', {
         method: 'POST',
         headers: {
@@ -3016,26 +3094,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
         appendAuditLog(updatedUser, 'Join workspace', `Joined workspace via invite code: ${code}`, data.workspaceId);
         return { ok: true, message: data.message || 'Successfully joined the team!' };
-      }
-
-      // 2. If direct join failed, check if this is a general workspace invite code
-      const detailsRes = await fetch(`/api/invites/details?code=${code}`);
-      const detailsData = await detailsRes.json();
-      if (detailsRes.ok && detailsData.ok) {
-        // Submit a join request instead
-        const requestRes = await fetch('/api/invites/request', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ code }),
-        });
-        const requestData = await requestRes.json();
-        if (requestRes.ok && requestData.ok) {
-          return { ok: true, message: 'Join request submitted! Awaiting administrator approval. Please keep the invite link open to check status.' };
-        } else {
-          return { ok: false, message: requestData.error || 'Failed to submit join request.' };
-        }
       }
 
       return { ok: false, message: data.error || data.message || 'Failed to join the workspace.' };
@@ -3764,7 +3822,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     tasks, addTask, deleteTask, moveTask, updateTask, taskView, setTaskView, selectedTaskId, setSelectedTaskId,
     calendarEvents, selectedDate, setSelectedDate, addEventToCalendar, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent,
     user, userStatus, allUsers, friendIds, canManageTeamMembers,
-    workspace, workspaceMembers, workspaceInvites, joinRequests, auditLogs, feedbackItems, aiUsage,
+    workspace, setWorkspace, myWorkspaces, workspaceMembers, workspaceInvites, joinRequests, auditLogs, feedbackItems, aiUsage,
     createInviteLink, submitFeedback, trackAiUsage,
     teamMessages, login, sendOtp, verifyOtp, register, logout, setUserStatus, addFriendByTag, sendTeamMessage,
     customStatus, dnd, setCustomStatus, setDnd,
@@ -3787,7 +3845,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     typingUsers, onlinePresence, broadcastTyping,
     toggleStarChannel, editChannelMessage, deleteChannelMessage,
     addReaction, removeReaction, togglePinMessage, markMessageAsRead, createChannel,
-    createWorkspace, joinWorkspaceByCode, createJoinRequest, reviewJoinRequest, regenerateWorkspaceInviteCode, updateMemberRole,
+    createWorkspace, joinWorkspaceByCode, createJoinRequest, reviewJoinRequest, regenerateWorkspaceInviteCode, updateMemberRole, switchWorkspace,
   };
 
   return (

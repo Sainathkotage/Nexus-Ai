@@ -18,14 +18,13 @@ export default function InvitePage() {
   const params = useParams();
   const code = params.code as string;
 
-  const { user, createJoinRequest } = useWorkspace();
+  const { user, joinWorkspaceByCode } = useWorkspace();
 
   const [loading, setLoading] = useState(true);
   const [requesting, setRequesting] = useState(false);
   const [workspace, setWorkspace] = useState<WorkspaceDetails | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isMember, setIsMember] = useState(false);
-  const [joinRequestStatus, setJoinRequestStatus] = useState<'pending' | 'approved' | 'rejected' | null>(null);
 
   useEffect(() => {
     if (!code) return;
@@ -44,7 +43,7 @@ export default function InvitePage() {
 
         setWorkspace(data.workspace);
 
-        // If signed in, check their membership status and join request status
+        // If signed in, check their membership status
         if (user) {
           // Check membership
           const { data: member } = await supabase
@@ -59,18 +58,6 @@ export default function InvitePage() {
             setLoading(false);
             return;
           }
-
-          // Check join request status
-          const { data: request } = await supabase
-            .from('workspace_join_requests')
-            .select('status')
-            .eq('workspace_id', data.workspace.id)
-            .eq('user_id', user.id)
-            .maybeSingle();
-
-          if (request) {
-            setJoinRequestStatus(request.status);
-          }
         }
       } catch (err: any) {
         console.error('Error fetching invite details:', err);
@@ -83,14 +70,15 @@ export default function InvitePage() {
     fetchInviteDetails();
   }, [code, user]);
 
-  const handleRequestToJoin = async () => {
+  const handleJoinWorkspace = async () => {
     if (!workspace) return;
     try {
       setRequesting(true);
-      const res = await createJoinRequest(code);
+      const res = await joinWorkspaceByCode(code);
       if (res.ok) {
         toast.success(res.message);
-        setJoinRequestStatus('pending');
+        setIsMember(true);
+        router.push('/');
       } else {
         toast.error(res.message);
       }
@@ -194,68 +182,19 @@ export default function InvitePage() {
                   <ArrowRight size={16} />
                 </button>
               </div>
-            ) : joinRequestStatus === 'pending' ? (
-              <div className="w-full space-y-4">
-                <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl p-4 text-amber-400 flex items-center gap-3 text-left text-sm mb-2">
-                  <Clock className="shrink-0 text-amber-400 animate-pulse" size={20} />
-                  <div>
-                    <span className="font-semibold block text-white text-xs">Request Pending</span>
-                    Your join request has been submitted and is awaiting administrator approval.
-                  </div>
-                </div>
-                <button
-                  onClick={handleGoToDashboard}
-                  className="w-full py-3 px-4 bg-zinc-800 hover:bg-zinc-700 text-white font-semibold rounded-lg text-sm transition-all"
-                >
-                  Return to Homepage
-                </button>
-              </div>
-            ) : joinRequestStatus === 'approved' ? (
-              <div className="w-full space-y-4">
-                <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-4 text-emerald-400 flex items-center gap-3 text-left text-sm mb-2">
-                  <CheckCircle2 className="shrink-0" size={20} />
-                  <div>
-                    <span className="font-semibold block text-white text-xs">Request Approved</span>
-                    Your request was approved! You can now access all channels and files.
-                  </div>
-                </div>
-                <button
-                  onClick={handleGoToDashboard}
-                  className="w-full py-3 px-4 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-black font-semibold rounded-lg text-sm transition-all flex items-center justify-center gap-2"
-                >
-                  Enter Workspace
-                  <ArrowRight size={16} />
-                </button>
-              </div>
-            ) : joinRequestStatus === 'rejected' ? (
-              <div className="w-full space-y-4">
-                <div className="bg-red-500/5 border border-red-500/20 rounded-xl p-4 text-red-400 flex items-center gap-3 text-left text-sm mb-2">
-                  <XCircle className="shrink-0" size={20} />
-                  <div>
-                    <span className="font-semibold block text-white text-xs">Request Declined</span>
-                    Your request to join this workspace was declined by the administrator.
-                  </div>
-                </div>
-                <button
-                  onClick={handleGoToDashboard}
-                  className="w-full py-3 px-4 bg-zinc-800 hover:bg-zinc-700 text-white font-semibold rounded-lg text-sm transition-all"
-                >
-                  Return to Homepage
-                </button>
-              </div>
             ) : (
               <button
-                onClick={handleRequestToJoin}
+                onClick={handleJoinWorkspace}
                 disabled={requesting}
                 className="w-full py-3 px-4 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 disabled:from-emerald-500/50 disabled:to-teal-500/50 text-black font-semibold rounded-lg text-sm transition-all shadow-lg shadow-emerald-500/10 flex items-center justify-center gap-2 hover:scale-[1.01]"
               >
                 {requesting ? (
                   <>
                     <div className="w-4 h-4 rounded-full border-2 border-black border-t-transparent animate-spin" />
-                    Submitting request...
+                    Joining Workspace...
                   </>
                 ) : (
-                  'Request to Join Workspace'
+                  'Join Workspace'
                 )}
               </button>
             )}

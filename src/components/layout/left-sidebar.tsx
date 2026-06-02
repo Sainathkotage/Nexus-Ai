@@ -42,10 +42,15 @@ export function LeftSidebar({ onOpenSearch }: LeftSidebarProps) {
     customStatus,
     setCustomStatus,
     dnd,
-    setDnd
+    setDnd,
+    workspace,
+    setWorkspace,
+    myWorkspaces,
+    switchWorkspace
   } = useWorkspace();
   const router = useRouter();
   const [showUserMenu, setShowUserMenu] = React.useState(false);
+  const [showWorkspaceDropdown, setShowWorkspaceDropdown] = React.useState(false);
 
   const handleNav = (id: PageId) => {
     setActivePage(id);
@@ -67,12 +72,73 @@ export function LeftSidebar({ onOpenSearch }: LeftSidebarProps) {
       className="h-full border-r border-sidebar-border bg-sidebar flex flex-col overflow-hidden shrink-0"
     >
       {/* Workspace Header */}
-      <div className="h-12 flex items-center px-3 shrink-0">
-        <button className="flex items-center gap-2 px-1.5 py-1 rounded-md hover:bg-accent/60 transition-colors w-full">
+      <div className="h-12 flex items-center px-3 shrink-0 relative">
+        <button 
+          onClick={() => setShowWorkspaceDropdown(!showWorkspaceDropdown)}
+          className="flex items-center gap-2 px-1.5 py-1 rounded-md hover:bg-accent/60 transition-colors w-full text-left"
+        >
           <img src="/logo.png" className="w-5 h-5 object-contain rounded shrink-0" alt="Logo" />
-          <span className="text-sm font-semibold text-foreground truncate">Nexus AI</span>
+          <span className="text-sm font-semibold text-foreground truncate">
+            {workspace ? workspace.name : 'Select Workspace'}
+          </span>
           <ChevronDown className="w-3 h-3 text-muted-foreground ml-auto shrink-0" />
         </button>
+
+        {/* Workspace Dropdown Panel */}
+        <AnimatePresence>
+          {showWorkspaceDropdown && (
+            <motion.div
+              initial={{ opacity: 0, y: -10, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -10, scale: 0.95 }}
+              transition={{ duration: 0.1 }}
+              className="absolute top-12 left-2 right-2 bg-popover border border-border shadow-lg rounded-lg p-2 flex flex-col gap-1 z-50 text-sm"
+            >
+              <div className="px-2 py-1 border-b border-border pb-1.5 text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">
+                Your Workspaces
+              </div>
+              <div className="flex flex-col gap-0.5 max-h-48 overflow-y-auto">
+                {myWorkspaces.map(ws => (
+                  <button
+                    key={ws.id}
+                    onClick={() => {
+                      switchWorkspace(ws.id);
+                      setShowWorkspaceDropdown(false);
+                    }}
+                    className={cn(
+                      "flex items-center gap-2 px-2.5 py-1.5 rounded text-left text-xs transition-colors w-full",
+                      workspace?.id === ws.id 
+                        ? "bg-accent text-foreground font-semibold" 
+                        : "text-muted-foreground hover:bg-accent/40 hover:text-foreground"
+                    )}
+                  >
+                    <span className="w-2 h-2 rounded-full bg-primary shrink-0" />
+                    <span className="truncate flex-1">{ws.name}</span>
+                    {workspace?.id === ws.id && <Check className="w-3.5 h-3.5 text-primary shrink-0" />}
+                  </button>
+                ))}
+                {myWorkspaces.length === 0 && (
+                  <div className="px-2 py-3 text-center text-xs text-muted-foreground italic">
+                    No active teams.
+                  </div>
+                )}
+              </div>
+              <div className="h-px bg-border my-0.5" />
+              <button
+                onClick={() => {
+                  setWorkspace(null);
+                  setActivePage('dashboard');
+                  router.push('/');
+                  setShowWorkspaceDropdown(false);
+                }}
+                className="flex items-center gap-2 px-2 py-1.5 text-left text-xs text-indigo-500 hover:bg-indigo-500/5 dark:hover:bg-indigo-500/10 rounded w-full font-semibold transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5 shrink-0" />
+                <span>+ Create or Join Team</span>
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Search */}

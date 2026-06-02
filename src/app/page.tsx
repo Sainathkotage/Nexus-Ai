@@ -33,11 +33,178 @@ export default function DashboardPage() {
     deleteGoal,
     roles,
     addRole,
-    loginActivities
+    loginActivities,
+    workspace,
+    createWorkspace,
+    joinWorkspaceByCode
   } = useWorkspace();
   const router = useRouter();
   const [greeting, setGreeting] = useState('Good morning');
   const today = new Date();
+
+  const [loading, setLoading] = useState(false);
+  const [teamName, setTeamName] = useState('');
+  const [inviteCode, setInviteCode] = useState('');
+
+  const handleCreateTeam = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!teamName.trim()) {
+      toast.error('Team name cannot be empty');
+      return;
+    }
+    setLoading(true);
+    try {
+      const success = await createWorkspace(teamName.trim());
+      if (success) {
+        toast.success(`Welcome to your new team: ${teamName.trim()}!`);
+      }
+    } catch (err) {
+      toast.error('Failed to create team workspace');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const extractAndCleanCode = (input: string) => {
+    let cleaned = input.trim();
+    if (!cleaned) return '';
+
+    if (cleaned.includes('/invite/')) {
+      const parts = cleaned.split('/invite/');
+      cleaned = parts[parts.length - 1].split('?')[0].split('#')[0];
+    } else if (cleaned.includes('inviteCode=')) {
+      const parts = cleaned.split('inviteCode=');
+      cleaned = parts[parts.length - 1].split('&')[0].split('#')[0];
+    } else if (cleaned.includes('/') && (cleaned.startsWith('http://') || cleaned.startsWith('https://') || cleaned.split('/').length > 1)) {
+      const parts = cleaned.split('/');
+      cleaned = parts[parts.length - 1].split('?')[0].split('#')[0];
+    }
+    return cleaned.toUpperCase();
+  };
+
+  const handleJoinTeam = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const finalCode = extractAndCleanCode(inviteCode);
+    if (!finalCode) {
+      toast.error('Invite code cannot be empty');
+      return;
+    }
+    setInviteCode(finalCode);
+    setLoading(true);
+    try {
+      const result = await joinWorkspaceByCode(finalCode);
+      if (result.ok) {
+        toast.success(result.message);
+      } else {
+        toast.error(result.message);
+      }
+    } catch (err) {
+      toast.error('An error occurred while joining the team.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!workspace) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-6 md:p-12 bg-background relative overflow-hidden min-h-[calc(100vh-3rem)]">
+        {/* Background glow effects */}
+        <div className="absolute top-1/4 left-1/4 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-primary/10 rounded-full filter blur-[120px] pointer-events-none" />
+        <div className="absolute bottom-1/4 right-1/4 translate-x-1/2 translate-y-1/2 w-96 h-96 bg-indigo-500/10 rounded-full filter blur-[120px] pointer-events-none" />
+
+        <div className="w-full max-w-4xl flex flex-col gap-8 relative z-10">
+          <div className="flex flex-col items-center text-center gap-2">
+            <img src="/logo.png" className="w-16 h-16 object-contain rounded-xl shadow-lg border border-border/50 mb-2" alt="Logo" />
+            <h1 className="text-3xl font-extrabold tracking-tight text-foreground">
+              Welcome to Nexus AI
+            </h1>
+            <p className="text-sm text-muted-foreground max-w-lg">
+              Get started by creating a new collaborative workspace for your team or joining an existing one.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-stretch">
+            {/* Create Workspace Card */}
+            <div className="bg-card/45 backdrop-blur-md border border-border/80 rounded-2xl p-6 md:p-8 flex flex-col justify-between shadow-xl relative overflow-hidden group hover:border-primary/30 transition-all duration-300">
+              <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-emerald-500 to-teal-400 opacity-70" />
+              <div className="flex flex-col gap-4">
+                <div className="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 group-hover:scale-105 transition-transform">
+                  <Plus className="w-6 h-6" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-foreground">Create a Team Workspace</h2>
+                  <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                    Start fresh. Create a workspace, generate invite codes, and invite teammates to chat, edit documents, share tasks, and collaborate.
+                  </p>
+                </div>
+                <form onSubmit={handleCreateTeam} className="flex flex-col gap-3.5 mt-2">
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Team Name</label>
+                    <input
+                      type="text"
+                      value={teamName}
+                      onChange={(e) => setTeamName(e.target.value)}
+                      placeholder="e.g. Acme Corporation or Dev Team"
+                      className="w-full bg-[#fcfcfb] dark:bg-[#1a1a1a] border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary/40 focus:border-primary/50 transition-all"
+                    />
+                  </div>
+                  <Button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full bg-foreground text-background hover:opacity-90 font-bold transition-all text-xs h-9 mt-1"
+                  >
+                    {loading ? 'Creating...' : 'Create Team Workspace'}
+                  </Button>
+                </form>
+              </div>
+            </div>
+
+            {/* Join Workspace Card */}
+            <div className="bg-card/45 backdrop-blur-md border border-border/80 rounded-2xl p-6 md:p-8 flex flex-col justify-between shadow-xl relative overflow-hidden group hover:border-indigo-500/30 transition-all duration-300">
+              <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-indigo-500 to-violet-500 opacity-70" />
+              <div className="flex flex-col gap-4">
+                <div className="w-12 h-12 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 group-hover:scale-105 transition-transform">
+                  <ArrowRight className="w-6 h-6" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-foreground">Join an Existing Team</h2>
+                  <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                    Have an invite? Enter the invite code or shareable invite link here to immediately join the workspace and start collaborating.
+                  </p>
+                </div>
+                <form onSubmit={handleJoinTeam} className="flex flex-col gap-3.5 mt-2">
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Invite Code or Link</label>
+                    <input
+                      type="text"
+                      value={inviteCode}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val.includes('/') || val.includes('?') || val.includes('http')) {
+                          setInviteCode(extractAndCleanCode(val));
+                        } else {
+                          setInviteCode(val.toUpperCase());
+                        }
+                      }}
+                      placeholder="e.g. ABCDEFGH"
+                      className="w-full bg-[#fcfcfb] dark:bg-[#1a1a1a] border border-border rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-primary/40 focus:border-primary/50 transition-all"
+                    />
+                  </div>
+                  <Button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full bg-foreground text-background hover:opacity-90 font-bold transition-all text-xs h-9 mt-1"
+                  >
+                    {loading ? 'Joining...' : 'Join Team Workspace'}
+                  </Button>
+                </form>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const isAdmin = isAdminLevelRole(user?.role);
 

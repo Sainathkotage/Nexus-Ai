@@ -34,7 +34,48 @@ export async function POST(req: Request) {
 
     const supabase = createSupabaseAdminClient();
 
-    // 1. Fetch the invite using admin client (bypassing RLS)
+    // 1. Check if this is a general workspace-wide invite code
+    const { data: workspace, error: wsErr } = await supabase
+      .from('workspaces')
+      .select('id, owner_id')
+      .eq('invite_code', cleanedCode)
+      .maybeSingle();
+
+    if (workspace) {
+      // Direct join workspace
+      const { error: memberErr } = await supabase.from('workspace_members').insert({
+        workspace_id: workspace.id,
+        user_id: user.id,
+        role: 'Member',
+        status: 'active',
+        added_by: workspace.owner_id
+      });
+
+      if (memberErr && !memberErr.message.includes('duplicate key')) {
+        throw memberErr;
+      }
+
+      // Update profile role
+      await supabase.from('profiles').update({ role: 'Member' }).eq('id', user.id);
+
+      // Auto-confirm email
+      try {
+        await supabase.auth.admin.updateUserById(user.id, {
+          email_confirm: true
+        });
+      } catch (authConfirmErr) {
+        console.warn('Could not auto-confirm user email:', authConfirmErr);
+      }
+
+      return NextResponse.json({
+        ok: true,
+        message: 'Successfully joined the team workspace!',
+        workspaceId: workspace.id,
+        role: 'Member'
+      });
+    }
+
+    // 2. Fetch the individual invite from workspace_invites as a fallback
     const { data: invite, error: inviteErr } = await supabase
       .from('workspace_invites')
       .select('*')
@@ -45,7 +86,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Invalid or unrecognized invite code.' }, { status: 404 });
     }
 
-    // 2. Validate invite state
+    // 3. Validate invite state
     if (invite.used_at || invite.used_by) {
       return NextResponse.json({ error: 'This invite code has already been used.' }, { status: 400 });
     }
@@ -56,7 +97,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'This invite code has expired.' }, { status: 400 });
     }
 
-    // 3. Insert into workspace_members (bypassing RLS)
+    // 4. Insert into workspace_members (bypassing RLS)
     const { error: memberErr } = await supabase.from('workspace_members').insert({
       workspace_id: invite.workspace_id,
       user_id: user.id,

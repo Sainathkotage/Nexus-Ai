@@ -53,6 +53,18 @@ export default function TeamChatPage() {
     setActiveDmUserId
   } = useWorkspace();
 
+  if (!workspace) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-background min-h-[calc(100vh-3rem)]">
+        <AlertCircle className="w-12 h-12 text-muted-foreground opacity-30 mb-4" />
+        <h3 className="text-lg font-bold mb-2">No Active Workspace</h3>
+        <p className="text-sm text-muted-foreground max-w-sm leading-relaxed">
+          Please select, create, or join a team workspace from the home dashboard to start chatting.
+        </p>
+      </div>
+    );
+  }
+
   // Active chat state can be type 'dm' or 'channel'
   const activeChat = useMemo<{ type: 'dm'; id: string } | { type: 'channel'; id: string }>(() => {
     if (activeDmUserId) {

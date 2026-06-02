@@ -49,6 +49,20 @@ export interface WorkspaceRecord {
   slug: string;
   ownerId: string;
   createdAt: string;
+  inviteCode?: string;
+}
+
+export interface WorkspaceJoinRequestRecord {
+  id: string;
+  workspaceId: string;
+  userId: string;
+  status: 'pending' | 'approved' | 'rejected';
+  requestedAt: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+  userEmail?: string;
+  userName?: string;
+  workspaceName?: string;
 }
 
 export interface WorkspaceMemberRecord {
@@ -386,6 +400,7 @@ interface WorkspaceState {
   workspace: WorkspaceRecord | null;
   workspaceMembers: WorkspaceMemberRecord[];
   workspaceInvites: WorkspaceInviteRecord[];
+  joinRequests: WorkspaceJoinRequestRecord[];
   auditLogs: AuditLogRecord[];
   feedbackItems: FeedbackRecord[];
   aiUsage: AiUsageRecord[];
@@ -403,6 +418,9 @@ interface WorkspaceState {
   sendTeamMessage: (friendId: string, content: string, media?: { url: string; name: string; type: string }) => Promise<void>;
   createWorkspace: (name: string) => Promise<boolean>;
   joinWorkspaceByCode: (code: string) => Promise<{ ok: boolean; message: string }>;
+  createJoinRequest: (code: string) => Promise<{ ok: boolean; message: string; request?: WorkspaceJoinRequestRecord }>;
+  reviewJoinRequest: (requestId: string, status: 'approved' | 'rejected') => Promise<boolean>;
+  regenerateWorkspaceInviteCode: () => Promise<boolean>;
   updateMemberRole: (userId: string, role: string) => Promise<boolean>;
 
   // Custom Status & DND
@@ -566,6 +584,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [workspace, setWorkspace] = useState<WorkspaceRecord | null>(null);
   const [workspaceMembers, setWorkspaceMembers] = useState<WorkspaceMemberRecord[]>([]);
   const [workspaceInvites, setWorkspaceInvites] = useState<WorkspaceInviteRecord[]>([]);
+  const [joinRequests, setJoinRequests] = useState<WorkspaceJoinRequestRecord[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLogRecord[]>([]);
   const [feedbackItems, setFeedbackItems] = useState<FeedbackRecord[]>([]);
   const [aiUsage, setAiUsage] = useState<AiUsageRecord[]>([]);
@@ -629,12 +648,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   const bootstrapWorkspaceForUser = useCallback((person: Person, existingFriendIds: string[] = []) => {
     const workspaceId = `ws-${person.id}`;
+    const inviteCode = Math.random().toString(36).substring(2, 11).toUpperCase();
     const workspaceRecord: WorkspaceRecord = {
       id: workspaceId,
       name: `${person.name}'s Workspace`,
       slug: `${person.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'workspace'}-${String(person.tag || '0000').toLowerCase()}`,
       ownerId: person.id,
       createdAt: new Date().toISOString(),
+      inviteCode,
     };
 
     const nextWorkspace = workspaceRecord;
@@ -645,6 +666,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       slug: nextWorkspace.slug,
       owner_id: nextWorkspace.ownerId,
       created_at: nextWorkspace.createdAt,
+      invite_code: nextWorkspace.inviteCode,
     });
 
     const ownerMembership: WorkspaceMemberRecord = {
@@ -669,7 +691,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const hydrateTeamAccess = useCallback(async (person: Person, profiles: Person[] = []) => {
     const { data: memberships, error } = await supabase
       .from('workspace_members')
-      .select('workspace_id, user_id, role, status, added_by, joined_at, workspaces(id, name, slug, owner_id, created_at)')
+      .select('workspace_id, user_id, role, status, added_by, joined_at, workspaces(id, name, slug, owner_id, created_at, invite_code)')
       .eq('status', 'active');
 
     if (error) throw error;
@@ -708,6 +730,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         slug: firstWorkspaceRow.slug,
         ownerId: firstWorkspaceRow.owner_id,
         createdAt: firstWorkspaceRow.created_at,
+        inviteCode: firstWorkspaceRow.invite_code,
       });
     } else {
         setWorkspace(null);
@@ -1071,6 +1094,24 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
               });
               setTeamMessages(messagesMapped);
             }
+
+            // Fetch notifications from the database
+            const { data: dbNotifs } = await supabase
+              .from('notifications')
+              .select('*')
+              .eq('user_id', currentUserId)
+              .order('created_at', { ascending: false });
+            if (dbNotifs) {
+              setNotifications(dbNotifs.map((n: any) => ({
+                id: n.id,
+                title: n.title,
+                message: n.message,
+                type: n.type,
+                read: n.read,
+                requestId: n.request_id || undefined,
+                timestamp: n.created_at
+              })));
+            }
           }
 
           // Hydrate Channels & Channel Messages from database
@@ -1230,6 +1271,141 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       supabase.removeChannel(channel);
     };
   }, [user]);
+
+  // Realtime subscription for database notifications
+  useEffect(() => {
+    if (!user) return;
+
+    const channel = supabase
+      .channel('realtime_notifications')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'notifications'
+        },
+        (payload: any) => {
+          const eventType = payload.eventType;
+          if (eventType === 'INSERT') {
+            const n = payload.new;
+            if (n.user_id !== user.id) return;
+            setNotifications(prev => {
+              if (prev.some(x => x.id === n.id)) return prev;
+              return [{
+                id: n.id,
+                title: n.title,
+                message: n.message,
+                type: n.type,
+                read: n.read,
+                requestId: n.request_id || undefined,
+                timestamp: n.created_at
+              }, ...prev];
+            });
+          } else if (eventType === 'UPDATE') {
+            const n = payload.new;
+            if (n.user_id !== user.id) return;
+            setNotifications(prev => prev.map(x => x.id === n.id ? {
+              ...x,
+              read: n.read,
+              title: n.title,
+              message: n.message,
+              type: n.type,
+              requestId: n.request_id || undefined
+            } : x));
+          } else if (eventType === 'DELETE') {
+            const old = payload.old;
+            if (old && old.id) {
+              setNotifications(prev => prev.filter(x => x.id !== old.id));
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user]);
+
+  // Fetch join requests and subscribe to updates when workspace changes
+  useEffect(() => {
+    if (!workspace || !user) {
+      setJoinRequests([]);
+      return;
+    }
+
+    const isAdminOrOwner = isAdminLevelRole(user.role);
+    if (!isAdminOrOwner) {
+      setJoinRequests([]);
+      return;
+    }
+
+    const fetchJoinRequests = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('workspace_join_requests')
+          .select('*')
+          .eq('workspace_id', workspace.id);
+
+        if (error) throw error;
+
+        if (data && data.length > 0) {
+          const userIds = data.map((r: any) => r.user_id);
+          const { data: profiles, error: pError } = await supabase
+            .from('profiles')
+            .select('id, username, email')
+            .in('id', userIds);
+
+          if (pError) throw pError;
+
+          const mapped: WorkspaceJoinRequestRecord[] = data.map((r: any) => {
+            const prof = (profiles || []).find((p: any) => p.id === r.user_id);
+            return {
+              id: r.id,
+              workspaceId: r.workspace_id,
+              userId: r.user_id,
+              status: r.status,
+              requestedAt: r.requested_at,
+              reviewedAt: r.reviewed_at || undefined,
+              reviewedBy: r.reviewed_by || undefined,
+              userEmail: prof?.email || 'unknown@domain.com',
+              userName: prof?.username || 'Unknown',
+              workspaceName: workspace.name
+            };
+          });
+
+          setJoinRequests(mapped);
+        } else {
+          setJoinRequests([]);
+        }
+      } catch (err) {
+        console.warn("Failed to fetch join requests:", err);
+      }
+    };
+
+    fetchJoinRequests();
+
+    const channel = supabase
+      .channel(`realtime_join_requests_${workspace.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'workspace_join_requests',
+          filter: `workspace_id=eq.${workspace.id}`
+        },
+        () => {
+          fetchJoinRequests();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [workspace?.id, user?.id, user?.role]);
 
   const toggleLeftSidebar = useCallback(() => setLeftSidebarOpen(p => !p), []);
   const toggleRightSidebar = useCallback(() => setRightSidebarOpen(p => !p), []);
@@ -1867,15 +2043,26 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     localStorage.setItem('nexus_theme_config', JSON.stringify(config));
   }, []);
 
-  const markNotificationsAsRead = useCallback(() => {
+  const markNotificationsAsRead = useCallback(async () => {
     setNotifications(prev => {
       const updated = prev.map(n => ({ ...n, read: true }));
       localStorage.setItem('nexus_notifications', JSON.stringify(updated));
       return updated;
     });
-  }, []);
 
-  const addNotification = useCallback((n: Omit<NotificationItem, 'id' | 'timestamp' | 'read'>) => {
+    if (user) {
+      try {
+        await supabase
+          .from('notifications')
+          .update({ read: true })
+          .eq('user_id', user.id);
+      } catch (err) {
+        console.warn("Failed to mark notifications as read in Supabase:", err);
+      }
+    }
+  }, [user]);
+
+  const addNotification = useCallback(async (n: Omit<NotificationItem, 'id' | 'timestamp' | 'read'>) => {
     const newNotif: NotificationItem = {
       ...n,
       id: `notif-${Date.now()}`,
@@ -1887,7 +2074,24 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       localStorage.setItem('nexus_notifications', JSON.stringify(updated));
       return updated;
     });
-  }, []);
+
+    if (user) {
+      try {
+        await supabase.from('notifications').insert({
+          id: newNotif.id,
+          user_id: user.id,
+          title: newNotif.title,
+          message: newNotif.message,
+          type: newNotif.type,
+          read: false,
+          request_id: newNotif.requestId || null,
+          created_at: newNotif.timestamp
+        });
+      } catch (err) {
+        console.warn("Failed to sync new notification to Supabase:", err);
+      }
+    }
+  }, [user]);
 
   // ── Authentication & Dynamic Status Actions ──────────────────
   const register = useCallback(async (email: string, username: string, tag: string, role: string, password: string) => {
@@ -2723,12 +2927,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     try {
       const workspaceId = `ws-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
       const newSlug = `${name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'workspace'}-${Math.floor(1000 + Math.random() * 9000)}`;
+      const inviteCode = Math.random().toString(36).substring(2, 11).toUpperCase();
 
       const { error: wsErr } = await supabase.from('workspaces').insert({
         id: workspaceId,
         name,
         slug: newSlug,
-        owner_id: user.id
+        owner_id: user.id,
+        invite_code: inviteCode
       });
       if (wsErr) throw wsErr;
 
@@ -2753,7 +2959,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         name,
         slug: newSlug,
         ownerId: user.id,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        inviteCode: inviteCode
       });
 
       setWorkspaceMembers([{
@@ -2816,6 +3023,105 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       return { ok: false, message: err.message || 'An error occurred while joining the team.' };
     }
   }, [user, hydrateTeamAccess, appendAuditLog]);
+
+  const createJoinRequest = useCallback(async (code: string): Promise<{ ok: boolean; message: string; request?: WorkspaceJoinRequestRecord }> => {
+    if (!user) return { ok: false, message: 'Please sign in first.' };
+    if (!code || !code.trim()) return { ok: false, message: 'Code cannot be empty.' };
+
+    try {
+      const response = await fetch('/api/invites/request', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ code }),
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        return { ok: false, message: data.error || data.message || 'Failed to submit join request.' };
+      }
+
+      const req: WorkspaceJoinRequestRecord = {
+        id: data.request.id,
+        workspaceId: data.request.workspace_id,
+        userId: data.request.user_id,
+        status: data.request.status,
+        requestedAt: data.request.requested_at,
+        workspaceName: data.workspaceName
+      };
+
+      return { ok: true, message: data.message || 'Join request sent!', request: req };
+    } catch (err: any) {
+      console.error('Failed to submit join request:', err);
+      return { ok: false, message: err.message || 'An error occurred.' };
+    }
+  }, [user]);
+
+  const reviewJoinRequest = useCallback(async (requestId: string, status: 'approved' | 'rejected'): Promise<boolean> => {
+    if (!user) return false;
+
+    try {
+      const response = await fetch('/api/invites/review', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ requestId, status }),
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        toast.error(data.error || data.message || 'Failed to review join request.');
+        return false;
+      }
+
+      toast.success(data.message || `Join request ${status} successfully.`);
+      
+      // Update local state for joinRequests
+      setJoinRequests(prev => prev.map(req => req.id === requestId ? {
+        ...req,
+        status,
+        reviewedAt: new Date().toISOString(),
+        reviewedBy: user.id
+      } : req));
+
+      // Mark the notification related to this request as read
+      setNotifications(prev => prev.map(n => n.requestId === requestId ? { ...n, read: true } : n));
+
+      return true;
+    } catch (err: any) {
+      console.error('Failed to review join request:', err);
+      toast.error(err.message || 'An error occurred.');
+      return false;
+    }
+  }, [user]);
+
+  const regenerateWorkspaceInviteCode = useCallback(async (): Promise<boolean> => {
+    if (!workspace || !user) return false;
+    if (!isAdminLevelRole(user.role)) {
+      toast.error('Only admins can regenerate the invite code.');
+      return false;
+    }
+
+    try {
+      const newCode = Math.random().toString(36).substring(2, 11).toUpperCase();
+      const { error } = await supabase
+        .from('workspaces')
+        .update({ invite_code: newCode })
+        .eq('id', workspace.id);
+
+      if (error) throw error;
+
+      setWorkspace(prev => prev ? { ...prev, inviteCode: newCode } : null);
+      toast.success('Workspace invite code regenerated successfully!');
+      return true;
+    } catch (err: any) {
+      console.error('Failed to regenerate invite code:', err);
+      toast.error(err.message || 'Failed to regenerate invite code.');
+      return false;
+    }
+  }, [workspace, user]);
 
   const updateMemberRole = useCallback(async (targetUserId: string, nextRole: string) => {
     if (!user || !workspace) return false;
@@ -3437,7 +3743,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     tasks, addTask, deleteTask, moveTask, updateTask, taskView, setTaskView, selectedTaskId, setSelectedTaskId,
     calendarEvents, selectedDate, setSelectedDate, addEventToCalendar, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent,
     user, userStatus, allUsers, friendIds, canManageTeamMembers,
-    workspace, workspaceMembers, workspaceInvites, auditLogs, feedbackItems, aiUsage,
+    workspace, workspaceMembers, workspaceInvites, joinRequests, auditLogs, feedbackItems, aiUsage,
     createInviteLink, submitFeedback, trackAiUsage,
     teamMessages, login, sendOtp, verifyOtp, register, logout, setUserStatus, addFriendByTag, sendTeamMessage,
     customStatus, dnd, setCustomStatus, setDnd,
@@ -3460,7 +3766,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     typingUsers, onlinePresence, broadcastTyping,
     toggleStarChannel, editChannelMessage, deleteChannelMessage,
     addReaction, removeReaction, togglePinMessage, markMessageAsRead, createChannel,
-    createWorkspace, joinWorkspaceByCode, updateMemberRole,
+    createWorkspace, joinWorkspaceByCode, createJoinRequest, reviewJoinRequest, regenerateWorkspaceInviteCode, updateMemberRole,
   };
 
   return (

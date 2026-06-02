@@ -69,6 +69,9 @@ export default function SettingsPage() {
     workspace,
     workspaceMembers: realWorkspaceMembers,
     workspaceInvites,
+    joinRequests,
+    reviewJoinRequest,
+    regenerateWorkspaceInviteCode,
     auditLogs: realAuditLogs,
     feedbackItems,
     aiUsage,
@@ -770,6 +773,98 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
+                {/* Workspace Invite Link & Code (Admins only) */}
+                {workspace && (
+                  <div className="max-w-lg border border-border rounded-lg p-4 bg-muted/20 flex flex-col gap-3">
+                    <h3 className="text-xs font-bold text-foreground">Workspace Invite Link & Code</h3>
+                    <div className="flex flex-col md:flex-row gap-2 items-start md:items-center justify-between">
+                      <div className="flex flex-col gap-1 min-w-0">
+                        <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Shareable Invite Code</span>
+                        <div className="flex items-center gap-2">
+                          <code className="text-sm font-extrabold text-emerald-400 bg-emerald-500/5 px-2 py-0.5 rounded border border-emerald-500/10 font-mono">
+                            {workspace.inviteCode || 'NO CODE'}
+                          </code>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 w-6 p-0 hover:bg-muted"
+                            onClick={() => {
+                              if (workspace.inviteCode) {
+                                navigator.clipboard.writeText(workspace.inviteCode);
+                                toast.success('Invite code copied to clipboard!');
+                              }
+                            }}
+                          >
+                            <Copy className="w-3 h-3" />
+                          </Button>
+                        </div>
+                      </div>
+
+                      {canManageTeamMembers && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={async () => {
+                            const ok = await regenerateWorkspaceInviteCode();
+                            if (ok) {
+                              toast.success('Workspace invite code updated.');
+                            }
+                          }}
+                          className="text-[10px] h-7 font-bold gap-1 mt-1 md:mt-0"
+                        >
+                          <RefreshCw className="w-3 h-3" />
+                          Regenerate Code
+                        </Button>
+                      )}
+                    </div>
+
+                    <div className="h-px bg-border my-1" />
+
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Shareable Invite Link</span>
+                      <div className="flex items-center justify-between gap-2 p-2 bg-background border border-border rounded-md text-xs font-mono text-muted-foreground truncate select-all">
+                        <span className="truncate">{workspace.inviteCode ? `${window.location.origin}/invite/${workspace.inviteCode}` : 'Generate a code first'}</span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 w-6 p-0 shrink-0"
+                          onClick={() => {
+                            if (workspace.inviteCode) {
+                              navigator.clipboard.writeText(`${window.location.origin}/invite/${workspace.inviteCode}`);
+                              toast.success('Invite link copied!');
+                            }
+                          }}
+                        >
+                          <Copy className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Pending Join Requests Section */}
+                {joinRequests && joinRequests.length > 0 && (
+                  <div className="border border-border rounded-lg overflow-hidden max-w-lg">
+                    <div className="bg-amber-500/5 px-3 py-2 border-b border-border flex items-center justify-between text-[10px] uppercase font-bold text-amber-500 tracking-wider">
+                      <span>Pending Join Requests ({joinRequests.filter(r => r.status === 'pending').length})</span>
+                      <span className="text-[9px] text-muted-foreground font-medium uppercase">Requires Action</span>
+                    </div>
+                    <div className="divide-y divide-border">
+                      {joinRequests.filter(req => req.status === 'pending').map(req => (
+                        <PendingRequestRow key={req.id} req={req} reviewJoinRequest={reviewJoinRequest} />
+                      ))}
+                      {joinRequests.filter(req => req.status === 'pending').length === 0 && (
+                        <div className="p-4 text-center text-xs text-muted-foreground">
+                          No pending join requests at this time.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 <div className="max-w-lg grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div className="border border-border rounded-lg p-3 bg-muted/10">
                     <h3 className="text-xs font-bold text-foreground mb-1">AI Usage Today</h3>
@@ -1325,6 +1420,57 @@ export default function SettingsPage() {
         </div>
       )}
 
+    </div>
+  );
+}
+
+function PendingRequestRow({ req, reviewJoinRequest }: { req: any; reviewJoinRequest: any }) {
+  const [loading, setLoading] = useState<'approving' | 'rejecting' | null>(null);
+
+  const handleReview = async (status: 'approved' | 'rejected') => {
+    setLoading(status === 'approved' ? 'approving' : 'rejecting');
+    const success = await reviewJoinRequest(req.id, status);
+    if (!success) {
+      setLoading(null);
+    }
+  };
+
+  return (
+    <div className="p-3 flex items-center justify-between hover:bg-muted/10 transition-colors">
+      <div className="flex flex-col min-w-0">
+        <span className="text-xs font-bold text-foreground truncate">{req.userName}</span>
+        <span className="text-[10px] text-muted-foreground truncate">{req.userEmail}</span>
+        <span className="text-[9px] text-muted-foreground/60 mt-0.5">
+          Requested {new Date(req.requestedAt).toLocaleDateString()}
+        </span>
+      </div>
+      <div className="flex items-center gap-2 shrink-0">
+        <Button
+          type="button"
+          onClick={() => handleReview('rejected')}
+          disabled={loading !== null}
+          variant="outline"
+          className="h-7 text-[10px] border-red-500/20 text-red-500 hover:bg-red-500/10 hover:text-red-400 font-bold"
+        >
+          {loading === 'rejecting' ? (
+            <div className="w-3.5 h-3.5 rounded-full border border-red-500 border-t-transparent animate-spin" />
+          ) : (
+            'Reject'
+          )}
+        </Button>
+        <Button
+          type="button"
+          onClick={() => handleReview('approved')}
+          disabled={loading !== null}
+          className="h-7 text-[10px] bg-emerald-600 hover:bg-emerald-500 text-white font-bold"
+        >
+          {loading === 'approving' ? (
+            <div className="w-3.5 h-3.5 rounded-full border border-white border-t-transparent animate-spin" />
+          ) : (
+            'Approve'
+          )}
+        </Button>
+      </div>
     </div>
   );
 }

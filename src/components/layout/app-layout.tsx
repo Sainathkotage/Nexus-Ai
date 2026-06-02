@@ -45,6 +45,12 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!isAppLoading) {
       const inviteCode = searchParams ? searchParams.get('inviteCode') : null;
+      
+      if (user && inviteCode) {
+        router.push(`/invite/${inviteCode}`);
+        return;
+      }
+
       const inviteQuery = inviteCode ? `inviteCode=${inviteCode}` : '';
 
       if (!user && !isLandingPage && !hasAuthParam && !hasInviteParam && !isAuthCallbackOrInvite) {

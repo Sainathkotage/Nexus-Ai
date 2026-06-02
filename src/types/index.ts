@@ -318,6 +318,8 @@ export interface NotificationItem {
   timestamp: string;
   read: boolean;
   link?: string;
+  type?: string;
+  requestId?: string;
 }
 
 export interface ThemeConfig {

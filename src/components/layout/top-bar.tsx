@@ -29,7 +29,8 @@ export function TopBar() {
     resetTimer,
     logTimer,
     notifications,
-    markNotificationsAsRead
+    markNotificationsAsRead,
+    reviewJoinRequest
   } = useWorkspace();
 
   const [time, setTime] = useState('');
@@ -212,12 +213,17 @@ export function TopBar() {
                       )}
                     >
                       <div className="flex justify-between items-center">
-                        <span className="font-semibold text-foreground">{notif.senderName}</span>
+                        <span className="font-semibold text-foreground">{notif.title || notif.senderName || 'Notification'}</span>
                         <span className="text-[8px] text-muted-foreground/60 font-mono">
                           {format(new Date(notif.timestamp), 'MMM d, h:mm a')}
                         </span>
                       </div>
                       <p className="text-[10px] leading-normal">{notif.message}</p>
+                      {notif.type === 'join_request' && notif.requestId && !notif.read && (
+                        <div className="flex items-center gap-1.5 mt-1.5 border-t border-border/50 pt-1.5 justify-end">
+                          <NotificationActionButtons notif={notif} reviewJoinRequest={reviewJoinRequest} />
+                        </div>
+                      )}
                     </div>
                   ))
                 )}
@@ -233,5 +239,50 @@ export function TopBar() {
         </Button>
       </div>
     </header>
+  );
+}
+
+function NotificationActionButtons({ notif, reviewJoinRequest }: { notif: any; reviewJoinRequest: any }) {
+  const [loading, setLoading] = useState<'approving' | 'rejecting' | null>(null);
+
+  const handleReview = async (e: React.MouseEvent, status: 'approved' | 'rejected') => {
+    e.stopPropagation();
+    setLoading(status === 'approved' ? 'approving' : 'rejecting');
+    const success = await reviewJoinRequest(notif.requestId, status);
+    if (!success) {
+      setLoading(null);
+    }
+  };
+
+  return (
+    <>
+      <Button
+        type="button"
+        size="sm"
+        disabled={loading !== null}
+        onClick={(e) => handleReview(e, 'rejected')}
+        variant="ghost"
+        className="h-6 px-2 text-[9px] hover:bg-red-500/10 text-red-500 hover:text-red-400 font-semibold"
+      >
+        {loading === 'rejecting' ? (
+          <div className="w-3 h-3 rounded-full border border-red-500 border-t-transparent animate-spin" />
+        ) : (
+          'Reject'
+        )}
+      </Button>
+      <Button
+        type="button"
+        size="sm"
+        disabled={loading !== null}
+        onClick={(e) => handleReview(e, 'approved')}
+        className="h-6 px-2 text-[9px] bg-emerald-600 hover:bg-emerald-500 text-white font-semibold"
+      >
+        {loading === 'approving' ? (
+          <div className="w-3 h-3 rounded-full border border-white border-t-transparent animate-spin" />
+        ) : (
+          'Approve'
+        )}
+      </Button>
+    </>
   );
 }

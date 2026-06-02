@@ -97,6 +97,13 @@ export default function SettingsPage() {
   // Workspace Info State
   const [workspaceName, setWorkspaceName] = useState('Nexus AI');
   const [workspaceUrl, setWorkspaceUrl] = useState('');
+  const [origin, setOrigin] = useState('');
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setOrigin(window.location.origin);
+    }
+  }, []);
   
   // General Permissions State
   const [permissions, setPermissions] = useState({
@@ -825,7 +832,7 @@ export default function SettingsPage() {
                     <div className="flex flex-col gap-1">
                       <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Shareable Invite Link</span>
                       <div className="flex items-center justify-between gap-2 p-2 bg-background border border-border rounded-md text-xs font-mono text-muted-foreground truncate select-all">
-                        <span className="truncate">{workspace.inviteCode ? `${window.location.origin}/invite/${workspace.inviteCode}` : 'Generate a code first'}</span>
+                        <span className="truncate">{workspace.inviteCode ? `${origin}/invite/${workspace.inviteCode}` : 'Generate a code first'}</span>
                         <Button
                           type="button"
                           variant="ghost"
@@ -833,7 +840,7 @@ export default function SettingsPage() {
                           className="h-6 w-6 p-0 shrink-0"
                           onClick={() => {
                             if (workspace.inviteCode) {
-                              navigator.clipboard.writeText(`${window.location.origin}/invite/${workspace.inviteCode}`);
+                              navigator.clipboard.writeText(`${origin}/invite/${workspace.inviteCode}`);
                               toast.success('Invite link copied!');
                             }
                           }}

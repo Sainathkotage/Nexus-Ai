@@ -11,7 +11,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
-import { currentUser } from '@/lib/sample-data';
+import { useWorkspace } from '@/lib/store';
 import { toast } from 'sonner';
 
 interface ChatMessageProps {
@@ -20,6 +20,7 @@ interface ChatMessageProps {
 }
 
 export function ChatMessage({ message, onModify }: ChatMessageProps) {
+  const { user } = useWorkspace();
   const isUser = message.role === 'user';
   const [copied, setCopied] = useState(false);
   const [liked, setLiked] = useState(false);
@@ -98,8 +99,10 @@ export function ChatMessage({ message, onModify }: ChatMessageProps) {
       <div className="shrink-0 mt-0.5">
         {isUser ? (
           <Avatar className="w-8 h-8 rounded-full border border-border shadow-sm">
-            <AvatarImage src={currentUser.avatar} />
-            <AvatarFallback className="text-[10px] bg-muted text-foreground font-bold">{currentUser.name.split(' ').map((n: string)=>n[0]).join('')}</AvatarFallback>
+            <AvatarImage src={user?.avatar} />
+            <AvatarFallback className="text-[10px] bg-muted text-foreground font-bold">
+              {(user?.name ?? 'U').split(' ').map((n: string) => n[0]).join('')}
+            </AvatarFallback>
           </Avatar>
         ) : (
           <div className="w-8 h-8 rounded-full bg-muted/20 dark:bg-muted/10 flex items-center justify-center border border-border/40 shadow-sm shrink-0">

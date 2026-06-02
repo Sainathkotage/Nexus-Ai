@@ -23,6 +23,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { X, UserPlus } from 'lucide-react';
 import { Task, TaskStatus, Priority, Person } from '@/types';
+import { useWorkspace } from '@/lib/store';
 
 interface AddTaskDialogProps {
   open: boolean;
@@ -30,22 +31,26 @@ interface AddTaskDialogProps {
   onAddTask: (task: Omit<Task, 'id'>) => void;
 }
 
-// Mock team members
-const TEAM_MEMBERS: Person[] = [
-  { id: 'p1', name: 'Sarah Chen', email: 'sarah@nexus.ai', avatar: '', role: 'Product Lead', status: 'online' },
-  { id: 'p2', name: 'Marcus Johnson', email: 'marcus@nexus.ai', avatar: '', role: 'Engineering Manager', status: 'online' },
-  { id: 'p3', name: 'Elena Rodriguez', email: 'elena@nexus.ai', avatar: '', role: 'Design Director', status: 'offline' },
-  { id: 'p4', name: 'Alex Kim', email: 'alex@nexus.ai', avatar: '', role: 'Senior Developer', status: 'online' },
-];
-
 export function AddTaskDialog({ open, onOpenChange, onAddTask }: AddTaskDialogProps) {
+  const { user, allUsers } = useWorkspace();
+  const teamMembers: Person[] = allUsers.length > 0
+    ? allUsers
+    : user
+      ? [user]
+      : [];
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [status, setStatus] = useState<TaskStatus>('todo');
   const [priority, setPriority] = useState<Priority>('medium');
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState('');
-  const [assignee, setAssignee] = useState<Person>(TEAM_MEMBERS[0]);
+  const [assignee, setAssignee] = useState<Person | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      setAssignee(user ?? teamMembers[0] ?? null);
+    }
+  }, [open, user, teamMembers]);
   const [showMentions, setShowMentions] = useState(false);
   const [mentionQuery, setMentionQuery] = useState('');
   const [cursorPosition, setCursorPosition] = useState(0);
@@ -70,7 +75,7 @@ export function AddTaskDialog({ open, onOpenChange, onAddTask }: AddTaskDialogPr
     }
   };
 
-  const insertMention = (member: typeof TEAM_MEMBERS[0]) => {
+  const insertMention = (member: Person) => {
     const textBeforeCursor = description.substring(0, cursorPosition);
     const textAfterCursor = description.substring(cursorPosition);
     const mentionStart = textBeforeCursor.lastIndexOf('@');
@@ -94,7 +99,7 @@ export function AddTaskDialog({ open, onOpenChange, onAddTask }: AddTaskDialogPr
     }, 0);
   };
 
-  const filteredMembers = TEAM_MEMBERS.filter(member =>
+  const filteredMembers = teamMembers.filter(member =>
     member.name.toLowerCase().includes(mentionQuery.toLowerCase()) ||
     member.email.toLowerCase().includes(mentionQuery.toLowerCase())
   );
@@ -111,11 +116,11 @@ export function AddTaskDialog({ open, onOpenChange, onAddTask }: AddTaskDialogPr
   };
 
   const removeAssignee = () => {
-    setAssignee(TEAM_MEMBERS[0]);
+    setAssignee(user ?? teamMembers[0] ?? null);
   };
 
   const handleSubmit = () => {
-    if (!title.trim()) return;
+    if (!title.trim() || !assignee) return;
 
     onAddTask({
       title,
@@ -136,7 +141,7 @@ export function AddTaskDialog({ open, onOpenChange, onAddTask }: AddTaskDialogPr
     setStatus('todo');
     setPriority('medium');
     setTags([]);
-    setAssignee(TEAM_MEMBERS[0]);
+    setAssignee(user ?? teamMembers[0] ?? null);
     setTagInput('');
     onOpenChange(false);
   };

@@ -51,7 +51,7 @@ insert into organizations (name, slug, sso_enabled, sso_domain, sso_provider)
 values ('Acme Corp', 'acme', true, 'acme.com', 'google_workspace');
 ```
 
-Admins save SSO from **Settings → Security & SSO** (requires `NEXT_PUBLIC_DEMO_ORGANIZATION_ID` and admin membership).
+Admins save SSO from **Settings → Security & SSO** (requires `NEXT_PUBLIC_ORGANIZATION_ID` and admin membership).
 
 Users sign in from the login screen with **Enterprise SSO** or:
 

@@ -1,15 +1,27 @@
 'use client';
 
-import React, { useState } from 'react';
-import { useWorkspace } from '@/lib/store';
+import React, { useState, useEffect } from 'react';
+import { isAdminLevelRole, useWorkspace } from '@/lib/store';
 import { Button } from '@/components/ui/button';
-import { Sparkles, Mail, Lock, User, Tag, Briefcase, Eye, EyeOff, Check, Building2 } from 'lucide-react';
+import { Mail, Lock, User, Tag, Briefcase, Eye, EyeOff, Building2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { signInWithEnterpriseSso } from '@/lib/enterprise/sso';
 
 export function LoginScreen() {
   const { login, register, roles } = useWorkspace();
+  const signupRoles = (roles || []).filter((r) => !isAdminLevelRole(r));
   const [activeTab, setActiveTab] = useState<'signin' | 'signup'>('signin');
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const authType = params.get('auth');
+      if (authType === 'signup') {
+        setActiveTab('signup');
+      }
+    }
+  }, []);
+
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
@@ -100,22 +112,6 @@ export function LoginScreen() {
     }
   };
 
-  const handleDemoSignIn = async () => {
-    setLoading(true);
-    try {
-      const success = await login('sarah@nexus.ai', 'password');
-      if (success) {
-        toast.success('Signed in as Sarah Chen (Demo Account)');
-      } else {
-        toast.error('Demo login failed');
-      }
-    } catch (err) {
-      toast.error('Demo login error');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
     <div className="min-h-screen w-full flex items-center justify-center bg-[#f7f6f3] dark:bg-[#121212] p-4 relative overflow-hidden transition-colors duration-300">
       {/* Visual Background Elements */}
@@ -174,7 +170,7 @@ export function LoginScreen() {
                   type="text"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="sarah@nexus.ai or sarah"
+                  placeholder="you@company.com or username"
                   className="w-full bg-[#fcfcfb] dark:bg-[#252525] border border-border/80 dark:border-border/20 rounded-lg pl-9 pr-4 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary/40 dark:focus:ring-primary/20"
                 />
               </div>
@@ -220,7 +216,7 @@ export function LoginScreen() {
                     type="text"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    placeholder="Sarah"
+                    placeholder="Alex"
                     className="w-full bg-[#fcfcfb] dark:bg-[#252525] border border-border/80 dark:border-border/20 rounded-lg pl-9 pr-4 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary/40"
                   />
                 </div>
@@ -252,7 +248,7 @@ export function LoginScreen() {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="sarah@nexus.ai"
+                  placeholder="you@company.com"
                   className="w-full bg-[#fcfcfb] dark:bg-[#252525] border border-border/80 dark:border-border/20 rounded-lg pl-9 pr-4 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary/40"
                 />
               </div>
@@ -268,7 +264,7 @@ export function LoginScreen() {
                     onChange={(e) => setRole(e.target.value)}
                     className="w-full bg-[#fcfcfb] dark:bg-[#252525] border border-border/80 dark:border-border/20 rounded-lg pl-9 pr-4 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary/40"
                   >
-                    {(roles || []).map((r) => (
+                    {signupRoles.map((r) => (
                       <option key={r} value={r}>{r}</option>
                     ))}
                   </select>
@@ -336,32 +332,9 @@ export function LoginScreen() {
           </p>
         </div>
 
-        {/* Divider */}
-        <div className="flex items-center gap-3 my-1">
-          <div className="flex-1 h-px bg-border/60" />
-          <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Or</span>
-          <div className="flex-1 h-px bg-border/60" />
-        </div>
-
-        {/* Demo Account Button */}
-        <button
-          onClick={handleDemoSignIn}
-          disabled={loading}
-          className="w-full flex items-center justify-center gap-2 border border-dashed border-[#a8a8a5] hover:border-[#37352f] dark:border-[#555] dark:hover:border-[#eee] hover:bg-[#37352f]/5 dark:hover:bg-white/5 py-2.5 rounded-lg text-xs font-semibold text-foreground/80 transition-all cursor-pointer"
-        >
-          <Sparkles className="w-4 h-4 text-amber-500" />
-          Quick Sign In (Demo Mode as Sarah Chen)
-        </button>
-
-        {/* Helper Note */}
-        <div className="bg-[#f7f6f3] dark:bg-[#252525] p-3 rounded-lg border border-border/40 text-center flex flex-col gap-1">
-          <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider flex items-center justify-center gap-1">
-            <Check className="w-3 h-3 text-emerald-500" /> Database & Offline Support
-          </span>
-          <p className="text-[10px] text-muted-foreground/90">
-            Nexus AI automatically syncs with Supabase if configured. Otherwise, your data is saved locally on your device.
-          </p>
-        </div>
+        <p className="text-[10px] text-center text-muted-foreground/90 leading-relaxed">
+          Sign in with your account, or register to create a new workspace. Data syncs to Supabase when configured.
+        </p>
       </div>
     </div>
   );

@@ -2,13 +2,14 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useWorkspace, decryptMessage } from '@/lib/store';
+import { supabase } from '@/lib/supabase';
 import { Person, ChatMessage, Channel, ChannelMessage, MessageReaction, MessageRead } from '@/types';
 import { 
   Send, Users, MessageSquare, Clock, ShieldCheck, 
   Search, Circle, MessageCircle, Hash, ChevronRight, X,
   Paperclip, Phone, Video, Lock, Unlock, Mic, MicOff,
   VideoOff, Shield, PhoneOff, Star, Pin, Smile, Trash2, Edit3,
-  Sparkles, FileText, ArrowRight, Bell, Volume2, AlertCircle, Plus, Folder
+  Sparkles, FileText, ArrowRight, Bell, Volume2, AlertCircle, Plus, Folder, UserPlus
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -21,7 +22,10 @@ export default function TeamChatPage() {
   const { 
     user, 
     allUsers, 
+    friendIds,
+    canManageTeamMembers,
     teamMessages, 
+    addFriendByTag,
     sendTeamMessage, 
     setActivePage,
     channels,
@@ -29,6 +33,7 @@ export default function TeamChatPage() {
     sendChannelMessage,
     sendChannelReply,
     documents,
+    workspace,
     
     // Advanced Store sync integrations
     typingUsers,
@@ -41,11 +46,31 @@ export default function TeamChatPage() {
     removeReaction,
     togglePinMessage,
     markMessageAsRead,
-    createChannel
+    createChannel,
+    activeChannelId,
+    setActiveChannelId,
+    activeDmUserId,
+    setActiveDmUserId
   } = useWorkspace();
 
   // Active chat state can be type 'dm' or 'channel'
-  const [activeChat, setActiveChat] = useState<{ type: 'dm'; id: string } | { type: 'channel'; id: string }>({ type: 'channel', id: 'c1' });
+  const activeChat = useMemo<{ type: 'dm'; id: string } | { type: 'channel'; id: string }>(() => {
+    if (activeDmUserId) {
+      return { type: 'dm', id: activeDmUserId };
+    }
+    return { type: 'channel', id: activeChannelId || 'c1' };
+  }, [activeChannelId, activeDmUserId]);
+
+  const setActiveChat = (chat: { type: 'dm'; id: string } | { type: 'channel'; id: string }) => {
+    if (chat.type === 'dm') {
+      setActiveDmUserId(chat.id);
+      setActiveChannelId(null);
+    } else {
+      setActiveChannelId(chat.id);
+      setActiveDmUserId(null);
+    }
+  };
+
   const [typedMessage, setTypedMessage] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -81,6 +106,9 @@ export default function TeamChatPage() {
   const [showCreateChannelModal, setShowCreateChannelModal] = useState(false);
   const [showShareDocModal, setShowShareDocModal] = useState(false);
   const [showNotifSettings, setShowNotifSettings] = useState(false);
+  const [showAddFriendModal, setShowAddFriendModal] = useState(false);
+  const [friendTagInput, setFriendTagInput] = useState('');
+  const [isAddingFriend, setIsAddingFriend] = useState(false);
 
   // Creation variables
   const [newChannelName, setNewChannelName] = useState('');
@@ -112,6 +140,13 @@ export default function TeamChatPage() {
   const threadEndRef = useRef<HTMLDivElement>(null);
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const typingTimerRef = useRef<any>(null);
+
+  // WebRTC Refs
+  const pcRef = useRef<RTCPeerConnection | null>(null);
+  const callChannelRef = useRef<any>(null);
+  const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
+  const [incomingCallOffer, setIncomingCallOffer] = useState<RTCSessionDescriptionInit | null>(null);
+  const [activeCallPartnerId, setActiveCallPartnerId] = useState<string | null>(null);
 
   // Request push permission on load
   useEffect(() => {
@@ -187,9 +222,76 @@ export default function TeamChatPage() {
     };
   }, [localStream]);
 
-  // Filter colleagues
-  const otherUsers = allUsers.filter(u => u.id !== user?.id);
-  const filteredUsers = otherUsers.filter(u => 
+  // Subscribe to the shared workspace calling channel
+  useEffect(() => {
+    if (!user || !workspace) return;
+
+    const callChannel = supabase.channel(`workspace_calls_${workspace.id}`);
+
+    callChannel
+      .on('broadcast', { event: 'signal' }, async ({ payload }) => {
+        if (payload.targetUserId !== user.id) return;
+
+        const { signalType, fromUserId, data } = payload;
+
+        switch (signalType) {
+          case 'offer':
+            const caller = allUsers.find(u => u.id === fromUserId);
+            if (caller) {
+              setIncomingCallOffer(data);
+              setActiveCallPartnerId(fromUserId);
+              setCallState({
+                isActive: true,
+                type: 'audio',
+                status: 'ringing',
+                friend: caller,
+              });
+              toast.info(`Incoming secure call from ${caller.name}`);
+            }
+            break;
+
+          case 'answer':
+            if (pcRef.current) {
+              await pcRef.current.setRemoteDescription(new RTCSessionDescription(data));
+              setCallState(prev => prev ? { ...prev, status: 'connected' } : null);
+              toast.success("Secure call connected!");
+            }
+            break;
+
+          case 'ice-candidate':
+            if (pcRef.current && data) {
+              try {
+                await pcRef.current.addIceCandidate(new RTCIceCandidate(data));
+              } catch (err) {
+                console.error("Error adding remote ICE candidate", err);
+              }
+            }
+            break;
+
+          case 'hangup':
+            handleRemoteHangup();
+            break;
+        }
+      })
+      .subscribe();
+
+    callChannelRef.current = callChannel;
+
+    return () => {
+      supabase.removeChannel(callChannel);
+    };
+  }, [user, workspace, allUsers]);
+
+  // Filter approved teammates
+  const messagePartnerIds = useMemo(() => Object.keys(teamMessages), [teamMessages]);
+  const teamUsers = useMemo(
+    () => allUsers.filter(u =>
+      u.id !== user?.id &&
+      (friendIds.includes(u.id) || messagePartnerIds.includes(u.id))
+    ),
+    [allUsers, friendIds, messagePartnerIds, user?.id]
+  );
+  const filteredUsers = teamUsers.filter(u =>
     u.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
     (u.role && u.role.toLowerCase().includes(searchTerm.toLowerCase())) ||
     (u.tag && u.tag.includes(searchTerm))
@@ -242,8 +344,8 @@ export default function TeamChatPage() {
   // Autocomplete Mentions query filter matching
   const matchingTeammates = useMemo(() => {
     if (!showMentionList) return [];
-    return allUsers.filter(u => u.name.toLowerCase().includes(mentionSearch.toLowerCase()));
-  }, [mentionSearch, showMentionList, allUsers]);
+    return teamUsers.filter(u => u.name.toLowerCase().includes(mentionSearch.toLowerCase()));
+  }, [mentionSearch, showMentionList, teamUsers]);
 
   // Autocomplete input capture triggers
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -536,54 +638,198 @@ export default function TeamChatPage() {
     }
   };
 
-  // Call simulation methods
+  // WebRTC Call actions
   const initiateCall = async (type: 'audio' | 'video') => {
-    if (!activeFriend) return;
-    
+    if (!activeFriend || !user) return;
+
     setCallState({
       isActive: true,
       type,
       status: 'dialing',
       friend: activeFriend
     });
-    
+
     try {
-      const constraints = {
+      const stream = await navigator.mediaDevices.getUserMedia({
         audio: true,
         video: type === 'video'
-      };
-      
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      });
       setLocalStream(stream);
       
-      setTimeout(() => {
-        setCallState(prev => prev ? { ...prev, status: 'ringing' } : null);
-        
-        setTimeout(() => {
-          setCallState(prev => prev ? { ...prev, status: 'connected' } : null);
-          toast.success(`Secure call connected with ${activeFriend.name}`);
-        }, 1500);
-      }, 1000);
-      
+      const pc = new RTCPeerConnection({
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+      });
+      pcRef.current = pc;
+
+      stream.getTracks().forEach(track => pc.addTrack(track, stream));
+
+      pc.onicecandidate = (event) => {
+        if (event.candidate && callChannelRef.current) {
+          callChannelRef.current.send({
+            type: 'broadcast',
+            event: 'signal',
+            payload: {
+              targetUserId: activeFriend.id,
+              fromUserId: user.id,
+              signalType: 'ice-candidate',
+              data: event.candidate
+            }
+          });
+        }
+      };
+
+      pc.ontrack = (event) => {
+        if (remoteAudioRef.current) {
+          remoteAudioRef.current.srcObject = event.streams[0];
+        }
+      };
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      if (callChannelRef.current) {
+        callChannelRef.current.send({
+          type: 'broadcast',
+          event: 'signal',
+          payload: {
+            targetUserId: activeFriend.id,
+            fromUserId: user.id,
+            signalType: 'offer',
+            data: offer
+          }
+        });
+      }
+
+      setActiveCallPartnerId(activeFriend.id);
+
     } catch (err) {
       console.error('Failed to get media devices:', err);
-      toast.error('Could not access microphone/camera for the call.');
+      toast.error('Could not access microphone/camera for WebRTC.');
       setCallState(null);
     }
   };
 
-  const endCall = () => {
+  const acceptIncomingCall = async () => {
+    if (!incomingCallOffer || !activeCallPartnerId || !user) return;
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: callState?.type === 'video'
+      });
+      setLocalStream(stream);
+
+      const pc = new RTCPeerConnection({
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+      });
+      pcRef.current = pc;
+
+      stream.getTracks().forEach(track => pc.addTrack(track, stream));
+
+      pc.onicecandidate = (event) => {
+        if (event.candidate && callChannelRef.current) {
+          callChannelRef.current.send({
+            type: 'broadcast',
+            event: 'signal',
+            payload: {
+              targetUserId: activeCallPartnerId,
+              fromUserId: user.id,
+              signalType: 'ice-candidate',
+              data: event.candidate
+            }
+          });
+        }
+      };
+
+      pc.ontrack = (event) => {
+        if (remoteAudioRef.current) {
+          remoteAudioRef.current.srcObject = event.streams[0];
+        }
+      };
+
+      await pc.setRemoteDescription(new RTCSessionDescription(incomingCallOffer));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+
+      if (callChannelRef.current) {
+        callChannelRef.current.send({
+          type: 'broadcast',
+          event: 'signal',
+          payload: {
+            targetUserId: activeCallPartnerId,
+            fromUserId: user.id,
+            signalType: 'answer',
+            data: answer
+          }
+        });
+      }
+
+      setCallState(prev => prev ? { ...prev, status: 'connected' } : null);
+      setIncomingCallOffer(null);
+
+    } catch (err) {
+      console.error('Failed to accept secure call:', err);
+      toast.error('Could not capture microphone for call.');
+      declineIncomingCall();
+    }
+  };
+
+  const cleanupCallState = () => {
     if (localStream) {
       localStream.getTracks().forEach(track => track.stop());
       setLocalStream(null);
     }
-    setCallState(prev => prev ? { ...prev, status: 'ended' } : null);
+    if (pcRef.current) {
+      pcRef.current.close();
+      pcRef.current = null;
+    }
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.srcObject = null;
+    }
+    setCallState(null);
+    setIncomingCallOffer(null);
+    setActiveCallPartnerId(null);
+    setIsAudioMuted(false);
+    setIsVideoMuted(false);
+  };
+
+  const endCall = () => {
+    if (activeCallPartnerId && user && callChannelRef.current) {
+      callChannelRef.current.send({
+        type: 'broadcast',
+        event: 'signal',
+        payload: {
+          targetUserId: activeCallPartnerId,
+          fromUserId: user.id,
+          signalType: 'hangup',
+          data: null
+        }
+      });
+    }
+    cleanupCallState();
     toast.info('Call ended');
-    setTimeout(() => {
-      setCallState(null);
-      setIsAudioMuted(false);
-      setIsVideoMuted(false);
-    }, 1000);
+  };
+
+  const handleRemoteHangup = () => {
+    cleanupCallState();
+    toast.info('Call disconnected by remote user');
+  };
+
+  const declineIncomingCall = () => {
+    if (activeCallPartnerId && user && callChannelRef.current) {
+      callChannelRef.current.send({
+        type: 'broadcast',
+        event: 'signal',
+        payload: {
+          targetUserId: activeCallPartnerId,
+          fromUserId: user.id,
+          signalType: 'hangup',
+          data: null
+        }
+      });
+    }
+    cleanupCallState();
+    toast.info('Call declined');
   };
 
   const toggleAudioMute = () => {
@@ -613,6 +859,28 @@ export default function TeamChatPage() {
   // Dialer triggers
   const initiateCallSim = (type: 'audio' | 'video') => {
     if (activeFriend) initiateCall(type);
+  };
+
+  const handleAddFriendSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!friendTagInput.trim()) return;
+
+    setIsAddingFriend(true);
+    const result = await addFriendByTag(friendTagInput.trim());
+    setIsAddingFriend(false);
+
+    if (!result.ok) {
+      toast.error(result.message);
+      return;
+    }
+
+    toast.success(result.message);
+    setFriendTagInput('');
+    setShowAddFriendModal(false);
+    if (result.friend) {
+      setActiveChat({ type: 'dm', id: result.friend.id });
+      setActiveThreadMessageId(null);
+    }
   };
 
   return (
@@ -685,6 +953,8 @@ export default function TeamChatPage() {
                         setActiveChat({ type: 'channel', id: channel.id });
                         setActiveThreadMessageId(null);
                       }}
+                      data-context-type="channel"
+                      data-context-id={channel.id}
                       className={cn(
                         "w-full px-2 py-1.5 rounded-md flex items-center justify-between text-left group",
                         activeChat.type === 'channel' && activeChat.id === channel.id
@@ -732,6 +1002,8 @@ export default function TeamChatPage() {
                       setActiveChat({ type: 'channel', id: channel.id });
                       setActiveThreadMessageId(null);
                     }}
+                    data-context-type="channel"
+                    data-context-id={channel.id}
                     className={cn(
                       "w-full px-2 py-1.5 rounded-md flex items-center justify-between text-left group",
                       activeChat.type === 'channel' && activeChat.id === channel.id
@@ -778,6 +1050,8 @@ export default function TeamChatPage() {
                       setActiveChat({ type: 'channel', id: channel.id });
                       setActiveThreadMessageId(null);
                     }}
+                    data-context-type="channel"
+                    data-context-id={channel.id}
                     className={cn(
                       "w-full px-2 py-1.5 rounded-md flex items-center justify-between text-left group",
                       activeChat.type === 'channel' && activeChat.id === channel.id
@@ -800,10 +1074,39 @@ export default function TeamChatPage() {
 
             {/* DIRECT MESSAGES */}
             <div>
-              <h3 className="px-2.5 mb-1.5 text-[10px] uppercase font-bold tracking-wider text-emerald-600 dark:text-emerald-500/90 flex items-center gap-1.5">
-                <Circle className="w-1.5 h-1.5 fill-current" />
-                Teammates DMs
-              </h3>
+              <div className="flex items-center justify-between mb-1.5">
+                <h3 className="px-2.5 text-[10px] uppercase font-bold tracking-wider text-emerald-600 dark:text-emerald-500/90 flex items-center gap-1.5">
+                  <Circle className="w-1.5 h-1.5 fill-current" />
+                  Friends ({filteredUsers.length})
+                </h3>
+                {canManageTeamMembers && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setShowAddFriendModal(true)}
+                    className="w-5 h-5 text-muted-foreground hover:text-foreground hover:bg-accent"
+                    title="Add teammate by Name#1234"
+                  >
+                    <UserPlus className="w-3.5 h-3.5" />
+                  </Button>
+                )}
+              </div>
+              {filteredUsers.length === 0 && (
+                canManageTeamMembers ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowAddFriendModal(true)}
+                    className="w-full p-2 rounded-md border border-dashed border-border text-[10px] text-muted-foreground hover:text-foreground hover:bg-accent/30 transition-colors flex items-center justify-center gap-1.5"
+                  >
+                    <UserPlus className="w-3.5 h-3.5" />
+                    Add teammate by Name#1234
+                  </button>
+                ) : (
+                  <div className="w-full p-2 rounded-md border border-dashed border-border text-[10px] text-muted-foreground text-center leading-relaxed">
+                    No teammates yet. Ask an admin to add members to this team.
+                  </div>
+                )
+              )}
               {/* Online list */}
               {onlineFriends.map(friend => (
                 <button
@@ -1613,7 +1916,7 @@ export default function TeamChatPage() {
                       className="bg-background border border-border rounded p-1 text-[10px]"
                     >
                       <option value="">Any Teammate</option>
-                      {allUsers.map(u => <option key={u.id} value={u.name}>{u.name}</option>)}
+                      {teamUsers.map(u => <option key={u.id} value={u.name}>{u.name}</option>)}
                     </select>
                   </div>
                   
@@ -1674,6 +1977,54 @@ export default function TeamChatPage() {
                   )}
                 </div>
               </ScrollArea>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ADD FRIEND DIALOG */}
+      <AnimatePresence>
+        {showAddFriendModal && canManageTeamMembers && (
+          <div className="absolute inset-0 bg-background/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-popover border border-border w-full max-w-sm rounded-2xl shadow-xl p-5 flex flex-col gap-4 text-xs"
+            >
+              <div className="flex justify-between items-center pb-2 border-b border-border/60">
+                <h3 className="font-bold text-sm text-foreground flex items-center gap-2">
+                  <UserPlus className="w-4 h-4 text-emerald-500" />
+                  Add Teammate
+                </h3>
+                <Button variant="ghost" size="icon" className="w-6.5 h-6.5" onClick={() => setShowAddFriendModal(false)}>
+                  <X className="w-4 h-4 text-muted-foreground" />
+                </Button>
+              </div>
+
+              <form onSubmit={handleAddFriendSubmit} className="flex flex-col gap-3.5">
+                <div className="flex flex-col gap-1">
+                  <label className="font-semibold text-muted-foreground">Name#Number</label>
+                  <input
+                    type="text"
+                    required
+                    value={friendTagInput}
+                    onChange={e => setFriendTagInput(e.target.value)}
+                    placeholder="Alex#1337"
+                    className="bg-background border border-border px-2.5 py-2 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500/40 text-foreground font-mono"
+                  />
+                </div>
+
+                <div className="p-2.5 border border-border/70 rounded-lg bg-muted/20">
+                  <p className="text-[10px] text-muted-foreground leading-relaxed">
+                    Ask teammates for the tag shown beside their name. Admin-added members appear in both users' team lists.
+                  </p>
+                </div>
+
+                <Button type="submit" disabled={isAddingFriend} className="w-full bg-[#37352f] text-white dark:bg-[#e3e3e2] dark:text-[#191919] mt-1 font-bold">
+                  {isAddingFriend ? 'Finding Teammate...' : 'Add Teammate'}
+                </Button>
+              </form>
             </motion.div>
           </div>
         )}
@@ -1931,49 +2282,78 @@ export default function TeamChatPage() {
                   <div className="text-center">
                     <h3 className="text-xl font-bold text-white">{callState.friend.name}</h3>
                     <p className="text-xs text-zinc-400 mt-1 uppercase tracking-widest font-semibold font-mono animate-pulse">
-                      {callState.status === 'dialing' ? 'Dialing secure connection...' : 'Connecting P2P...'}
+                      {incomingCallOffer && callState.status === 'ringing'
+                        ? 'Incoming secure call...'
+                        : callState.status === 'dialing'
+                        ? 'Dialing secure connection...'
+                        : 'Connecting P2P...'}
                     </p>
                   </div>
+
+                  {/* Accept / Decline actions for incoming calls */}
+                  {incomingCallOffer && callState.status === 'ringing' && (
+                    <div className="flex items-center gap-4 mt-2">
+                      <Button
+                        onClick={acceptIncomingCall}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-6 py-2.5 rounded-full flex items-center gap-2 shadow-lg"
+                      >
+                        <Phone className="w-4 h-4 fill-current" />
+                        Accept
+                      </Button>
+                      <Button
+                        onClick={declineIncomingCall}
+                        className="bg-red-600 hover:bg-red-700 text-white font-semibold px-6 py-2.5 rounded-full flex items-center gap-2 shadow-lg"
+                      >
+                        <PhoneOff className="w-4 h-4" />
+                        Decline
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
 
-            <div className="flex items-center gap-6 mb-8 shrink-0">
-              <Button
-                type="button"
-                onClick={toggleAudioMute}
-                className={cn(
-                  "w-12 h-12 rounded-full flex items-center justify-center shadow-lg border border-zinc-800 transition-colors",
-                  isAudioMuted ? "bg-red-600 text-white hover:bg-red-700" : "bg-zinc-900 hover:bg-zinc-800 text-zinc-300"
-                )}
-              >
-                {isAudioMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
-              </Button>
-
-              {callState.type === 'video' && (
+            {!(incomingCallOffer && callState.status === 'ringing') && (
+              <div className="flex items-center gap-6 mb-8 shrink-0">
                 <Button
                   type="button"
-                  onClick={toggleVideoMute}
+                  onClick={toggleAudioMute}
                   className={cn(
                     "w-12 h-12 rounded-full flex items-center justify-center shadow-lg border border-zinc-800 transition-colors",
-                    isVideoMuted ? "bg-red-600 text-white hover:bg-red-700" : "bg-zinc-900 hover:bg-zinc-800 text-zinc-300"
+                    isAudioMuted ? "bg-red-600 text-white hover:bg-red-700" : "bg-zinc-900 hover:bg-zinc-800 text-zinc-300"
                   )}
                 >
-                  {isVideoMuted ? <VideoOff className="w-5 h-5" /> : <Video className="w-5 h-5" />}
+                  {isAudioMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
                 </Button>
-              )}
 
-              <Button
-                type="button"
-                onClick={endCall}
-                className="w-12 h-12 rounded-full bg-red-600 hover:bg-red-700 text-white flex items-center justify-center shadow-lg border border-red-500/20 transition-colors"
-              >
-                <PhoneOff className="w-5 h-5" />
-              </Button>
-            </div>
+                {callState.type === 'video' && (
+                  <Button
+                    type="button"
+                    onClick={toggleVideoMute}
+                    className={cn(
+                      "w-12 h-12 rounded-full flex items-center justify-center shadow-lg border border-zinc-800 transition-colors",
+                      isVideoMuted ? "bg-red-600 text-white hover:bg-red-700" : "bg-zinc-900 hover:bg-zinc-800 text-zinc-300"
+                    )}
+                  >
+                    {isVideoMuted ? <VideoOff className="w-5 h-5" /> : <Video className="w-5 h-5" />}
+                  </Button>
+                )}
+
+                <Button
+                  type="button"
+                  onClick={endCall}
+                  className="w-12 h-12 rounded-full bg-red-600 hover:bg-red-700 text-white flex items-center justify-center shadow-lg border border-red-500/20 transition-colors"
+                >
+                  <PhoneOff className="w-5 h-5" />
+                </Button>
+              </div>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Hidden remote stream audio element */}
+      <audio ref={remoteAudioRef} autoPlay />
 
     </div>
   );

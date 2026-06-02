@@ -5,7 +5,7 @@ import { motion } from 'motion/react';
 import { 
   FileText, Search, GitCompare, TrendingUp, Wand2, HelpCircle
 } from 'lucide-react';
-import { suggestedPrompts } from '@/lib/sample-data';
+import { suggestedPrompts } from '@/lib/chat-prompts';
 
 interface SuggestedPromptsProps {
   onSelect: (prompt: string) => void;

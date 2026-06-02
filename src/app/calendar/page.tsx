@@ -332,6 +332,8 @@ export default function CalendarPage() {
                                 e.stopPropagation();
                                 setEditingEvent(event);
                               }}
+                              data-context-type="event"
+                              data-context-id={event.id}
                               className={cn(
                                 "text-[9px] font-semibold py-0.5 px-1.5 rounded truncate border border-transparent cursor-pointer hover:brightness-95 dark:hover:brightness-110 transition-all",
                                 getEventBgColor(event.category)
@@ -392,6 +394,8 @@ export default function CalendarPage() {
                           <div 
                             key={event.id}
                             onClick={() => setEditingEvent(event)}
+                            data-context-type="event"
+                            data-context-id={event.id}
                             className={cn(
                               "p-3 rounded-lg border flex flex-col gap-1.5 text-xs relative cursor-pointer hover:shadow-sm transition-all",
                               getEventBgColor(event.category),
@@ -443,6 +447,8 @@ export default function CalendarPage() {
                         setSelectedDate(new Date(event.date));
                         setEditingEvent(event);
                       }}
+                      data-context-type="event"
+                      data-context-id={event.id}
                       className="flex gap-4 p-4 rounded-xl border border-border/60 hover:bg-muted/10 cursor-pointer bg-background transition-all"
                     >
                       <div className="w-12 h-12 rounded-lg bg-muted flex flex-col items-center justify-center font-bold shrink-0">
@@ -524,6 +530,8 @@ export default function CalendarPage() {
                   <div 
                     key={event.id}
                     onClick={() => setEditingEvent(event)}
+                    data-context-type="event"
+                    data-context-id={event.id}
                     className="p-3.5 rounded-xl border border-border/40 bg-background flex flex-col gap-2.5 hover:shadow-sm cursor-pointer hover:border-primary/20 transition-all"
                   >
                     <div className="flex justify-between items-start">

@@ -7,20 +7,43 @@ import { TopBar } from './top-bar';
 import { CommandPalette } from './command-palette';
 import { useWorkspace } from '@/lib/store';
 import { LoginScreen } from './login-screen';
+import { NoWorkspaceScreen } from './no-workspace-screen';
+import { VerifyEmailScreen } from './verify-email-screen';
 import { AppShellSkeleton, LoginScreenSkeleton } from './app-shell-skeleton';
+import { CustomContextMenu } from './context-menu';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { Mail, Copy, ExternalLink, AlertTriangle } from 'lucide-react';
 
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
-  const { user, emailRedirect, setEmailRedirect, isAppLoading } = useWorkspace();
+  const { user, emailRedirect, setEmailRedirect, isAppLoading, workspace } = useWorkspace();
   const pathname = usePathname();
+  const router = useRouter();
+  const [hasAuthParam, setHasAuthParam] = useState<boolean>(false);
 
   const isLandingPage = pathname === '/landing';
+  const isAuthCallbackOrInvite = pathname.startsWith('/auth') || pathname.startsWith('/invite');
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      setHasAuthParam(!!params.get('auth'));
+    }
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!isAppLoading) {
+      if (!user && !isLandingPage && !hasAuthParam && !isAuthCallbackOrInvite) {
+        router.push('/landing');
+      } else if (user && isLandingPage) {
+        router.push('/');
+      }
+    }
+  }, [user, isAppLoading, isLandingPage, hasAuthParam, isAuthCallbackOrInvite, router]);
 
   useEffect(() => {
     if (isLandingPage) return;
@@ -35,7 +58,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   }, [isLandingPage]);
 
   if (isLandingPage) {
-    return <div className="min-h-screen w-full bg-background text-foreground overflow-x-hidden">{children}</div>;
+    return <div className="min-h-screen w-full overflow-x-hidden">{children}</div>;
   }
 
   if (isAppLoading) {
@@ -74,7 +97,18 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   };
 
   if (!user) {
-    return <LoginScreen />;
+    if (hasAuthParam || isAuthCallbackOrInvite) {
+      return <LoginScreen />;
+    }
+    return <LoginScreenSkeleton />;
+  }
+
+  if (!user.emailVerified) {
+    return <VerifyEmailScreen />;
+  }
+
+  if (!workspace) {
+    return <NoWorkspaceScreen />;
   }
 
   return (
@@ -88,6 +122,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       </div>
       <RightSidebar />
       <CommandPalette open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen} />
+      <CustomContextMenu />
 
       {/* Global Email Client Redirection Dialog */}
       <Dialog open={!!emailRedirect} onOpenChange={(open) => !open && setEmailRedirect(null)}>

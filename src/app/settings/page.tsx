@@ -22,9 +22,12 @@ import {
 } from '@/lib/billing/plans';
 import { parseSsoProvider } from '@/lib/enterprise/sso';
 
-const DEMO_ORG_ID = process.env.NEXT_PUBLIC_DEMO_ORGANIZATION_ID ?? '';
+const ORG_ID =
+  process.env.NEXT_PUBLIC_ORGANIZATION_ID ??
+  process.env.NEXT_PUBLIC_DEMO_ORGANIZATION_ID ??
+  '';
 
-const sections = [
+const STATIC_SECTIONS = [
   { id: 'general', label: 'General', icon: Settings },
   { id: 'account', label: 'Account', icon: User },
   { id: 'appearance', label: 'Appearance', icon: Palette },
@@ -55,12 +58,42 @@ function Toggle({ enabled, onToggle, disabled = false }: { enabled: boolean; onT
 }
 
 export default function SettingsPage() {
-  const { setActivePage, theme, toggleTheme, themeConfig, setThemeConfig } = useWorkspace();
+  const {
+    setActivePage,
+    theme,
+    toggleTheme,
+    themeConfig,
+    setThemeConfig,
+    user,
+    loginActivities,
+    workspace,
+    workspaceMembers: realWorkspaceMembers,
+    workspaceInvites,
+    auditLogs: realAuditLogs,
+    feedbackItems,
+    aiUsage,
+    canManageTeamMembers,
+    createInviteLink,
+    submitFeedback,
+    updateMemberRole,
+  } = useWorkspace();
   const [activeSection, setActiveSection] = useState('general');
+
+  const sections = [
+    { id: 'general', label: 'General', icon: Settings },
+    { id: 'account', label: 'Account', icon: User },
+    { id: 'appearance', label: 'Appearance', icon: Palette },
+    { id: 'notifications', label: 'Notifications', icon: Bell },
+    ...(canManageTeamMembers ? [
+      { id: 'security', label: 'Security & SSO', icon: Shield },
+      { id: 'billing', label: 'Plans & Billing', icon: CreditCard },
+      { id: 'audit', label: 'Audit Logs', icon: Terminal },
+    ] : []),
+  ];
   
   // Workspace Info State
   const [workspaceName, setWorkspaceName] = useState('Nexus AI');
-  const [workspaceUrl, setWorkspaceUrl] = useState('sarah-workspace');
+  const [workspaceUrl, setWorkspaceUrl] = useState('');
   
   // General Permissions State
   const [permissions, setPermissions] = useState({
@@ -72,27 +105,25 @@ export default function SettingsPage() {
 
   // Account State
   const [userProfile, setUserProfile] = useState({
-    name: 'Sarah Chen',
-    email: 'sarah@nexus.ai',
-    role: 'Product Lead',
+    name: '',
+    email: '',
+    role: 'Member',
   });
 
-  // Seat/Member Management State
-  const [workspaceMembers, setWorkspaceMembers] = useState([
-    { id: 'p1', name: 'Sarah Chen', email: 'sarah@nexus.ai', role: 'Admin', status: 'Active' },
-    { id: 'p2', name: 'Marcus Johnson', email: 'marcus@nexus.ai', role: 'Member', status: 'Active' },
-    { id: 'p3', name: 'Elena Rodriguez', email: 'elena@nexus.ai', role: 'Member', status: 'Active' },
-    { id: 'p4', name: 'Alex Kim', email: 'alex@nexus.ai', role: 'Member', status: 'Active' },
-  ]);
+  const [workspaceMembers, setWorkspaceMembers] = useState<
+    { id: string; name: string; email: string; role: string; status: string }[]
+  >([]);
   const [newMemberEmail, setNewMemberEmail] = useState('');
   const [newMemberRole, setNewMemberRole] = useState('Member');
+  const [inviteLink, setInviteLink] = useState('');
+  const [feedbackDraft, setFeedbackDraft] = useState('');
 
   // SSO & SAML Mappings State
   const [ssoConfig, setSsoConfig] = useState({
     enabled: false,
     provider: 'Google Workspace',
-    metadataUrl: 'https://accounts.google.com/o/saml2?idpid=C023192',
-    domainMapping: 'nexus.ai',
+    metadataUrl: '',
+    domainMapping: '',
     authProvisioning: true,
   });
 
@@ -104,20 +135,15 @@ export default function SettingsPage() {
   
   // Mock Checkout Form
   const [checkoutCard, setCheckoutCard] = useState({
-    number: '4111 2222 3333 4444',
-    expiry: '12/28',
-    cvc: '123',
-    name: 'Sarah Chen',
+    number: '',
+    expiry: '',
+    cvc: '',
+    name: '',
   });
 
-  // Security Audit Log Stream State
-  const [auditLogs, setAuditLogs] = useState([
-    { id: 'log-1', timestamp: '2026-06-01T04:02:15Z', actor: 'Sarah Chen', action: 'Update Role', target: 'Marcus Johnson (Member -> Admin)', ip: '192.168.1.42' },
-    { id: 'log-2', timestamp: '2026-06-01T03:44:10Z', actor: 'Sarah Chen', action: 'Configure SAML SSO', target: 'Metadata URL mappings verified', ip: '192.168.1.42' },
-    { id: 'log-3', timestamp: '2026-05-31T22:15:32Z', actor: 'Alex Kim', action: 'Document Upload', target: 'Acme_SOW_Phase_2.pdf (1.2 MB)', ip: '192.168.1.99' },
-    { id: 'log-4', timestamp: '2026-05-31T19:33:14Z', actor: 'Elena Rodriguez', action: 'Join Workspace', target: 'Added via invite link', ip: '192.168.1.102' },
-    { id: 'log-5', timestamp: '2026-05-31T18:04:10Z', actor: 'Marcus Johnson', action: 'Sign-in Success', target: 'User agent verified (Chrome/Win)', ip: '192.168.1.84' },
-  ]);
+  const [auditLogs, setAuditLogs] = useState<
+    { id: string; timestamp: string; actor: string; action: string; target: string; ip: string }[]
+  >([]);
 
   useEffect(() => {
     setActivePage('settings');
@@ -127,9 +153,104 @@ export default function SettingsPage() {
     }
   }, [setActivePage]);
 
+  useEffect(() => {
+    if (!user) return;
+    setUserProfile({
+      name: user.name,
+      email: user.email,
+      role: user.role,
+    });
+    setCheckoutCard((c) => ({ ...c, name: user.name }));
+    setWorkspaceUrl((prev) => prev || user.email.split('@')[1]?.replace(/\./g, '-') || 'my-workspace');
+    setWorkspaceMembers((prev) => {
+      if (prev.some((m) => m.id === user.id)) return prev;
+      return [
+        {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: 'Admin',
+          status: 'Active',
+        },
+        ...prev,
+      ];
+    });
+  }, [user]);
+
+  useEffect(() => {
+    if (!user || realWorkspaceMembers.length === 0) return;
+    setWorkspaceMembers(realWorkspaceMembers.map((member) => {
+      const profile = member.userId === user.id ? user : undefined;
+      return {
+        id: member.userId,
+        name: profile?.name || member.userId,
+        email: profile?.email || '',
+        role: member.role,
+        status: member.status === 'active' ? 'Active' : member.status,
+      };
+    }));
+  }, [realWorkspaceMembers, user]);
+
+  useEffect(() => {
+    if (loginActivities.length === 0) return;
+    setAuditLogs(
+      loginActivities.slice(0, 20).map((a) => ({
+        id: a.id,
+        timestamp: a.timestamp,
+        actor: a.userName,
+        action: 'Sign-in',
+        target: `${a.userRole} · ${a.device}`,
+        ip: a.ipAddress,
+      }))
+    );
+  }, [loginActivities]);
+
+  useEffect(() => {
+    if (realAuditLogs.length === 0 && loginActivities.length === 0) return;
+    const loginLogs = loginActivities.slice(0, 20).map((a) => ({
+      id: a.id,
+      timestamp: a.timestamp,
+      actor: a.userName,
+      action: 'Sign-in',
+      target: `${a.userRole} - ${a.device}`,
+      ip: a.ipAddress,
+    }));
+    const workspaceLogs = realAuditLogs.slice(0, 30).map((a) => ({
+      id: a.id,
+      timestamp: a.timestamp,
+      actor: a.actorName,
+      action: a.action,
+      target: a.target,
+      ip: 'workspace',
+    }));
+    setAuditLogs([...workspaceLogs, ...loginLogs].slice(0, 40));
+  }, [loginActivities, realAuditLogs]);
+
+  const handleCreateInvite = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const result = await createInviteLink(newMemberEmail, newMemberRole);
+    if (!result.ok) {
+      toast.error(result.message);
+      return;
+    }
+    setInviteLink(result.url || '');
+    toast.success(result.message);
+  };
+
+  const handleSubmitFeedback = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const result = await submitFeedback(feedbackDraft, activeSection);
+    if (!result.ok) {
+      toast.error(result.message);
+      return;
+    }
+    setFeedbackDraft('');
+    toast.success(result.message);
+  };
+
   const persistSsoConfig = async (next: typeof ssoConfig) => {
-    if (!DEMO_ORG_ID) {
-      toast.info('Set NEXT_PUBLIC_DEMO_ORGANIZATION_ID to persist SSO to Supabase.');
+    if (!ORG_ID) {
+      toast.info('Set NEXT_PUBLIC_ORGANIZATION_ID to persist SSO to Supabase.');
       return;
     }
     try {
@@ -137,7 +258,7 @@ export default function SettingsPage() {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          organizationId: DEMO_ORG_ID,
+          organizationId: ORG_ID,
           enabled: next.enabled,
           provider: parseSsoProvider(next.provider),
           domain: next.domainMapping,
@@ -209,7 +330,7 @@ export default function SettingsPage() {
     const newAudit = {
       id: `log-${Date.now()}`,
       timestamp: new Date().toISOString(),
-      actor: 'Sarah Chen',
+      actor: userProfile.name || 'You',
       action: 'Invite User Seat',
       target: `${newMember.name} (${newMember.role})`,
       ip: '192.168.1.42',
@@ -219,7 +340,7 @@ export default function SettingsPage() {
 
   // Remove workspace seat
   const handleRemoveMember = (id: string, name: string) => {
-    if (id === 'p1') {
+    if (user && id === user.id) {
       toast.error('Cannot remove the workspace owner.');
       return;
     }
@@ -235,7 +356,7 @@ export default function SettingsPage() {
       const newAudit = {
         id: `log-${Date.now()}`,
         timestamp: new Date().toISOString(),
-        actor: 'Sarah Chen',
+        actor: userProfile.name || 'You',
         action: 'Deallocate User Seat',
         target: `${name}`,
         ip: '192.168.1.42',
@@ -249,9 +370,9 @@ export default function SettingsPage() {
   };
 
   const syncSeatsToRazorpay = async (count: number) => {
-    if (!DEMO_ORG_ID) return;
+    if (!ORG_ID) return;
     try {
-      await updateSeatCount(DEMO_ORG_ID, count);
+      await updateSeatCount(ORG_ID, count);
     } catch {
       // Razorpay not configured — local seat state only
     }
@@ -269,7 +390,7 @@ export default function SettingsPage() {
         planId,
         cycle: billingCycle,
         seatCount: workspaceMembers.length,
-        organizationId: DEMO_ORG_ID || undefined,
+        organizationId: ORG_ID || undefined,
         customerName: userProfile.name,
         customerEmail: userProfile.email,
       });
@@ -282,14 +403,14 @@ export default function SettingsPage() {
   };
 
   const handleOpenBillingPortal = async () => {
-    if (!DEMO_ORG_ID) {
+    if (!ORG_ID) {
       setActiveSection('billing');
-      toast.info('Configure NEXT_PUBLIC_DEMO_ORGANIZATION_ID for subscription management.');
+      toast.info('Configure NEXT_PUBLIC_ORGANIZATION_ID for subscription management.');
       return;
     }
     try {
       toast.loading('Opening billing management…', { id: 'portal' });
-      const url = await openBillingManage(DEMO_ORG_ID);
+      const url = await openBillingManage(ORG_ID);
       window.location.href = url;
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Billing management unavailable', { id: 'portal' });
@@ -311,7 +432,7 @@ export default function SettingsPage() {
       const newAudit = {
         id: `log-${Date.now()}`,
         timestamp: new Date().toISOString(),
-        actor: 'Sarah Chen',
+        actor: userProfile.name || 'You',
         action: 'Upgrade Plan Subscription',
         target: `${targetPlan} (${billingCycle})`,
         ip: '192.168.1.42',
@@ -399,7 +520,7 @@ export default function SettingsPage() {
                     const newAudit = {
                       id: `log-${Date.now()}`,
                       timestamp: new Date().toISOString(),
-                      actor: 'Sarah Chen',
+                      actor: userProfile.name || 'You',
                       action: 'Update Workspace Meta',
                       target: `${workspaceName} (url: ${workspaceUrl})`,
                       ip: '192.168.1.42',
@@ -518,19 +639,22 @@ export default function SettingsPage() {
                       Seats Allocated: {workspaceMembers.length} / {currentPlan === 'Starter' ? '1' : currentPlan === 'Team Pro' ? '15' : 'Unlimited'}
                     </span>
                   </div>
-                  <p className="text-sm text-muted-foreground mt-1">Allocate seats and define granular permission structures for your business colleagues.</p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {workspace ? `${workspace.name} · ${workspace.slug}` : 'Create your workspace, then invite teammates.'}
+                  </p>
                 </div>
                 <div className="h-px bg-border" />
 
                 {/* Invite Seat Form */}
-                <form onSubmit={handleAddMember} className="flex gap-2 max-w-lg items-end">
+                <form onSubmit={handleCreateInvite} className="flex gap-2 max-w-lg items-end">
                   <div className="flex-1 flex flex-col gap-1.5">
-                    <label className="text-xs font-semibold text-foreground">New Seat Business Email</label>
+                    <label className="text-xs font-semibold text-foreground">Invite Email</label>
                     <input 
                       type="email" 
                       value={newMemberEmail}
                       onChange={(e) => setNewMemberEmail(e.target.value)}
-                      placeholder="e.g. alex@nexus.ai"
+                      placeholder="e.g. colleague@company.com"
+                      disabled={!canManageTeamMembers}
                       className="px-3 py-1.5 border border-border rounded-md bg-background text-sm focus:ring-1 focus:ring-ring focus:outline-none h-8"
                     />
                   </div>
@@ -539,18 +663,43 @@ export default function SettingsPage() {
                     <select
                       value={newMemberRole}
                       onChange={(e) => setNewMemberRole(e.target.value)}
+                      disabled={!canManageTeamMembers}
                       className="px-2 py-1.5 border border-border rounded-md bg-background text-xs focus:ring-1 focus:ring-ring focus:outline-none h-8"
                     >
-                      <option value="Admin">Admin</option>
                       <option value="Member">Member</option>
                       <option value="Guest">Guest</option>
                     </select>
                   </div>
-                  <Button type="submit" className="bg-foreground text-background hover:opacity-90 h-8 text-xs font-bold shrink-0">
+                  <Button type="submit" disabled={!canManageTeamMembers} className="bg-foreground text-background hover:opacity-90 h-8 text-xs font-bold shrink-0">
                     <Plus className="w-3.5 h-3.5 mr-1" />
-                    Allocate Seat
+                    Create Invite
                   </Button>
                 </form>
+                {!canManageTeamMembers && (
+                  <p className="text-[10px] text-muted-foreground">Only workspace admins can invite or add teammates.</p>
+                )}
+                {inviteLink && (
+                  <div className="max-w-lg p-2.5 border border-border rounded-lg bg-muted/30 text-xs flex items-center justify-between gap-3">
+                    <span className="truncate font-mono text-muted-foreground">{inviteLink}</span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-[10px] shrink-0"
+                      onClick={() => {
+                        navigator.clipboard.writeText(inviteLink);
+                        toast.success('Invite link copied.');
+                      }}
+                    >
+                      Copy
+                    </Button>
+                  </div>
+                )}
+                {workspaceInvites.length > 0 && (
+                  <div className="max-w-lg text-[10px] text-muted-foreground">
+                    Active invites: {workspaceInvites.filter(invite => !invite.usedAt && !invite.revokedAt).length}
+                  </div>
+                )}
 
                 {/* Seats List Table */}
                 <div className="border border-border rounded-lg overflow-hidden max-w-lg">
@@ -566,25 +715,76 @@ export default function SettingsPage() {
                           <span className="text-[10px] text-muted-foreground truncate">{member.email}</span>
                         </div>
                         <div className="flex items-center gap-4 shrink-0">
-                          <span className={cn(
-                            "text-[9px] px-2 py-0.5 rounded font-bold border",
-                            member.role === 'Admin' ? 'bg-white border-foreground/30 text-foreground' : 'bg-muted border-border text-slate-500'
-                          )}>
-                            {member.role}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveMember(member.id, member.name)}
-                            className="text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20 p-1.5 rounded transition-colors"
-                            title="Remove colleague seat"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          {canManageTeamMembers && member.id !== user?.id ? (
+                            <select
+                              value={member.role}
+                              onChange={async (e) => {
+                                const newRole = e.target.value;
+                                const success = await updateMemberRole(member.id, newRole);
+                                if (success) {
+                                  setWorkspaceMembers(prev => prev.map(m => m.id === member.id ? { ...m, role: newRole } : m));
+                                }
+                              }}
+                              className="px-2 py-1.5 border border-border rounded-md bg-background text-[10px] focus:ring-1 focus:ring-ring focus:outline-none h-7"
+                            >
+                              <option value="Admin">Admin</option>
+                              <option value="Member">Member</option>
+                              <option value="Developer">Developer</option>
+                              <option value="Designer">Designer</option>
+                              <option value="Guest">Guest</option>
+                            </select>
+                          ) : (
+                            <span className={cn(
+                              "text-[9px] px-2 py-0.5 rounded font-bold border",
+                              member.role === 'Admin' ? 'bg-white border-foreground/30 text-foreground' : 'bg-muted border-border text-slate-500'
+                            )}>
+                              {member.role}
+                            </span>
+                          )}
+                          {canManageTeamMembers && member.id !== user?.id && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveMember(member.id, member.name)}
+                              className="text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20 p-1.5 rounded transition-colors"
+                              title="Remove colleague seat"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
                       </div>
                     ))}
                   </div>
                 </div>
+
+                <div className="max-w-lg grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="border border-border rounded-lg p-3 bg-muted/10">
+                    <h3 className="text-xs font-bold text-foreground mb-1">AI Usage Today</h3>
+                    <p className="text-[10px] text-muted-foreground">
+                      {aiUsage.find(item => item.userId === user?.id && item.date === new Date().toISOString().slice(0, 10))?.requests || 0}
+                      {' / '}
+                      {aiUsage.find(item => item.userId === user?.id && item.date === new Date().toISOString().slice(0, 10))?.limit || (user?.role?.toLowerCase().includes('admin') ? 100 : 25)}
+                      {' '}requests
+                    </p>
+                  </div>
+                  <div className="border border-border rounded-lg p-3 bg-muted/10">
+                    <h3 className="text-xs font-bold text-foreground mb-1">Tester Feedback</h3>
+                    <p className="text-[10px] text-muted-foreground">{feedbackItems.length} notes captured</p>
+                  </div>
+                </div>
+
+                <form onSubmit={handleSubmitFeedback} className="max-w-lg flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-foreground">Send Test Feedback</label>
+                  <textarea
+                    value={feedbackDraft}
+                    onChange={(e) => setFeedbackDraft(e.target.value)}
+                    placeholder="What felt confusing, broken, or promising?"
+                    className="min-h-20 px-3 py-2 border border-border rounded-md bg-background text-sm focus:ring-1 focus:ring-ring focus:outline-none resize-none"
+                  />
+                  <Button type="submit" variant="outline" className="w-fit h-8 text-xs font-bold">
+                    Send Feedback
+                  </Button>
+                </form>
               </section>
             </div>
           )}
@@ -961,7 +1161,11 @@ export default function SettingsPage() {
                     <span className="text-2xl font-bold bg-white/5 border border-white/10 px-2 py-0.5 rounded text-foreground font-mono">VISA</span>
                     <div className="flex flex-col">
                       <span className="text-xs font-bold text-foreground">Visa ending in 4444</span>
-                      <span className="text-[10px] text-slate-500 mt-0.5">Expires 12/2028 • Billing name: Sarah Chen</span>
+                      <span className="text-[10px] text-slate-500 mt-0.5">
+                        {checkoutCard.expiry
+                          ? `Expires ${checkoutCard.expiry} • Billing name: ${checkoutCard.name || userProfile.name || '—'}`
+                          : 'Add a payment method in Razorpay to manage billing'}
+                      </span>
                     </div>
                   </div>
                   <Button 

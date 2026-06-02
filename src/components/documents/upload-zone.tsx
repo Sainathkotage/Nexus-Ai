@@ -8,7 +8,6 @@ import { CloudUpload, CheckCircle2, File, Loader2 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useWorkspace } from '@/lib/store';
 import { DocumentFile } from '@/types';
-import { currentUser } from '@/lib/sample-data';
 
 interface UploadZoneProps {
   open: boolean;
@@ -20,7 +19,7 @@ export function UploadZone({ open, onOpenChange }: UploadZoneProps) {
   const [isSuccess, setIsSuccess] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { addDocument } = useWorkspace();
+  const { addDocument, user } = useWorkspace();
 
   const processFile = async (file: File) => {
     const isPDF = file.name.toLowerCase().endsWith('.pdf');
@@ -41,6 +40,12 @@ export function UploadZone({ open, onOpenChange }: UploadZoneProps) {
     try {
       const formData = new FormData();
       formData.append('file', file);
+      if (user) {
+        formData.append('userId', user.id);
+        formData.append('userName', user.name);
+        formData.append('userEmail', user.email);
+        formData.append('userRole', user.role);
+      }
 
       const res = await fetch('/api/upload', {
         method: 'POST',
@@ -58,7 +63,7 @@ export function UploadZone({ open, onOpenChange }: UploadZoneProps) {
         type: data.filename.toLowerCase().endsWith('.pdf') ? 'pdf' : 'txt',
         size: `${(data.size / 1024 / 1024).toFixed(2)} MB`,
         uploadedAt: new Date().toISOString(),
-        uploadedBy: currentUser,
+        uploadedBy: user ?? { id: 'unknown', name: 'User', email: '', avatar: '', role: 'Member' },
         summary: data.analysis?.summary || 'Newly uploaded document.',
         keyPoints: data.analysis?.keyPoints || ['Document uploaded successfully.'],
         extractedTasks: (data.analysis?.tasks || []).map((t: any, i: number) => ({

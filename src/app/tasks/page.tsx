@@ -46,15 +46,49 @@ export default function TasksPage() {
     addTask, 
     deleteTask, 
     updateTask, 
-    allUsers 
+    allUsers,
+    user,
+    selectedTaskId,
+    setSelectedTaskId
   } = useWorkspace();
 
   const [view, setView] = useState<'board' | 'list' | 'timeline' | 'workload'>('board');
   const [searchQuery, setSearchQuery] = useState('');
+  const isGuest = user?.role === 'Guest';
   
   // Dialog controls
   const [isAddTaskOpen, setIsAddTaskOpen] = useState(false);
-  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  
+  const selectedTask = useMemo(() => {
+    if (!selectedTaskId || selectedTaskId === 'new') return null;
+    return tasks.find(t => t.id === selectedTaskId) || null;
+  }, [tasks, selectedTaskId]);
+
+  const setSelectedTask = (
+    taskOrFn: Task | null | ((prev: Task | null) => Task | null)
+  ) => {
+    if (typeof taskOrFn === 'function') {
+      const nextTask = taskOrFn(selectedTask);
+      setSelectedTaskId(nextTask ? nextTask.id : null);
+    } else {
+      setSelectedTaskId(taskOrFn ? taskOrFn.id : null);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedTaskId === 'new') {
+      setIsAddTaskOpen(true);
+    } else if (selectedTaskId === null && isAddTaskOpen) {
+      setIsAddTaskOpen(false);
+    }
+  }, [selectedTaskId]);
+
+  const handleCloseAddTask = () => {
+    setIsAddTaskOpen(false);
+    if (selectedTaskId === 'new') {
+      setSelectedTaskId(null);
+    }
+  };
 
   // New task form state
   const [newTitle, setNewTitle] = useState('');
@@ -144,13 +178,19 @@ export default function TasksPage() {
         </div>
 
         <div className="flex items-center gap-3">
-          <Button 
-            onClick={() => setIsAddTaskOpen(true)}
-            size="sm"
-            className="bg-[#37352f] hover:bg-[#37352f]/90 text-white dark:bg-[#e3e3e2] dark:text-[#191919] dark:hover:bg-[#e3e3e2]/90 shadow-sm gap-1.5"
-          >
-            <Plus className="w-3.5 h-3.5" /> Task
-          </Button>
+          {!isGuest ? (
+            <Button 
+              onClick={() => setIsAddTaskOpen(true)}
+              size="sm"
+              className="bg-[#37352f] hover:bg-[#37352f]/90 text-white dark:bg-[#e3e3e2] dark:text-[#191919] dark:hover:bg-[#e3e3e2]/90 shadow-sm gap-1.5"
+            >
+              <Plus className="w-3.5 h-3.5" /> Task
+            </Button>
+          ) : (
+            <Badge variant="outline" className="text-muted-foreground border-dashed text-[10px] py-1.5 px-2">
+              View-only Guest Access
+            </Badge>
+          )}
 
           {/* Custom Tabs */}
           <div className="flex border border-border/60 rounded-md bg-muted/40 p-0.5 text-xs font-semibold">
@@ -229,10 +269,11 @@ export default function TasksPage() {
                         dragOverColumn === column.id && "bg-primary/5 border-dashed border-primary/30"
                       )}
                       onDragOver={(e) => e.preventDefault()}
-                      onDragEnter={() => setDragOverColumn(column.id)}
-                      onDragLeave={() => setDragOverColumn(null)}
+                      onDragEnter={() => !isGuest && setDragOverColumn(column.id)}
+                      onDragLeave={() => !isGuest && setDragOverColumn(null)}
                       onDrop={(e) => {
                         e.preventDefault();
+                        if (isGuest) return;
                         const taskId = e.dataTransfer.getData('text/plain');
                         if (taskId) {
                           moveTask(taskId, column.id);
@@ -244,11 +285,17 @@ export default function TasksPage() {
                       {columnTasks.map(task => (
                         <div
                           key={task.id}
-                          draggable="true"
+                          draggable={!isGuest ? "true" : "false"}
                           onDragStart={(e) => {
+                            if (isGuest) {
+                              e.preventDefault();
+                              return;
+                            }
                             e.dataTransfer.setData('text/plain', task.id);
                           }}
                           onClick={() => setSelectedTask(task)}
+                          data-context-type="task"
+                          data-context-id={task.id}
                           className="bg-card border border-border hover:border-primary/20 rounded-lg p-3 hover:shadow-sm cursor-grab active:cursor-grabbing transition-all flex flex-col gap-2 relative group"
                         >
                           <div className="flex items-start justify-between gap-1">
@@ -297,34 +344,36 @@ export default function TasksPage() {
                           </div>
 
                           {/* Quick movement selectors */}
-                          <div className="absolute right-2 top-2 hidden group-hover:flex items-center gap-0.5 bg-background border border-border rounded shadow-md p-0.5 z-10">
-                            {column.id !== 'backlog' && (
-                              <button 
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  const idx = COLUMNS.findIndex(c => c.id === column.id);
-                                  moveTask(task.id, COLUMNS[idx-1].id);
-                                }}
-                                className="p-1 hover:bg-muted rounded text-muted-foreground hover:text-foreground"
-                                title="Move left"
-                              >
-                                <ChevronLeft className="w-3 h-3" />
-                              </button>
-                            )}
-                            {column.id !== 'done' && (
-                              <button 
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  const idx = COLUMNS.findIndex(c => c.id === column.id);
-                                  moveTask(task.id, COLUMNS[idx+1].id);
-                                }}
-                                className="p-1 hover:bg-muted rounded text-muted-foreground hover:text-foreground"
-                                title="Move right"
-                              >
-                                <ChevronRight className="w-3 h-3" />
-                              </button>
-                            )}
-                          </div>
+                          {!isGuest && (
+                            <div className="absolute right-2 top-2 hidden group-hover:flex items-center gap-0.5 bg-background border border-border rounded shadow-md p-0.5 z-10">
+                              {column.id !== 'backlog' && (
+                                <button 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const idx = COLUMNS.findIndex(c => c.id === column.id);
+                                    moveTask(task.id, COLUMNS[idx-1].id);
+                                  }}
+                                  className="p-1 hover:bg-muted rounded text-muted-foreground hover:text-foreground"
+                                  title="Move left"
+                                >
+                                  <ChevronLeft className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                              {column.id !== 'done' && (
+                                <button 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const idx = COLUMNS.findIndex(c => c.id === column.id);
+                                    moveTask(task.id, COLUMNS[idx+1].id);
+                                  }}
+                                  className="p-1 hover:bg-muted rounded text-muted-foreground hover:text-foreground"
+                                  title="Move right"
+                                >
+                                  <ChevronRight className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          )}
                         </div>
                       ))}
 
@@ -679,7 +728,7 @@ export default function TasksPage() {
       </div>
 
       {/* CREATE TASK DIALOG */}
-      <Dialog open={isAddTaskOpen} onOpenChange={setIsAddTaskOpen}>
+      <Dialog open={isAddTaskOpen} onOpenChange={handleCloseAddTask}>
         <DialogContent className="sm:max-w-[500px] bg-background border border-border/80 shadow-lg rounded-xl">
           <DialogHeader>
             <DialogTitle className="text-base font-bold">Create New Task</DialogTitle>
@@ -802,7 +851,7 @@ export default function TasksPage() {
             </div>
 
             <DialogFooter className="mt-2 flex gap-2">
-              <Button type="button" variant="ghost" onClick={() => setIsAddTaskOpen(false)}>Cancel</Button>
+              <Button type="button" variant="ghost" onClick={handleCloseAddTask}>Cancel</Button>
               <Button 
                 type="submit" 
                 className="bg-[#37352f] hover:bg-[#37352f]/90 text-white dark:bg-[#e3e3e2] dark:text-[#191919] dark:hover:bg-[#e3e3e2]/90 shadow-sm"

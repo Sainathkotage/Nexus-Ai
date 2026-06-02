@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseServiceRole } from '@/lib/supabase';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
 
 export async function POST(req: Request) {
   try {
@@ -23,6 +24,10 @@ export async function POST(req: Request) {
     const { PDFParse } = require('pdf-parse');
     const formData = await req.formData();
     const file = formData.get('file') as File | null;
+    const formUserId = String(formData.get('userId') || '');
+    const formUserName = String(formData.get('userName') || '');
+    const formUserEmail = String(formData.get('userEmail') || '');
+    const formUserRole = String(formData.get('userRole') || 'Member');
 
     if (!file) {
       return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
@@ -131,6 +136,26 @@ ${text.substring(0, 15000)}`;
       .from('documents')
       .getPublicUrl(fileName);
 
+    const supabaseAuth = await createSupabaseServerClient();
+    const { data: { user: authUser } } = await supabaseAuth.auth.getUser();
+    const uploadedBy = authUser
+      ? {
+          id: authUser.id,
+          name: authUser.user_metadata?.username ?? authUser.email?.split('@')[0] ?? 'User',
+          email: authUser.email ?? '',
+          avatar: '',
+          role: 'Member',
+        }
+      : formUserId
+        ? {
+            id: formUserId,
+            name: formUserName || formUserEmail.split('@')[0] || 'User',
+            email: formUserEmail,
+            avatar: '',
+            role: formUserRole || 'Member',
+          }
+      : { id: 'anonymous', name: 'User', email: '', avatar: '', role: 'Member' };
+
     const docId = `doc-${Date.now()}`;
     const dbPayload = {
       id: docId,
@@ -138,7 +163,7 @@ ${text.substring(0, 15000)}`;
       type: file.name.toLowerCase().endsWith('.pdf') ? 'pdf' : 'txt',
       size: `${(file.size / 1024 / 1024).toFixed(2)} MB`,
       uploaded_at: new Date().toISOString(),
-      uploaded_by: { id: 'p1', name: 'Sarah Chen', email: 'sarah@nexus.ai', avatar: '', role: 'Product Lead' },
+      uploaded_by: uploadedBy,
       summary: analysis.summary,
       key_points: analysis.keyPoints,
       extracted_tasks: analysis.tasks,

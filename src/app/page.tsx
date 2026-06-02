@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useMemo } from 'react';
-import { useWorkspace } from '@/lib/store';
+import { useWorkspace, isAdminLevelRole } from '@/lib/store';
 import { motion } from 'motion/react';
 import { 
   FileText, CheckSquare, Calendar, Mail, 
@@ -39,7 +39,7 @@ export default function DashboardPage() {
   const [greeting, setGreeting] = useState('Good morning');
   const today = new Date();
 
-  const isAdmin = user?.role === 'Product Lead' || user?.role === 'Admin' || user?.role === 'Team Leader';
+  const isAdmin = isAdminLevelRole(user?.role);
 
   // Role Manager state
   const [newRoleTitle, setNewRoleTitle] = useState('');
@@ -215,7 +215,7 @@ export default function DashboardPage() {
         className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-border"
       >
         <div className="flex flex-col gap-1">
-          <h1 className="text-2xl font-semibold tracking-tight">{greeting}, {user?.name || 'Sarah'}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{greeting}, {user?.name || 'there'}</h1>
           <p className="text-sm text-muted-foreground">{format(today, 'EEEE, MMMM d, yyyy')}</p>
         </div>
         <div className="flex gap-2">

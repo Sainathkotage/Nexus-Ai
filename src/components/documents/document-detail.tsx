@@ -4,6 +4,7 @@ import React from 'react';
 import { 
   Sheet, SheetContent, SheetHeader, SheetTitle 
 } from '@/components/ui/sheet';
+import { StudyHub } from './study-hub';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -40,7 +41,7 @@ export function DocumentDetail({ document, onClose }: DocumentDetailProps) {
 
   return (
     <Sheet open={!!document} onOpenChange={(open) => !open && onClose()}>
-      <SheetContent className="w-full sm:max-w-xl md:max-w-2xl p-0 flex flex-col h-full border-l border-border bg-background">
+      <SheetContent className="w-full sm:max-w-xl md:max-w-3xl lg:max-w-4xl xl:max-w-5xl p-0 flex flex-col h-full border-l border-border bg-background">
         
         {/* Header Section */}
         <div className="p-6 pb-4 shrink-0 flex flex-col gap-4 border-b border-border bg-muted/20">
@@ -126,6 +127,13 @@ export function DocumentDetail({ document, onClose }: DocumentDetailProps) {
               >
                 <AlignLeft className="w-4 h-4 mr-2" />
                 Raw Text
+              </TabsTrigger>
+              <TabsTrigger 
+                value="study" 
+                className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-0 h-12"
+              >
+                <Sparkles className="w-4 h-4 mr-2 text-violet-500" />
+                Study Hub
               </TabsTrigger>
             </TabsList>
           </div>
@@ -303,6 +311,11 @@ export function DocumentDetail({ document, onClose }: DocumentDetailProps) {
                 <div className="bg-muted/30 p-4 rounded-lg border border-border font-mono text-sm leading-relaxed whitespace-pre-wrap">
                   {document.content || "Document content not available in preview."}
                 </div>
+              </TabsContent>
+
+              {/* Study Hub Tab */}
+              <TabsContent value="study" className="m-0 focus-visible:outline-none">
+                <StudyHub document={document} />
               </TabsContent>
 
             </div>

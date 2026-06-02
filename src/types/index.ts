@@ -18,6 +18,7 @@ export interface Person {
   dnd?: boolean;
   lastSeenAt?: string;
   notificationSettings?: Record<string, 'all' | 'mentions' | 'muted'>;
+  emailVerified?: boolean;
 }
 
 // --- Documents ---

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { useWorkspace } from '@/lib/store';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -24,7 +24,9 @@ export default function ChatPage() {
     createConversation,
     deleteConversation,
     documents,
-    user
+    user,
+    workspace,
+    trackAiUsage
   } = useWorkspace();
   
   const [inputValue, setInputValue] = useState('');
@@ -32,6 +34,10 @@ export default function ChatPage() {
   const [selectedDocs, setSelectedDocs] = useState<Record<string, boolean>>({});
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const userDocuments = useMemo(
+    () => documents.filter(doc => !user || doc.uploadedBy?.id === user.id || doc.uploadedBy?.email === user.email),
+    [documents, user]
+  );
 
   useEffect(() => {
     setActivePage('chat');
@@ -39,25 +45,25 @@ export default function ChatPage() {
 
   // Default select all documents on load
   useEffect(() => {
-    if (documents.length > 0 && Object.keys(selectedDocs).length === 0) {
+    if (userDocuments.length > 0 && Object.keys(selectedDocs).length === 0) {
       const initial: Record<string, boolean> = {};
-      documents.forEach(doc => {
+      userDocuments.forEach(doc => {
         initial[doc.id] = true;
       });
       setSelectedDocs(initial);
     }
-  }, [documents, selectedDocs]);
+  }, [userDocuments, selectedDocs]);
 
   // Handle pending AI document actions from details view
   useEffect(() => {
     const pending = localStorage.getItem('nexus_pending_action');
-    if (pending && documents.length > 0) {
+    if (pending && userDocuments.length > 0) {
       try {
         const { documentId, prompt } = JSON.parse(pending);
         
         // Select ONLY the targeted document for context
         const nextDocs: Record<string, boolean> = {};
-        documents.forEach(doc => {
+        userDocuments.forEach(doc => {
           nextDocs[doc.id] = doc.id === documentId;
         });
         setSelectedDocs(nextDocs);
@@ -69,7 +75,7 @@ export default function ChatPage() {
         console.error('Pending action error:', e);
       }
     }
-  }, [documents, activeConversationId]);
+  }, [userDocuments, activeConversationId]);
 
   const activeConversation = conversations.find(c => c.id === activeConversationId) || conversations[0];
   const isEmpty = !activeConversation || activeConversation.messages.length === 0;
@@ -107,6 +113,16 @@ export default function ChatPage() {
     setIsTyping(true);
 
     try {
+      const usage = await trackAiUsage();
+      if (!usage.ok) {
+        setIsTyping(false);
+        addMessage(targetConvo.id, {
+          role: 'assistant',
+          content: usage.message,
+        });
+        return;
+      }
+
       // Gather messaging history
       const messageHistory = [
         ...targetConvo.messages.map(m => ({ role: m.role, content: m.content })),
@@ -114,7 +130,7 @@ export default function ChatPage() {
       ];
 
       // Build context string from checked documents
-      const activeDocs = documents.filter(d => selectedDocs[d.id]);
+      const activeDocs = userDocuments.filter(d => selectedDocs[d.id]);
       const documentContext = activeDocs
         .filter(d => d.content && d.content.trim().length > 0)
         .map(d => `Document Title: ${d.title}\nContent:\n${d.content}`)
@@ -123,7 +139,7 @@ export default function ChatPage() {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: messageHistory, documentContext }),
+        body: JSON.stringify({ messages: messageHistory, documentContext, workspaceId: workspace?.id }),
       });
 
       if (!response.ok) {
@@ -138,7 +154,7 @@ export default function ChatPage() {
         setIsTyping(false);
         addMessage(targetConvo.id, {
           role: 'assistant',
-          content: `Sorry, I encountered an error: ${errorMsg}. Please check your API key configuration in your .env.local file or your internet connection. (OpenAI returned status ${response.status})`,
+          content: `Sorry, I encountered an error: ${errorMsg}. Please check your API key configuration in your .env.local file or your internet connection. (Gemini returned status ${response.status})`,
         });
         return;
       }
@@ -215,9 +231,9 @@ export default function ChatPage() {
   };
 
   const selectAllDocs = () => {
-    const allSelected = documents.every(d => selectedDocs[d.id]);
+    const allSelected = userDocuments.every(d => selectedDocs[d.id]);
     const next: Record<string, boolean> = {};
-    documents.forEach(d => {
+    userDocuments.forEach(d => {
       next[d.id] = !allSelected;
     });
     setSelectedDocs(next);
@@ -299,9 +315,9 @@ export default function ChatPage() {
                 <FileText className="w-4 h-4 text-foreground/80" />
                 AI Context Sources
               </h2>
-              {documents.length > 0 && (
+              {userDocuments.length > 0 && (
                 <Button variant="link" onClick={selectAllDocs} className="h-auto p-0 text-[10px] text-muted-foreground hover:text-foreground hover:no-underline">
-                  {documents.every(d => selectedDocs[d.id]) ? 'Deselect' : 'Select All'}
+                  {userDocuments.every(d => selectedDocs[d.id]) ? 'Deselect' : 'Select All'}
                 </Button>
               )}
             </div>
@@ -309,12 +325,12 @@ export default function ChatPage() {
             {/* Sources Checklist List */}
             <div className="flex-1 overflow-y-auto scrollbar-thin">
               <div className="p-3 flex flex-col gap-1.5">
-                {documents.length === 0 ? (
+                {userDocuments.length === 0 ? (
                   <div className="p-4 text-center text-xs text-muted-foreground">
                     No documents. Upload files in Documents page first.
                   </div>
                 ) : (
-                  documents.map(doc => {
+                  userDocuments.map(doc => {
                     const isChecked = !!selectedDocs[doc.id];
                     return (
                       <div 
@@ -363,7 +379,7 @@ export default function ChatPage() {
             <h2 className="font-semibold text-sm leading-none">{activeConversation?.title || 'Nexus AI Workspace Assistant'}</h2>
           </div>
           <div className="text-[10px] text-muted-foreground font-semibold bg-muted/40 px-2.5 py-1 rounded-full border border-border/40">
-            Context sources active: {documents.filter(d => selectedDocs[d.id]).length}
+            Context sources active: {userDocuments.filter(d => selectedDocs[d.id]).length}
           </div>
         </div>
 
@@ -375,7 +391,7 @@ export default function ChatPage() {
               {/* Nexus AI Title Greeting with animated-style visual colors */}
               <h1 className="text-4xl md:text-5xl font-medium tracking-tight text-center mb-1 flex items-center justify-center gap-1.5">
                 <span className="bg-gradient-to-r from-[#4285f4] via-[#9b72cb] via-[#d96570] to-[#4285f4] bg-clip-text text-transparent">
-                  Hello, {user?.name || 'Sarah'}.
+                  Hello, {user?.name || 'there'}.
                 </span>
               </h1>
               

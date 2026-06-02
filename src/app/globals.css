@@ -328,3 +328,37 @@
 .badge-purple { background: #e8deee; color: #6940a5; }
 .badge-pink { background: #f5e0e9; color: #ad1a72; }
 .badge-red { background: #ffe2dd; color: #e03e3e; }
+
+/* ── Sleek Custom Scrollbar Style ─────────────────────── */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(120, 119, 116, 0.2);
+  border-radius: 99px;
+  border: 1px solid transparent;
+  background-clip: padding-box;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(120, 119, 116, 0.4);
+  border: 1px solid transparent;
+  background-clip: padding-box;
+}
+.dark .custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid transparent;
+  background-clip: padding-box;
+}
+.dark .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+  border: 1px solid transparent;
+  background-clip: padding-box;
+}
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(120, 119, 116, 0.25) transparent;
+}

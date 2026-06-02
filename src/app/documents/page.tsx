@@ -5,30 +5,59 @@ import { useWorkspace } from '@/lib/store';
 import { motion } from 'motion/react';
 import { FileText, Search, Plus, Filter } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { DocumentCard } from '@/components/documents/document-card';
 import { DocumentDetail } from '@/components/documents/document-detail';
+import { NotebookWorkspace } from '@/components/documents/notebook-workspace';
 import { UploadZone } from '@/components/documents/upload-zone';
 import { cn } from '@/lib/utils';
 
 const typeFilters = ['all', 'pdf', 'txt', 'meeting', 'research'] as const;
 
 export default function DocumentsPage() {
-  const { setActivePage, documents, selectedDocumentId, setSelectedDocumentId } = useWorkspace();
+  const { setActivePage, documents, selectedDocumentId, setSelectedDocumentId, user } = useWorkspace();
   const [uploadOpen, setUploadOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('all');
+  const isGuest = user?.role === 'Guest';
 
   useEffect(() => {
     setActivePage('documents');
   }, [setActivePage]);
 
-  const selectedDocument = documents.find(d => d.id === selectedDocumentId) || null;
+  useEffect(() => {
+    if (selectedDocumentId === 'new') {
+      setUploadOpen(true);
+    } else if (selectedDocumentId === null && uploadOpen) {
+      setUploadOpen(false);
+    }
+  }, [selectedDocumentId]);
 
-  const filteredDocuments = documents.filter(doc => {
+  const handleCloseUpload = (open: boolean) => {
+    setUploadOpen(open);
+    if (!open && selectedDocumentId === 'new') {
+      setSelectedDocumentId(null);
+    }
+  };
+
+  const userDocuments = documents.filter(doc => !user || doc.uploadedBy?.id === user.id || doc.uploadedBy?.email === user.email);
+  const selectedDocument = userDocuments.find(d => d.id === selectedDocumentId) || null;
+
+  if (selectedDocument) {
+    return (
+      <NotebookWorkspace 
+        document={selectedDocument}
+        onClose={() => setSelectedDocumentId(null)}
+      />
+    );
+  }
+
+  const filteredDocuments = userDocuments.filter(doc => {
     const matchesSearch = doc.title.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesType = typeFilter === 'all' || doc.type === typeFilter;
     return matchesSearch && matchesType;
   });
+
 
   const container = {
     hidden: { opacity: 0 },
@@ -46,16 +75,22 @@ export default function DocumentsPage() {
       <div className="p-6 md:p-8 shrink-0 flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-border">
         <div className="flex flex-col gap-1">
           <h1 className="text-2xl font-semibold tracking-tight">Documents</h1>
-          <p className="text-sm text-muted-foreground">{documents.length} documents in workspace</p>
+          <p className="text-sm text-muted-foreground">{userDocuments.length} documents uploaded by you</p>
         </div>
         
-        <Button 
-          onClick={() => setUploadOpen(true)}
-          className="bg-foreground text-background hover:opacity-90 gap-2 shrink-0 h-8 text-sm"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          Upload
-        </Button>
+        {!isGuest ? (
+          <Button 
+            onClick={() => setUploadOpen(true)}
+            className="bg-foreground text-background hover:opacity-90 gap-2 shrink-0 h-8 text-sm"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Upload
+          </Button>
+        ) : (
+          <Badge variant="outline" className="text-muted-foreground text-[10px] py-1 border-dashed">
+            View-only Guest Access
+          </Badge>
+        )}
       </div>
 
       {/* Toolbar */}
@@ -100,9 +135,13 @@ export default function DocumentsPage() {
             </div>
             <h3 className="text-base font-medium mb-1">No documents found</h3>
             <p className="text-sm text-muted-foreground mb-4">Upload your first document to get started</p>
-            <Button onClick={() => setUploadOpen(true)} variant="outline" size="sm" className="gap-2">
-              <Plus className="w-3.5 h-3.5" /> Upload Document
-            </Button>
+            {!isGuest ? (
+              <Button onClick={() => setUploadOpen(true)} variant="outline" size="sm" className="gap-2">
+                <Plus className="w-3.5 h-3.5" /> Upload Document
+              </Button>
+            ) : (
+              <p className="text-xs text-muted-foreground font-medium">Ask a team admin to upload documents to this workspace.</p>
+            )}
           </div>
         ) : (
           <motion.div 
@@ -123,16 +162,8 @@ export default function DocumentsPage() {
         )}
       </div>
 
-      {/* Document Detail Sheet */}
-      {selectedDocument && (
-        <DocumentDetail 
-          document={selectedDocument} 
-          onClose={() => setSelectedDocumentId(null)} 
-        />
-      )}
-
       {/* Upload Dialog */}
-      <UploadZone open={uploadOpen} onOpenChange={setUploadOpen} />
+      <UploadZone open={uploadOpen} onOpenChange={handleCloseUpload} />
     </div>
   );
 }

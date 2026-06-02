@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useWorkspace } from '@/lib/store';
 import { Deal } from '@/types';
 import { 
@@ -28,10 +28,18 @@ const STAGES: { id: Stage; label: string; color: string; bg: string }[] = [
 ];
 
 export default function CRMPage() {
-  const { setActivePage, deals: storeDeals, updateDealStage } = useWorkspace();
+  const { setActivePage, deals, updateDealStage, addDeal, deleteDeal, selectedDealId, setSelectedDealId } = useWorkspace();
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  const handleWheel = (e: React.WheelEvent) => {
+    if (scrollContainerRef.current) {
+      if (e.deltaY !== 0) {
+        e.preventDefault();
+        scrollContainerRef.current.scrollLeft += e.deltaY;
+      }
+    }
+  };
   
-  // Custom local state wrapper for adds/deletes
-  const [localDeals, setLocalDeals] = useState<Deal[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [dragOverStage, setDragOverStage] = useState<Stage | null>(null);
   
@@ -46,34 +54,27 @@ export default function CRMPage() {
     setActivePage('crm');
   }, [setActivePage]);
 
-  // Sync from store or load local storage cache
   useEffect(() => {
-    const cached = localStorage.getItem('nexus_deals');
-    if (cached) {
-      try {
-        setLocalDeals(JSON.parse(cached));
-      } catch (e) {
-        setLocalDeals(storeDeals);
-      }
-    } else {
-      setLocalDeals(storeDeals);
+    if (selectedDealId === 'new') {
+      setIsAddDealOpen(true);
+    } else if (selectedDealId === null && isAddDealOpen) {
+      setIsAddDealOpen(false);
     }
-  }, [storeDeals]);
+  }, [selectedDealId]);
 
-  // Commit changes locally and cache
-  const commitDeals = (updated: Deal[]) => {
-    setLocalDeals(updated);
-    localStorage.setItem('nexus_deals', JSON.stringify(updated));
+  const handleCloseAddDeal = () => {
+    setIsAddDealOpen(false);
+    if (selectedDealId === 'new') {
+      setSelectedDealId(null);
+    }
   };
 
-  const handleUpdateStage = (dealId: string, stage: Stage) => {
-    updateDealStage(dealId, stage); // update in global state
-    const updated = localDeals.map(d => d.id === dealId ? { ...d, stage } : d);
-    commitDeals(updated);
+  const handleUpdateStage = async (dealId: string, stage: Stage) => {
+    await updateDealStage(dealId, stage);
     toast.success(`Deal stage updated to ${stage}`);
   };
 
-  const handleAddDeal = (e: React.FormEvent) => {
+  const handleAddDeal = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle.trim() || !newCompany.trim() || newValue <= 0) {
       toast.error('All deal parameters are required');
@@ -88,32 +89,30 @@ export default function CRMPage() {
       stage: newStage
     };
 
-    const updated = [...localDeals, newDeal];
-    commitDeals(updated);
+    await addDeal(newDeal);
 
     setNewTitle('');
     setNewCompany('');
     setNewValue(0);
     setNewStage('lead');
-    setIsAddDealOpen(false);
+    handleCloseAddDeal();
     toast.success('CRM Deal added successfully');
   };
 
-  const handleDeleteDeal = (id: string) => {
+  const handleDeleteDeal = async (id: string) => {
     if (confirm('Are you sure you want to delete this CRM deal?')) {
-      const updated = localDeals.filter(d => d.id !== id);
-      commitDeals(updated);
+      await deleteDeal(id);
       toast.info('Deal removed from pipeline');
     }
   };
 
   // Filter deals
   const filteredDeals = useMemo(() => {
-    return localDeals.filter(d => 
+    return deals.filter(d => 
       d.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       d.company.toLowerCase().includes(searchQuery.toLowerCase())
     );
-  }, [localDeals, searchQuery]);
+  }, [deals, searchQuery]);
 
   // BI Calculations
   const stats = useMemo(() => {
@@ -226,7 +225,11 @@ export default function CRMPage() {
 
       {/* Pipeline Board */}
       <div className="flex-1 overflow-hidden p-4 md:p-6">
-        <div className="h-full flex gap-4 overflow-x-auto pb-2 scrollbar-thin">
+        <div 
+          ref={scrollContainerRef}
+          onWheel={handleWheel}
+          className="h-full flex gap-4 overflow-x-auto pb-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+        >
           {STAGES.map(column => {
             const stageDeals = filteredDeals.filter(d => d.stage === column.id);
             const totalVal = stageDeals.reduce((sum, d) => sum + d.value, 0);
@@ -279,6 +282,8 @@ export default function CRMPage() {
                         onDragStart={(e: any) => {
                           e.dataTransfer.setData('text/plain', deal.id);
                         }}
+                        data-context-type="deal"
+                        data-context-id={deal.id}
                         className="bg-card border border-border hover:border-primary/20 rounded-lg p-3 hover:shadow-sm cursor-grab active:cursor-grabbing transition-all flex flex-col gap-1.5 relative group"
                       >
                         <div className="flex items-start justify-between">
@@ -350,7 +355,7 @@ export default function CRMPage() {
       </div>
 
       {/* ADD DEAL DIALOG */}
-      <Dialog open={isAddDealOpen} onOpenChange={setIsAddDealOpen}>
+      <Dialog open={isAddDealOpen} onOpenChange={handleCloseAddDeal}>
         <DialogContent className="sm:max-w-md bg-background border border-border shadow-lg rounded-xl">
           <DialogHeader>
             <DialogTitle className="text-base font-bold">Add CRM Deal Opportunity</DialogTitle>
@@ -410,7 +415,7 @@ export default function CRMPage() {
             </div>
 
             <DialogFooter className="mt-2 flex gap-2">
-              <Button type="button" variant="ghost" onClick={() => setIsAddDealOpen(false)}>Cancel</Button>
+              <Button type="button" variant="ghost" onClick={handleCloseAddDeal}>Cancel</Button>
               <Button
                 type="submit"
                 className="bg-[#37352f] hover:bg-[#37352f]/90 text-white dark:bg-[#e3e3e2] dark:text-[#191919] dark:hover:bg-[#e3e3e2]/90 shadow-sm"

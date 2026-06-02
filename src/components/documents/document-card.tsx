@@ -22,10 +22,11 @@ export function DocumentCard({ document, onClick }: DocumentCardProps) {
       default: return 'bg-muted';
     }
   };
-
   return (
     <div
       onClick={onClick}
+      data-context-type="document"
+      data-context-id={document.id}
       className="group cursor-pointer rounded-lg border border-border bg-card p-4 hover:bg-accent/20 transition-all duration-150 flex flex-col gap-3"
     >
       {/* Top */}

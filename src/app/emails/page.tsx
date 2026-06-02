@@ -27,7 +27,8 @@ export default function EmailsPage() {
     updateEmailStatus,
     inboundEmailAddress,
     isSyncingEmails,
-    syncInboundEmails
+    syncInboundEmails,
+    user,
   } = useWorkspace();
 
   const [activeTab, setActiveTab] = useState<'inbox' | 'drafts' | 'sent'>('inbox');
@@ -170,9 +171,11 @@ export default function EmailsPage() {
       // Extract JSON from response
       const rawText = data.text;
       const cleanJsonText = rawText.trim().replace(/^```json/i, '').replace(/^```/, '').trim();
+      const defaultTo = user?.email ?? '';
+      const defaultToName = user?.name ?? '';
       let emailObj = {
-        toName: 'Elena Rodriguez',
-        to: 'elena@nexus.ai',
+        toName: defaultToName,
+        to: defaultTo,
         subject: 'Draft Email',
         body: cleanJsonText
       };
@@ -180,8 +183,8 @@ export default function EmailsPage() {
       try {
         const parsed = JSON.parse(cleanJsonText);
         emailObj = {
-          toName: parsed.toName || ' Elena Rodriguez',
-          to: parsed.toEmail || 'elena@nexus.ai',
+          toName: parsed.toName || defaultToName,
+          to: parsed.toEmail || defaultTo,
           subject: parsed.subject || 'Draft Email',
           body: parsed.body || ''
         };
@@ -543,7 +546,7 @@ export default function EmailsPage() {
               <textarea 
                 value={aiPrompt}
                 onChange={e => setAiPrompt(e.target.value)}
-                placeholder="e.g. Email Marcus thanking him for EKS architecture review and ask to plan Kafka setup session"
+                placeholder="e.g. Thank the client for the review and propose a follow-up meeting next week"
                 rows={4}
                 required
                 className="w-full bg-card border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary resize-none"

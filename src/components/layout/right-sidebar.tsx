@@ -13,13 +13,16 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 
 export function RightSidebar() {
-  const { rightSidebarOpen, toggleRightSidebar, allUsers, user, setActivePage } = useWorkspace();
+  const { rightSidebarOpen, toggleRightSidebar, allUsers, friendIds, teamMessages, user, setActivePage } = useWorkspace();
   const router = useRouter();
 
   if (!rightSidebarOpen) return null;
 
-  // Filter other users
-  const teammates = allUsers.filter(u => u.id !== user?.id);
+  const messagePartnerIds = Object.keys(teamMessages);
+  const teammates = allUsers.filter(u =>
+    u.id !== user?.id &&
+    (friendIds.includes(u.id) || messagePartnerIds.includes(u.id))
+  );
 
   const getDetailedStatus = (member: Person) => {
     if (member.dnd) return 'dnd';
@@ -27,13 +30,8 @@ export function RightSidebar() {
       return 'in-meet';
     }
     if (member.status === 'offline') return 'offline';
-    
-    // Assign mock statuses to seed teammates to display all requested states for demo
-    if (member.id === 'p2') return 'dnd'; // Marcus (DND)
-    if (member.id === 'p4') return 'idle'; // Alex (Idle)
-    if (member.id === 'p5') return 'in-meet'; // James (In meeting)
-    if (member.id === 'p8') return 'in-meet'; // Nina (In meeting)
-    
+    if (member.status === 'idle') return 'idle';
+    if (member.status === 'dnd') return 'dnd';
     return member.status || 'online';
   };
 
@@ -123,7 +121,7 @@ export function RightSidebar() {
       className="h-full border-l border-border bg-sidebar flex flex-col shrink-0 overflow-hidden"
     >
       <div className="h-11 flex items-center justify-between px-3 border-b border-border shrink-0">
-        <span className="text-sm font-semibold text-foreground">Online Teammates</span>
+        <span className="text-sm font-semibold text-foreground">Team Members</span>
         <Button variant="ghost" size="icon" className="w-7 h-7 rounded-sm" onClick={toggleRightSidebar}>
           <X className="w-3.5 h-3.5 text-muted-foreground" />
         </Button>
@@ -195,6 +193,12 @@ export function RightSidebar() {
                 {groups.offline.map(renderMember)}
               </div>
             </section>
+          )}
+
+          {teammates.length === 0 && (
+            <div className="p-4 rounded-lg border border-dashed border-border text-center text-xs text-muted-foreground leading-relaxed">
+              This team is empty until an admin adds members.
+            </div>
           )}
 
         </div>

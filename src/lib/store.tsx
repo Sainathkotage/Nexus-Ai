@@ -7,43 +7,145 @@ import {
   Person, GoalOKR, Channel, Deal, ChannelMessage, LoginActivity,
   NotificationItem, ThemeConfig, ChannelMessageReply, MessageReaction, MessageRead
 } from '@/types';
-import * as sampleData from '@/lib/sample-data';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
+import { DEFAULT_SIGNUP_ROLES } from '@/lib/default-roles';
 
-const seedUsers: Person[] = [
-  { id: 'p1', name: 'Sarah Chen', email: 'sarah@nexus.ai', avatar: '', role: 'Product Lead', tag: '1024', status: 'online' },
-  { id: 'p2', name: 'Marcus Johnson', email: 'marcus@nexus.ai', avatar: '', role: 'Engineering Manager', tag: '2081', status: 'online' },
-  { id: 'p3', name: 'Elena Rodriguez', email: 'elena@nexus.ai', avatar: '', role: 'Design Director', tag: '3042', status: 'offline' },
-  { id: 'p4', name: 'Alex Kim', email: 'alex@nexus.ai', avatar: '', role: 'Senior Developer', tag: '4091', status: 'online' },
-  { id: 'p5', name: 'James Wilson', email: 'james@nexus.ai', avatar: '', role: 'Data Scientist', tag: '5128', status: 'offline' },
-  { id: 'p6', name: 'Priya Patel', email: 'priya@nexus.ai', avatar: '', role: 'UX Researcher', tag: '6014', status: 'online' },
-  { id: 'p7', name: 'David Lee', email: 'david@nexus.ai', avatar: '', role: 'DevOps Lead', tag: '7082', status: 'offline' },
-  { id: 'p8', name: 'Nina Kowalski', email: 'nina@nexus.ai', avatar: '', role: 'Content Strategist', tag: '8093', status: 'offline' },
+const NEXUS_DATA_VERSION = '3';
+
+const CHAT_STORAGE_KEYS = [
+  'nexus_user',
+  'nexus_all_users',
+  'nexus_team_messages',
+  'nexus_workspace',
+  'nexus_workspace_members',
+  'nexus_channels',
+  'nexus_channel_messages',
+  'nexus_registered_users',
 ];
 
-const seedChannels: Channel[] = [
-  { id: 'c1', name: 'general', category: 'General' },
-  { id: 'c2', name: 'announcements', category: 'General' },
-  { id: 'c3', name: 'marketing-campaign', category: 'Departments' },
-  { id: 'c4', name: 'engineering-sync', category: 'Departments' },
-  { id: 'c5', name: 'design-feedback', category: 'Departments' },
-];
+const formatPersonTag = (person: Pick<Person, 'name' | 'tag'>) => `${person.name}#${person.tag || '0000'}`;
 
-const seedGoals: GoalOKR[] = [
-  { id: 'g1', title: 'Launch Enterprise API v2', category: 'company', progress: 75, target: 100 },
-  { id: 'g2', title: 'Increase active user count to 10k', category: 'company', progress: 8400, target: 10000 },
-  { id: 'g3', title: 'Redesign documents sidebar navigation', category: 'team', progress: 100, target: 100 },
-  { id: 'g4', title: 'Complete personal training course on React 19', category: 'personal', progress: 40, target: 100 },
-];
+export const isAdminLevelRole = (role?: string) => {
+  const normalized = (role || '').toLowerCase();
+  return normalized.includes('admin') || normalized.includes('owner');
+};
 
-const seedDeals: Deal[] = [
-  { id: 'd1', title: 'Acme Corp Enterprise Suite', company: 'Acme Corp', value: 45000, stage: 'negotiation' },
-  { id: 'd2', title: 'Stark Industries Integration', company: 'Stark Industries', value: 120000, stage: 'proposal' },
-  { id: 'd3', title: 'Wayne Enterprises Cloud Migration', company: 'Wayne Enterprises', value: 85000, stage: 'contacted' },
-  { id: 'd4', title: 'Oscorp Research Partnership', company: 'Oscorp', value: 30000, stage: 'lead' },
-  { id: 'd5', title: 'Umbrella Corp Licensing', company: 'Umbrella Corp', value: 65000, stage: 'won' },
-];
+const parseNameTag = (value: string) => {
+  const trimmed = value.trim();
+  const match = trimmed.match(/^(.+?)#([a-zA-Z0-9]{3,5})$/);
+  if (!match) return null;
+  return { name: match[1].trim().toLowerCase(), tag: match[2].trim().toLowerCase() };
+};
+
+const safeSignupRole = (requestedRole: string, isFirstUser: boolean) => {
+  if (isFirstUser) return 'Admin';
+  return isAdminLevelRole(requestedRole) ? 'Member' : requestedRole;
+};
+
+export interface WorkspaceRecord {
+  id: string;
+  name: string;
+  slug: string;
+  ownerId: string;
+  createdAt: string;
+}
+
+export interface WorkspaceMemberRecord {
+  workspaceId: string;
+  userId: string;
+  role: string;
+  status: 'active' | 'invited' | 'removed';
+  addedBy?: string;
+  joinedAt?: string;
+}
+
+export interface WorkspaceInviteRecord {
+  id: string;
+  workspaceId: string;
+  code: string;
+  email?: string;
+  role: string;
+  createdBy: string;
+  createdAt: string;
+  expiresAt: string;
+  usedBy?: string;
+  usedAt?: string;
+  revokedAt?: string;
+}
+
+export interface AuditLogRecord {
+  id: string;
+  workspaceId: string;
+  actorId: string;
+  actorName: string;
+  action: string;
+  target: string;
+  timestamp: string;
+}
+
+export interface FeedbackRecord {
+  id: string;
+  workspaceId: string;
+  userId: string;
+  userName: string;
+  page: string;
+  message: string;
+  timestamp: string;
+}
+
+export interface AiUsageRecord {
+  workspaceId: string;
+  userId: string;
+  date: string;
+  requests: number;
+  limit: number;
+}
+
+/** Clear pre-seeded demo localStorage from older builds (keeps auth session). */
+function migrateAwayFromDemoLocalStorage() {
+  if (typeof window === 'undefined') return;
+  if (localStorage.getItem('nexus_data_version') === NEXUS_DATA_VERSION) return;
+
+  const preserve = new Set([
+    'nexus_user_status',
+    'nexus_theme',
+    'nexus_theme_config',
+    'nexus_data_version',
+  ]);
+
+  Object.keys(localStorage)
+    .filter((key) => key.startsWith('nexus_') && !preserve.has(key))
+    .forEach((key) => localStorage.removeItem(key));
+  CHAT_STORAGE_KEYS.forEach((key) => localStorage.removeItem(key));
+  Object.keys(localStorage)
+    .filter((key) => key.startsWith('nexus_friend_ids_'))
+    .forEach((key) => localStorage.removeItem(key));
+
+  localStorage.setItem('nexus_data_version', NEXUS_DATA_VERSION);
+}
+
+// ── AES-256 Client-side Encryption Helpers ──────────────────
+export const encryptMessage = (text: string): string => {
+  if (!text) return '';
+  try {
+    const encoded = btoa(unescape(encodeURIComponent(text)));
+    return `AES256::${encoded}`;
+  } catch (e) {
+    return text;
+  }
+};
+
+export const decryptMessage = (encryptedText: string): string => {
+  if (!encryptedText) return '';
+  if (!encryptedText.startsWith('AES256::')) return encryptedText;
+  try {
+    const encoded = encryptedText.substring(8);
+    return decodeURIComponent(escape(atob(encoded)));
+  } catch (e) {
+    return encryptedText;
+  }
+};
 
 // ── Database Mapping Helpers ─────────────────────────────────
 const mapDbDoc = (dbDoc: any): DocumentFile => ({
@@ -114,7 +216,7 @@ const mapDbConversation = (dbConv: any): Conversation => ({
   messages: (dbConv.messages || []).map((m: any) => ({
     id: m.id,
     role: m.role as any,
-    content: m.content,
+    content: decryptMessage(m.content),
     timestamp: m.timestamp,
     sources: m.sources || []
   })).sort((a: any, b: any) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()),
@@ -125,7 +227,7 @@ const mapDbConversation = (dbConv: any): Conversation => ({
 const mapDbChannelMessage = (dbMsg: any, allProfiles: Person[]): ChannelMessage => {
   const sender = allProfiles.find(p => p.id === dbMsg.sender_id || p.email === dbMsg.sender_id) || {
     id: dbMsg.sender_id,
-    name: dbMsg.sender_id === 'p1' ? 'Sarah Chen' : 'Unknown Teammate',
+    name: 'Unknown Teammate',
     email: '',
     avatar: '',
     role: 'Member'
@@ -146,28 +248,6 @@ const mapDbChannelMessage = (dbMsg: any, allProfiles: Person[]): ChannelMessage 
     reactions: [],
     reads: []
   };
-};
-
-// ── AES-256 Client-side Encryption Helpers ──────────────────
-export const encryptMessage = (text: string): string => {
-  if (!text) return '';
-  try {
-    const encoded = btoa(unescape(encodeURIComponent(text)));
-    return `AES256::${encoded}`;
-  } catch (e) {
-    return text;
-  }
-};
-
-export const decryptMessage = (encryptedText: string): string => {
-  if (!encryptedText) return '';
-  if (!encryptedText.startsWith('AES256::')) return encryptedText;
-  try {
-    const encoded = encryptedText.substring(8);
-    return decodeURIComponent(escape(atob(encoded)));
-  } catch (e) {
-    return encryptedText;
-  }
 };
 
 // ── Mail.tm Inbound & Outbound Helpers ─────────────────────────
@@ -202,7 +282,7 @@ const getOrCreateMailbox = async () => {
     const domain = domainList[0].domain;
 
     const randomId = Math.floor(10000 + Math.random() * 90000);
-    const address = `sarah.chen.${randomId}@${domain}`;
+    const address = `nexus.inbox.${randomId}@${domain}`;
     const password = `pass_${Math.random().toString(36).substring(2, 10)}`;
 
     const createRes = await fetch('https://api.mail.tm/accounts', {
@@ -279,6 +359,8 @@ interface WorkspaceState {
 
   // Tasks
   tasks: Task[];
+  selectedTaskId: string | null;
+  setSelectedTaskId: (id: string | null) => void;
   addTask: (task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'> | Task) => void;
   deleteTask: (taskId: string) => void;
   moveTask: (taskId: string, newStatus: TaskStatus) => void;
@@ -299,12 +381,29 @@ interface WorkspaceState {
   user: Person | null;
   userStatus: 'online' | 'offline' | 'idle' | 'dnd';
   allUsers: Person[];
+  friendIds: string[];
+  canManageTeamMembers: boolean;
+  workspace: WorkspaceRecord | null;
+  workspaceMembers: WorkspaceMemberRecord[];
+  workspaceInvites: WorkspaceInviteRecord[];
+  auditLogs: AuditLogRecord[];
+  feedbackItems: FeedbackRecord[];
+  aiUsage: AiUsageRecord[];
+  createInviteLink: (email?: string, role?: string) => Promise<{ ok: boolean; message: string; url?: string }>;
+  submitFeedback: (message: string, page?: string) => Promise<{ ok: boolean; message: string }>;
+  trackAiUsage: () => Promise<{ ok: boolean; message: string }>;
   teamMessages: Record<string, ChatMessage[]>;
   login: (email: string, password: string) => Promise<boolean>;
+  sendOtp: (emailOrPhone: string) => Promise<{ success: boolean; error?: string }>;
+  verifyOtp: (emailOrPhone: string, token: string) => Promise<{ success: boolean; error?: string }>;
   register: (email: string, username: string, tag: string, role: string, password: string) => Promise<boolean>;
   logout: () => Promise<void>;
   setUserStatus: (status: 'online' | 'offline' | 'idle' | 'dnd') => Promise<void>;
+  addFriendByTag: (nameTag: string) => Promise<{ ok: boolean; message: string; friend?: Person }>;
   sendTeamMessage: (friendId: string, content: string, media?: { url: string; name: string; type: string }) => Promise<void>;
+  createWorkspace: (name: string) => Promise<boolean>;
+  joinWorkspaceByCode: (code: string) => Promise<{ ok: boolean; message: string }>;
+  updateMemberRole: (userId: string, role: string) => Promise<boolean>;
 
   // Custom Status & DND
   customStatus: string;
@@ -317,6 +416,10 @@ interface WorkspaceState {
   channelMessages: Record<string, ChannelMessage[]>;
   sendChannelMessage: (channelId: string, content: string, media?: { url: string; name: string; type: string }) => Promise<void>;
   sendChannelReply: (channelId: string, messageId: string, content: string) => Promise<void>;
+  activeChannelId: string | null;
+  setActiveChannelId: (id: string | null) => void;
+  activeDmUserId: string | null;
+  setActiveDmUserId: (id: string | null) => void;
 
   // Goals & OKRs
   goals: GoalOKR[];
@@ -334,6 +437,10 @@ interface WorkspaceState {
   // CRM
   deals: Deal[];
   updateDealStage: (dealId: string, stage: Deal['stage']) => Promise<void>;
+  addDeal: (deal: Deal) => Promise<void>;
+  deleteDeal: (dealId: string) => Promise<void>;
+  selectedDealId: string | null;
+  setSelectedDealId: (id: string | null) => void;
 
   // Time Tracker State & Actions
   activeTimerTask: string;
@@ -421,6 +528,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // Tasks
   const [tasks, setTasks] = useState<Task[]>([]);
   const [taskView, setTaskView] = useState<'kanban' | 'list' | 'calendar'>('kanban');
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
 
   // Calendar
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
@@ -450,7 +558,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<Person | null>(null);
   const [userStatus, setUserStatusState] = useState<'online' | 'offline' | 'idle' | 'dnd'>('online');
   const [allUsers, setAllUsers] = useState<Person[]>([]);
+  const [friendIds, setFriendIds] = useState<string[]>([]);
   const [teamMessages, setTeamMessages] = useState<Record<string, ChatMessage[]>>({});
+  const canManageTeamMembers = isAdminLevelRole(user?.role);
+
+  // Workspace readiness state
+  const [workspace, setWorkspace] = useState<WorkspaceRecord | null>(null);
+  const [workspaceMembers, setWorkspaceMembers] = useState<WorkspaceMemberRecord[]>([]);
+  const [workspaceInvites, setWorkspaceInvites] = useState<WorkspaceInviteRecord[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLogRecord[]>([]);
+  const [feedbackItems, setFeedbackItems] = useState<FeedbackRecord[]>([]);
+  const [aiUsage, setAiUsage] = useState<AiUsageRecord[]>([]);
 
   // Custom Status & DND
   const [customStatus, setCustomStatusState] = useState('');
@@ -459,6 +577,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // Channels State
   const [channels, setChannels] = useState<Channel[]>([]);
   const [channelMessages, setChannelMessages] = useState<Record<string, ChannelMessage[]>>({});
+  const [activeChannelId, setActiveChannelId] = useState<string | null>('c1');
+  const [activeDmUserId, setActiveDmUserId] = useState<string | null>(null);
 
   // Goals & OKRs State
   const [goals, setGoals] = useState<GoalOKR[]>([]);
@@ -471,6 +591,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   // CRM Deals State
   const [deals, setDeals] = useState<Deal[]>([]);
+  const [selectedDealId, setSelectedDealId] = useState<string | null>(null);
 
   // Notifications State
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
@@ -486,6 +607,117 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [activeTimerTask, setActiveTimerTask] = useState('');
   const [isTimerRunning, setIsTimerRunning] = useState(false);
   const [timerElapsed, setTimerElapsed] = useState(0);
+
+  const appendAuditLog = useCallback((actor: Person, action: string, target: string, workspaceId?: string) => {
+    const activeWorkspaceId = workspaceId || workspace?.id || `ws-${actor.id}`;
+    const entry: AuditLogRecord = {
+      id: `audit-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      workspaceId: activeWorkspaceId,
+      actorId: actor.id,
+      actorName: actor.name,
+      action,
+      target,
+      timestamp: new Date().toISOString(),
+    };
+
+    setAuditLogs(prev => {
+      const updated = [entry, ...prev].slice(0, 250);
+      localStorage.setItem('nexus_audit_logs', JSON.stringify(updated));
+      return updated;
+    });
+  }, [workspace?.id]);
+
+  const bootstrapWorkspaceForUser = useCallback((person: Person, existingFriendIds: string[] = []) => {
+    const workspaceId = `ws-${person.id}`;
+    const workspaceRecord: WorkspaceRecord = {
+      id: workspaceId,
+      name: `${person.name}'s Workspace`,
+      slug: `${person.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'workspace'}-${String(person.tag || '0000').toLowerCase()}`,
+      ownerId: person.id,
+      createdAt: new Date().toISOString(),
+    };
+
+    const nextWorkspace = workspaceRecord;
+    setWorkspace(nextWorkspace);
+    void supabase.from('workspaces').upsert({
+      id: nextWorkspace.id,
+      name: nextWorkspace.name,
+      slug: nextWorkspace.slug,
+      owner_id: nextWorkspace.ownerId,
+      created_at: nextWorkspace.createdAt,
+    });
+
+    const ownerMembership: WorkspaceMemberRecord = {
+      workspaceId: nextWorkspace.id,
+      userId: person.id,
+      role: person.role,
+      status: 'active',
+      joinedAt: new Date().toISOString(),
+    };
+    setWorkspaceMembers([ownerMembership]);
+    void supabase.from('workspace_members').upsert({
+      workspace_id: ownerMembership.workspaceId,
+      user_id: ownerMembership.userId,
+      role: ownerMembership.role,
+      status: ownerMembership.status,
+      added_by: ownerMembership.addedBy || null,
+      joined_at: ownerMembership.joinedAt || new Date().toISOString(),
+    });
+    setFriendIds(existingFriendIds);
+  }, []);
+
+  const hydrateTeamAccess = useCallback(async (person: Person, profiles: Person[] = []) => {
+    const { data: memberships, error } = await supabase
+      .from('workspace_members')
+      .select('workspace_id, user_id, role, status, added_by, joined_at, workspaces(id, name, slug, owner_id, created_at)')
+      .eq('status', 'active');
+
+    if (error) throw error;
+
+    const activeMemberships = (memberships || []) as any[];
+    const myWorkspaceIds = activeMemberships
+      .filter(member => member.user_id === person.id)
+      .map(member => member.workspace_id);
+    const visibleMemberships = activeMemberships.filter(member => myWorkspaceIds.includes(member.workspace_id));
+
+    const mappedMembers: WorkspaceMemberRecord[] = visibleMemberships.map(member => ({
+      workspaceId: member.workspace_id,
+      userId: member.user_id,
+      role: member.role || 'Member',
+      status: member.status || 'active',
+      addedBy: member.added_by || undefined,
+      joinedAt: member.joined_at || undefined,
+    }));
+    setWorkspaceMembers(mappedMembers);
+
+    const teammateIds = Array.from(new Set(
+      mappedMembers
+        .filter(member => member.userId !== person.id && member.status === 'active')
+        .map(member => member.userId)
+    ));
+    setFriendIds(teammateIds);
+
+    const visibleUserIds = new Set([person.id, ...teammateIds]);
+    setAllUsers(profiles.filter(profile => visibleUserIds.has(profile.id)));
+
+    const firstWorkspaceRow = activeMemberships.find(member => member.user_id === person.id)?.workspaces;
+    if (firstWorkspaceRow) {
+      setWorkspace({
+        id: firstWorkspaceRow.id,
+        name: firstWorkspaceRow.name,
+        slug: firstWorkspaceRow.slug,
+        ownerId: firstWorkspaceRow.owner_id,
+        createdAt: firstWorkspaceRow.created_at,
+      });
+    } else {
+        setWorkspace(null);
+        setWorkspaceMembers([]);
+        setFriendIds([]);
+        setChannels([]);
+        setChannelMessages({});
+        setTeamMessages({});
+    }
+  }, [bootstrapWorkspaceForUser]);
 
   // Time Tracker Running Effect
   useEffect(() => {
@@ -587,6 +819,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const fetchData = async () => {
       setIsAppLoading(true);
+      migrateAwayFromDemoLocalStorage();
       let localDocs: DocumentFile[] = [];
       let localTasks: Task[] = [];
       let localEvents: CalendarEvent[] = [];
@@ -628,121 +861,54 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         }
         if (localInsights.length > 0) setInsights(localInsights);
 
-        const storedUser = localStorage.getItem('nexus_user');
         const storedUserStatus = localStorage.getItem('nexus_user_status');
-        const storedAllUsers = localStorage.getItem('nexus_all_users');
-        const storedTeamMessages = localStorage.getItem('nexus_team_messages');
+        const storedWorkspaceInvites = localStorage.getItem('nexus_workspace_invites');
+        const storedAuditLogs = localStorage.getItem('nexus_audit_logs');
+        const storedFeedbackItems = localStorage.getItem('nexus_feedback_items');
+        const storedAiUsage = localStorage.getItem('nexus_ai_usage');
 
-        if (storedUser) setUser(JSON.parse(storedUser));
+        if (storedWorkspaceInvites) setWorkspaceInvites(JSON.parse(storedWorkspaceInvites));
+        if (storedAuditLogs) setAuditLogs(JSON.parse(storedAuditLogs));
+        if (storedFeedbackItems) setFeedbackItems(JSON.parse(storedFeedbackItems));
+        if (storedAiUsage) setAiUsage(JSON.parse(storedAiUsage));
+
         if (storedUserStatus) setUserStatusState(storedUserStatus as any);
-        if (storedAllUsers) {
-          setAllUsers(JSON.parse(storedAllUsers));
-        } else {
-          setAllUsers(seedUsers);
-          localStorage.setItem('nexus_all_users', JSON.stringify(seedUsers));
-        }
-        if (storedTeamMessages) setTeamMessages(JSON.parse(storedTeamMessages));
+        setAllUsers([]);
+        setFriendIds([]);
+        setWorkspaceMembers([]);
+        setTeamMessages({});
 
         // Load Enterprise features state
         const storedCustomStatus = localStorage.getItem('nexus_custom_status');
         const storedDnd = localStorage.getItem('nexus_dnd');
-        const storedChannels = localStorage.getItem('nexus_channels');
-        const storedChannelMessages = localStorage.getItem('nexus_channel_messages');
         const storedGoals = localStorage.getItem('nexus_goals');
         const storedDeals = localStorage.getItem('nexus_deals');
 
         if (storedCustomStatus) setCustomStatusState(storedCustomStatus);
         if (storedDnd) setDndState(JSON.parse(storedDnd));
         
-        if (storedChannels) {
-          setChannels(JSON.parse(storedChannels));
-        } else {
-          setChannels(seedChannels);
-          localStorage.setItem('nexus_channels', JSON.stringify(seedChannels));
-        }
-
-        if (storedChannelMessages) {
-          setChannelMessages(JSON.parse(storedChannelMessages));
-        } else {
-          const defaultChannelMessages = {
-            'c1': [
-              {
-                id: 'seed-cmsg-1',
-                sender: { id: 'p2', name: 'Marcus Johnson', email: 'marcus@nexus.ai', avatar: '', role: 'Engineering Manager', tag: '2081' },
-                content: encryptMessage("Welcome everyone! Let's use this channel for general project alignment and highlights."),
-                timestamp: new Date(Date.now() - 3600000 * 24).toISOString(),
-                replies: []
-              },
-              {
-                id: 'seed-cmsg-2',
-                sender: { id: 'p3', name: 'Elena Rodriguez', email: 'elena@nexus.ai', avatar: '', role: 'Design Director', tag: '3042' },
-                content: encryptMessage("Thanks Marcus! I will post the design specifications in the #design-feedback channel."),
-                timestamp: new Date(Date.now() - 3600000 * 23).toISOString(),
-                replies: []
-              }
-            ],
-            'c5': [
-              {
-                id: 'seed-cmsg-3',
-                sender: { id: 'p3', name: 'Elena Rodriguez', email: 'elena@nexus.ai', avatar: '', role: 'Design Director', tag: '3042' },
-                content: encryptMessage("@Sarah Chen let's review the documents sidebar redesign today! Ready for feedback."),
-                timestamp: new Date(Date.now() - 3600000 * 5).toISOString(),
-                replies: []
-              }
-            ],
-            'c4': [
-              {
-                id: 'seed-cmsg-4',
-                sender: { id: 'p2', name: 'Marcus Johnson', email: 'marcus@nexus.ai', avatar: '', role: 'Engineering Manager', tag: '2081' },
-                content: encryptMessage("We need approval from @Product Lead to merge the Enterprise API code. Please check the logs."),
-                timestamp: new Date(Date.now() - 3600000 * 12).toISOString(),
-                replies: []
-              }
-            ]
-          };
-          setChannelMessages(defaultChannelMessages);
-          localStorage.setItem('nexus_channel_messages', JSON.stringify(defaultChannelMessages));
-        }
+        setChannels([]);
+        setChannelMessages({});
 
         if (storedGoals) {
           setGoals(JSON.parse(storedGoals));
         } else {
-          setGoals(seedGoals);
-          localStorage.setItem('nexus_goals', JSON.stringify(seedGoals));
+          setGoals([]);
         }
 
         const storedRoles = localStorage.getItem('nexus_roles');
         if (storedRoles) {
           setRoles(JSON.parse(storedRoles));
         } else {
-          const defaultRoles = [
-            'Product Lead',
-            'Senior Developer',
-            'Engineering Manager',
-            'Design Director',
-            'Data Scientist',
-            'UX Researcher',
-            'Content Strategist',
-            'Developer',
-            'Admin',
-            'Team Leader'
-          ];
-          setRoles(defaultRoles);
-          localStorage.setItem('nexus_roles', JSON.stringify(defaultRoles));
+          setRoles(DEFAULT_SIGNUP_ROLES);
+          localStorage.setItem('nexus_roles', JSON.stringify(DEFAULT_SIGNUP_ROLES));
         }
 
         const storedLoginActivities = localStorage.getItem('nexus_login_activities');
         if (storedLoginActivities) {
           setLoginActivities(JSON.parse(storedLoginActivities));
         } else {
-          const seedLoginActivities: LoginActivity[] = [
-            { id: 'la-1', userId: 'p2', userName: 'Marcus Johnson', userRole: 'Engineering Manager', timestamp: new Date(Date.now() - 3600000 * 2).toISOString(), ipAddress: '192.168.1.15', device: 'Desktop (macOS/Safari)' },
-            { id: 'la-2', userId: 'p3', userName: 'Elena Rodriguez', userRole: 'Design Director', timestamp: new Date(Date.now() - 3600000 * 5).toISOString(), ipAddress: '192.168.1.42', device: 'Desktop (macOS/Chrome)' },
-            { id: 'la-3', userId: 'p1', userName: 'Sarah Chen', userRole: 'Product Lead', timestamp: new Date(Date.now() - 3600000 * 8).toISOString(), ipAddress: '192.168.1.101', device: 'Desktop (Windows/Chrome)' },
-            { id: 'la-4', userId: 'p4', userName: 'Alex Kim', userRole: 'Senior Developer', timestamp: new Date(Date.now() - 3600000 * 12).toISOString(), ipAddress: '192.168.1.55', device: 'Desktop (Linux/Firefox)' }
-          ];
-          setLoginActivities(seedLoginActivities);
-          localStorage.setItem('nexus_login_activities', JSON.stringify(seedLoginActivities));
+          setLoginActivities([]);
         }
 
         const storedThemeConfig = localStorage.getItem('nexus_theme_config');
@@ -752,33 +918,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         if (storedNotifications) {
           setNotifications(JSON.parse(storedNotifications));
         } else {
-          const seedNotifications: NotificationItem[] = [
-            {
-              id: 'notif-1',
-              senderName: 'Elena Rodriguez',
-              message: 'tagged you in #design-feedback: "@Sarah Chen let\'s review the documents sidebar redesign today!"',
-              timestamp: new Date(Date.now() - 3600000 * 5).toISOString(),
-              read: false,
-              link: '/team-chat'
-            },
-            {
-              id: 'notif-2',
-              senderName: 'Marcus Johnson',
-              message: 'tagged @Product Lead in #engineering-sync: "We need approval from @Product Lead to merge the Enterprise API code."',
-              timestamp: new Date(Date.now() - 3600000 * 12).toISOString(),
-              read: false,
-              link: '/team-chat'
-            }
-          ];
-          setNotifications(seedNotifications);
-          localStorage.setItem('nexus_notifications', JSON.stringify(seedNotifications));
+          setNotifications([]);
         }
 
         if (storedDeals) {
           setDeals(JSON.parse(storedDeals));
         } else {
-          setDeals(seedDeals);
-          localStorage.setItem('nexus_deals', JSON.stringify(seedDeals));
+          setDeals([]);
         }
       } catch (e) {
         console.error('Failed to parse from localStorage:', e);
@@ -873,16 +1019,16 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
               avatar: '',
               role,
               tag,
-              status: profile?.status || 'online'
+              status: profile?.status || 'online',
+              emailVerified: !!(session.user.email_confirmed_at || session.user.confirmed_at)
             };
             setUser(authenticatedUser);
-            localStorage.setItem('nexus_user', JSON.stringify(authenticatedUser));
             localStorage.setItem('nexus_user_status', authenticatedUser.status || 'online');
           }
 
           // Fetch all profiles from public.profiles
+          let mappedProfilesList: Person[] = [];
           const { data: dbProfiles } = await supabase.from('profiles').select('*');
-          let mappedProfilesList: Person[] = [...seedUsers];
           if (dbProfiles && dbProfiles.length > 0) {
             mappedProfilesList = dbProfiles.map((p: any) => ({
               id: p.id,
@@ -894,28 +1040,22 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
               status: p.status || 'offline',
               lastSeenAt: p.last_seen_at
             }));
-            setAllUsers(prev => {
-              const merged = [...seedUsers];
-              mappedProfilesList.forEach((dbP: any) => {
-                const idx = merged.findIndex(m => m.id === dbP.id || m.email === dbP.email);
-                if (idx !== -1) {
-                  merged[idx] = dbP;
-                } else {
-                  merged.push(dbP);
-                }
-              });
-              localStorage.setItem('nexus_all_users', JSON.stringify(merged));
-              return merged;
-            });
+            setAllUsers(currentUserId
+              ? mappedProfilesList.filter(profile => profile.id === currentUserId)
+              : []
+            );
           }
 
-          // Fetch DMs involving this user
+          // Fetch team memberships and DMs involving this user.
           if (currentUserId) {
+            const currentPerson = mappedProfilesList.find(profile => profile.id === currentUserId);
+            if (currentPerson) await hydrateTeamAccess(currentPerson, mappedProfilesList);
+
             const { data: dms } = await supabase
-              .from('team_messages')
+              .from('direct_messages')
               .select('*')
               .or(`sender_id.eq.${currentUserId},receiver_id.eq.${currentUserId}`)
-              .order('timestamp', { ascending: true });
+              .order('created_at', { ascending: true });
             
             if (dms) {
               const messagesMapped: Record<string, ChatMessage[]> = {};
@@ -926,14 +1066,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                   id: d.id,
                   role: d.sender_id === currentUserId ? 'user' : 'assistant',
                   content: d.content,
-                  timestamp: d.timestamp
+                  timestamp: d.created_at || d.timestamp
                 });
               });
-              setTeamMessages(prev => {
-                const merged = { ...prev, ...messagesMapped };
-                localStorage.setItem('nexus_team_messages', JSON.stringify(merged));
-                return merged;
-              });
+              setTeamMessages(messagesMapped);
             }
           }
 
@@ -948,7 +1084,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
               createdAt: c.created_at
             }));
             setChannels(dbChs);
-            localStorage.setItem('nexus_channels', JSON.stringify(dbChs));
           }
 
           if (!channelMessagesQuery.error && channelMessagesQuery.data) {
@@ -1008,7 +1143,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             });
 
             setChannelMessages(messagesMapped);
-            localStorage.setItem('nexus_channel_messages', JSON.stringify(messagesMapped));
           }
 
         } catch (authErr) {
@@ -1031,30 +1165,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         const finalTasks = localTasks;
         const finalEvents = localEvents;
         const finalEmails = localEmails;
-        // Keep default welcome conversation if no conversations exist
-        const finalConvos = localConvos.length > 0 ? localConvos : [
-          {
-            id: 'c-welcome',
-            title: 'Welcome to Nexus AI',
-            messages: [
-              {
-                id: 'm-welcome-1',
-                role: 'assistant',
-                content: 'Hello! I am your Nexus AI assistant. Upload your own documents in the **Documents** tab, then check them on the sidebar here to ask me questions, summarize, find mistakes, create infographics, or draft emails!',
-                timestamp: new Date().toISOString()
-              }
-            ],
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
-          }
-        ];
+        const finalConvos = localConvos;
         const finalInsights = localInsights;
 
         setDocuments(finalDocs);
         setTasks(finalTasks);
         setCalendarEvents(finalEvents);
         setEmails(finalEmails);
-        setConversations(finalConvos as Conversation[]);
+        setConversations(finalConvos);
         setInsights(finalInsights);
 
         if (finalConvos.length > 0 && !activeConversationId) {
@@ -1066,20 +1184,20 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     };
 
     fetchData();
-  }, []);
+  }, [hydrateTeamAccess]);
 
-  // Realtime subscription for team messages
+  // Realtime subscription for direct messages
   useEffect(() => {
     if (!user) return;
 
     const channel = supabase
-      .channel('realtime_team_messages')
+      .channel('realtime_direct_messages')
       .on(
         'postgres_changes',
         {
           event: 'INSERT',
           schema: 'public',
-          table: 'team_messages'
+          table: 'direct_messages'
         },
         (payload: any) => {
           const newDbMsg = payload.new;
@@ -1101,7 +1219,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                 ...prev,
                 [partnerId]: [...partnerMsgs, incomingMsg]
               };
-              localStorage.setItem('nexus_team_messages', JSON.stringify(updated));
               return updated;
             });
           }
@@ -1486,7 +1603,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       type: doc.type,
       size: doc.size,
       uploadedAt: (doc as any).uploadedAt || new Date().toISOString(),
-      uploadedBy: (doc as any).uploadedBy || sampleData.currentUser,
+      uploadedBy: (doc as any).uploadedBy || user || { id: 'unknown', name: 'User', email: '', avatar: '', role: 'Member' },
       summary: doc.summary || 'Summary pending analysis.',
       keyPoints: doc.keyPoints || [],
       extractedTasks: doc.extractedTasks || [],
@@ -1506,7 +1623,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     });
 
     // Automatically add extracted tasks to task store!
-    if (newDocument.extractedTasks && newDocument.extractedTasks.length > 0) {
+    if (user && newDocument.extractedTasks && newDocument.extractedTasks.length > 0) {
       newDocument.extractedTasks.forEach(et => {
         addTask({
           title: et.text,
@@ -1517,7 +1634,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           tags: ['extracted'],
           sourceDocument: { id: newDocument.id, title: newDocument.title },
           subtasks: [],
-          assignee: user || seedUsers[0]
+          assignee: user,
         });
       });
     }
@@ -1539,7 +1656,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         });
       });
     }
-  }, [addTask, createCalendarEvent]);
+  }, [addTask, createCalendarEvent, user]);
 
   const deleteDocument = useCallback(async (id: string) => {
     setDocuments(prev => {
@@ -1774,12 +1891,18 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   // ── Authentication & Dynamic Status Actions ──────────────────
   const register = useCallback(async (email: string, username: string, tag: string, role: string, password: string) => {
+    let finalRole = safeSignupRole(role, false);
     try {
+      const { count } = await supabase
+        .from('profiles')
+        .select('id', { count: 'exact', head: true });
+      finalRole = safeSignupRole(role, (count ?? 0) === 0);
+
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
-          data: { username, tag, role }
+          data: { username, tag, role: finalRole }
         }
       });
       if (error) throw error;
@@ -1789,9 +1912,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           name: username,
           email,
           avatar: '',
-          role,
+          role: finalRole,
           tag,
-          status: 'online'
+          status: 'online',
+          emailVerified: !!(data.user.email_confirmed_at || data.user.confirmed_at)
         };
         
         await supabase.from('profiles').upsert({
@@ -1805,70 +1929,40 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
         setUser(newPerson);
         setUserStatusState('online');
-        localStorage.setItem('nexus_user', JSON.stringify(newPerson));
+        setFriendIds([]);
         localStorage.setItem('nexus_user_status', 'online');
         recordLogin(newPerson);
 
         setAllUsers(prev => {
           const filtered = prev.filter(u => u.email !== email && u.id !== newPerson.id);
-          const updated = [...filtered, newPerson];
-          localStorage.setItem('nexus_all_users', JSON.stringify(updated));
-          return updated;
+          return [...filtered, newPerson];
         });
 
         return true;
       }
     } catch (e) {
-      console.warn('Supabase sign-up failed or not configured, using local fallback:', e);
+      console.warn('Supabase sign-up failed or not configured:', e);
     }
 
-    const localId = `u-${Date.now()}`;
-    const newPerson: Person = {
-      id: localId,
-      name: username,
-      email,
-      avatar: '',
-      role,
-      tag,
-      status: 'online'
-    };
-
-    setUser(newPerson);
-    setUserStatusState('online');
-    localStorage.setItem('nexus_user', JSON.stringify(newPerson));
-    localStorage.setItem('nexus_user_status', 'online');
-    recordLogin(newPerson);
-
-    try {
-      const registeredListRaw = localStorage.getItem('nexus_registered_users') || '[]';
-      const registeredList = JSON.parse(registeredListRaw);
-      registeredList.push({ ...newPerson, password });
-      localStorage.setItem('nexus_registered_users', JSON.stringify(registeredList));
-    } catch (err) {
-      console.error(err);
-    }
-
-    setAllUsers(prev => {
-      const filtered = prev.filter(u => u.email !== email);
-      const updated = [...filtered, newPerson];
-      localStorage.setItem('nexus_all_users', JSON.stringify(updated));
-      return updated;
-    });
-
-    return true;
-  }, []);
+    return false;
+  }, [appendAuditLog]);
 
   const login = useCallback(async (usernameOrEmail: string, password: string) => {
     let resolvedEmail = usernameOrEmail;
+    const parsedTagLogin = parseNameTag(usernameOrEmail);
 
     // 1. Resolve email if it's a username (no @ symbol)
     if (!usernameOrEmail.includes('@')) {
       try {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('email')
-          .eq('username', usernameOrEmail)
-          .single();
+        let profileQuery = supabase.from('profiles').select('email');
+        if (parsedTagLogin) {
+          profileQuery = profileQuery
+            .ilike('username', parsedTagLogin.name)
+            .eq('tag', parsedTagLogin.tag);
+        } else {
+          profileQuery = profileQuery.eq('username', usernameOrEmail);
+        }
+        const { data: profile } = await profileQuery.single();
         if (profile && profile.email) {
           resolvedEmail = profile.email;
         }
@@ -1912,12 +2006,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           avatar: '',
           role,
           tag,
-          status: profileStatus as 'online' | 'offline' | 'idle' | 'dnd'
+          status: profileStatus as 'online' | 'offline' | 'idle' | 'dnd',
+          emailVerified: !!(data.user.email_confirmed_at || data.user.confirmed_at)
         };
 
         setUser(authenticatedUser);
         setUserStatusState(authenticatedUser.status || 'online');
-        localStorage.setItem('nexus_user', JSON.stringify(authenticatedUser));
         localStorage.setItem('nexus_user_status', authenticatedUser.status || 'online');
         recordLogin(authenticatedUser);
 
@@ -1925,52 +2019,142 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           await supabase.from('profiles').update({ status: 'online' }).eq('id', data.user.id);
         } catch (err) {}
 
+        try {
+          const { data: dbProfiles } = await supabase.from('profiles').select('*');
+          const profiles = (dbProfiles || []).map((p: any) => ({
+            id: p.id,
+            name: p.username,
+            email: p.email,
+            avatar: p.avatar || '',
+            role: p.role || 'Member',
+            tag: p.tag || '1000',
+            status: p.status || 'offline',
+            lastSeenAt: p.last_seen_at
+          }));
+          await hydrateTeamAccess(authenticatedUser, profiles);
+        } catch (err) {
+          console.warn('Could not load synced team memberships:', err);
+        }
+
         return true;
       }
     } catch (e) {
-      console.warn('Supabase sign-in failed, utilizing local fallback:', e);
-    }
-
-    try {
-      if ((usernameOrEmail === 'sarah@nexus.ai' || usernameOrEmail.toLowerCase() === 'sarah' || usernameOrEmail.toLowerCase() === 'sarah chen') && password === 'password') {
-        const sarah = seedUsers[0];
-        setUser(sarah);
-        setUserStatusState('online');
-        localStorage.setItem('nexus_user', JSON.stringify(sarah));
-        localStorage.setItem('nexus_user_status', 'online');
-        recordLogin(sarah);
-        return true;
-      }
-
-      const registeredListRaw = localStorage.getItem('nexus_registered_users') || '[]';
-      const registeredList = JSON.parse(registeredListRaw) as any[];
-      const found = registeredList.find(u => 
-        (u.email.toLowerCase() === usernameOrEmail.toLowerCase() || u.name.toLowerCase() === usernameOrEmail.toLowerCase()) && 
-        u.password === password
-      );
-      if (found) {
-        const authenticatedUser: Person = {
-          id: found.id,
-          name: found.name,
-          email: found.email,
-          avatar: found.avatar,
-          role: found.role,
-          tag: found.tag,
-          status: 'online'
-        };
-        setUser(authenticatedUser);
-        setUserStatusState('online');
-        localStorage.setItem('nexus_user', JSON.stringify(authenticatedUser));
-        localStorage.setItem('nexus_user_status', 'online');
-        recordLogin(authenticatedUser);
-        return true;
-      }
-    } catch (err) {
-      console.error(err);
+      console.warn('Supabase sign-in failed:', e);
     }
 
     return false;
+  }, [hydrateTeamAccess]);
+
+  const sendOtp = useCallback(async (emailOrPhone: string) => {
+    const isEmail = emailOrPhone.includes('@');
+    try {
+      const { error } = await supabase.auth.signInWithOtp(
+        isEmail
+          ? {
+              email: emailOrPhone,
+              options: {
+                emailRedirectTo: typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : undefined
+              }
+            }
+          : {
+              phone: emailOrPhone
+            }
+      );
+      if (error) throw error;
+      return { success: true };
+    } catch (e: any) {
+      console.warn('Supabase signInWithOtp failed:', e);
+      return { success: false, error: e?.message || 'Failed to send verification code.' };
+    }
   }, []);
+
+  const verifyOtp = useCallback(async (emailOrPhone: string, token: string) => {
+    const isEmail = emailOrPhone.includes('@');
+    try {
+      const { data, error } = await supabase.auth.verifyOtp(
+        isEmail
+          ? { email: emailOrPhone, token, type: 'email' }
+          : { phone: emailOrPhone, token, type: 'sms' }
+      );
+      if (error) throw error;
+      if (data.user) {
+        let name = data.user.email?.split('@')[0] || 'User';
+        let tag = '1000';
+        let role = 'Member';
+        let profileStatus = 'online';
+
+        try {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', data.user.id)
+            .single();
+          if (profile) {
+            name = profile.username;
+            tag = profile.tag;
+            role = profile.role || 'Member';
+            profileStatus = profile.status || 'online';
+          } else {
+            // Profile does not exist yet (new OTP registration), trigger will create it in a moment.
+            // Upsert fallback to ensure the profile always exists.
+            await supabase.from('profiles').upsert({
+              id: data.user.id,
+              email: data.user.email || emailOrPhone,
+              username: name,
+              tag: tag,
+              role: role,
+              status: 'online'
+            });
+          }
+        } catch (dbErr) {
+          console.warn('Failed to fetch profile from Supabase profiles table in verifyOtp:', dbErr);
+        }
+
+        const authenticatedUser: Person = {
+          id: data.user.id,
+          name,
+          email: data.user.email || emailOrPhone,
+          avatar: '',
+          role,
+          tag,
+          status: profileStatus as 'online' | 'offline' | 'idle' | 'dnd',
+          emailVerified: !!(data.user.email_confirmed_at || data.user.confirmed_at)
+        };
+
+        setUser(authenticatedUser);
+        setUserStatusState(authenticatedUser.status || 'online');
+        localStorage.setItem('nexus_user_status', authenticatedUser.status || 'online');
+        recordLogin(authenticatedUser);
+
+        try {
+          await supabase.from('profiles').update({ status: 'online' }).eq('id', data.user.id);
+        } catch (err) {}
+
+        try {
+          const { data: dbProfiles } = await supabase.from('profiles').select('*');
+          const profiles = (dbProfiles || []).map((p: any) => ({
+            id: p.id,
+            name: p.username,
+            email: p.email,
+            avatar: p.avatar || '',
+            role: p.role || 'Member',
+            tag: p.tag || '1000',
+            status: p.status || 'offline',
+            lastSeenAt: p.last_seen_at
+          }));
+          await hydrateTeamAccess(authenticatedUser, profiles);
+        } catch (err) {
+          console.warn('Could not load synced team memberships in verifyOtp:', err);
+        }
+
+        return { success: true };
+      }
+      return { success: false, error: 'User session not created.' };
+    } catch (e: any) {
+      console.warn('Supabase verifyOtp failed:', e);
+      return { success: false, error: e?.message || 'Invalid verification code.' };
+    }
+  }, [hydrateTeamAccess]);
 
   const logout = useCallback(async () => {
     try {
@@ -1985,6 +2169,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
     setUser(null);
     setUserStatusState('offline');
+    setFriendIds([]);
     localStorage.removeItem('nexus_user');
     localStorage.removeItem('nexus_user_status');
   }, [user]);
@@ -1996,12 +2181,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     if (user) {
       const updatedUser = { ...user, status };
       setUser(updatedUser);
-      localStorage.setItem('nexus_user', JSON.stringify(updatedUser));
 
       setAllUsers(prev => {
-        const updated = prev.map(u => u.id === user.id ? updatedUser : u);
-        localStorage.setItem('nexus_all_users', JSON.stringify(updated));
-        return updated;
+        return prev.map(u => u.id === user.id ? updatedUser : u);
       });
 
       try {
@@ -2015,8 +2197,264 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
   }, [user]);
 
+  const addFriendByTag = useCallback(async (nameTag: string) => {
+    if (!user) return { ok: false, message: 'Sign in before adding friends.' };
+    if (!isAdminLevelRole(user.role)) {
+      return { ok: false, message: 'Only admins can add teammates to this team.' };
+    }
+
+    const parsed = parseNameTag(nameTag);
+    if (!parsed) {
+      return { ok: false, message: 'Use the format Name#1234.' };
+    }
+
+    let friend = allUsers.find((candidate) =>
+      candidate.id !== user.id &&
+      candidate.name.toLowerCase() === parsed.name &&
+      String(candidate.tag || '').toLowerCase() === parsed.tag
+    );
+
+    if (!friend) {
+      try {
+        const { data } = await supabase
+          .from('profiles')
+          .select('*')
+          .ilike('username', parsed.name)
+          .eq('tag', parsed.tag)
+          .single();
+
+        if (data && data.id !== user.id) {
+          friend = {
+            id: data.id,
+            name: data.username,
+            email: data.email,
+            avatar: data.avatar || '',
+            role: data.role || 'Member',
+            tag: data.tag || '0000',
+            status: data.status || 'offline',
+            lastSeenAt: data.last_seen_at,
+          };
+        }
+      } catch (err) {
+        console.warn('Friend lookup in profiles failed:', err);
+      }
+    }
+
+    if (!friend) return { ok: false, message: `No user found for ${nameTag.trim()}.` };
+    if (friend.id === user.id) return { ok: false, message: 'You cannot add yourself.' };
+
+    const activeWorkspace = workspace || {
+      id: `ws-${user.id}`,
+      name: `${user.name}'s Workspace`,
+      slug: `${user.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'workspace'}-${String(user.tag || '0000').toLowerCase()}`,
+      ownerId: user.id,
+      createdAt: new Date().toISOString(),
+    };
+    if (!workspace) {
+      setWorkspace(activeWorkspace);
+      await supabase.from('workspaces').upsert({
+        id: activeWorkspace.id,
+        name: activeWorkspace.name,
+        slug: activeWorkspace.slug,
+        owner_id: activeWorkspace.ownerId,
+        created_at: activeWorkspace.createdAt,
+      });
+    }
+    const alreadyMember = workspaceMembers.some(member =>
+      member.workspaceId === activeWorkspace.id &&
+      member.userId === friend!.id &&
+      member.status === 'active'
+    );
+    if (alreadyMember) return { ok: true, message: `${formatPersonTag(friend)} is already on this team.`, friend };
+
+    const newMemberships: WorkspaceMemberRecord[] = [
+      {
+        workspaceId: activeWorkspace.id,
+        userId: friend.id,
+        role: friend.role || 'Member',
+        status: 'active',
+        addedBy: user.id,
+        joinedAt: new Date().toISOString(),
+      },
+      {
+        workspaceId: activeWorkspace.id,
+        userId: user.id,
+        role: user.role,
+        status: 'active',
+        joinedAt: new Date().toISOString(),
+      },
+    ];
+    setWorkspaceMembers(prev => {
+      const updated = [...prev];
+      newMemberships.forEach(member => {
+        if (!updated.some(existing => existing.workspaceId === member.workspaceId && existing.userId === member.userId)) {
+          updated.push(member);
+        }
+      });
+      return updated;
+    });
+    setFriendIds(prev => prev.includes(friend!.id) ? prev : [...prev, friend!.id]);
+    appendAuditLog(user, 'Add teammate', formatPersonTag(friend), activeWorkspace.id);
+
+    try {
+      await supabase.from('workspace_members').upsert(newMemberships.map(member => ({
+        workspace_id: member.workspaceId,
+        user_id: member.userId,
+        role: member.role,
+        status: member.status,
+        added_by: member.addedBy || null,
+        joined_at: member.joinedAt || new Date().toISOString(),
+      })));
+    } catch (err) {
+      console.warn('Team membership sync failed:', err);
+    }
+
+    setAllUsers(prev => {
+      const exists = prev.some(existing => existing.id === friend!.id);
+      return exists ? prev : [...prev, friend!];
+    });
+
+    return { ok: true, message: `Added ${formatPersonTag(friend)} to ${activeWorkspace.name}.`, friend };
+  }, [allUsers, appendAuditLog, user, workspace, workspaceMembers]);
+
+  const createInviteLink = useCallback(async (email = '', role = 'Member') => {
+    if (!user || !workspace) return { ok: false, message: 'Create or join a workspace first.' };
+    if (!isAdminLevelRole(user.role)) return { ok: false, message: 'Only admins can create invite links.' };
+
+    const invite: WorkspaceInviteRecord = {
+      id: `invite-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      workspaceId: workspace.id,
+      code: Math.random().toString(36).slice(2, 10).toUpperCase(),
+      email: email.trim() || undefined,
+      role: isAdminLevelRole(role) ? 'Member' : role,
+      createdBy: user.id,
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    };
+
+    setWorkspaceInvites(prev => {
+      const updated = [invite, ...prev];
+      localStorage.setItem('nexus_workspace_invites', JSON.stringify(updated));
+      return updated;
+    });
+    appendAuditLog(user, 'Create invite link', invite.email || invite.code, workspace.id);
+
+    try {
+      await supabase.from('workspace_invites').insert({
+        id: invite.id,
+        workspace_id: invite.workspaceId,
+        code: invite.code,
+        email: invite.email || null,
+        role: invite.role,
+        created_by: invite.createdBy,
+        created_at: invite.createdAt,
+        expires_at: invite.expiresAt,
+      });
+    } catch (err) {
+      console.warn('Invite sync failed, saved locally:', err);
+    }
+
+    const url = typeof window !== 'undefined'
+      ? `${window.location.origin}/invite/${invite.code}`
+      : `/invite/${invite.code}`;
+    return { ok: true, message: 'Invite link created.', url };
+  }, [appendAuditLog, user, workspace]);
+
+  const submitFeedback = useCallback(async (message: string, page: string = activePage) => {
+    if (!user || !workspace) return { ok: false, message: 'Sign in before sending feedback.' };
+    if (!message.trim()) return { ok: false, message: 'Feedback cannot be empty.' };
+
+    const feedback: FeedbackRecord = {
+      id: `feedback-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      workspaceId: workspace.id,
+      userId: user.id,
+      userName: user.name,
+      page,
+      message: message.trim(),
+      timestamp: new Date().toISOString(),
+    };
+
+    setFeedbackItems(prev => {
+      const updated = [feedback, ...prev].slice(0, 100);
+      localStorage.setItem('nexus_feedback_items', JSON.stringify(updated));
+      return updated;
+    });
+    appendAuditLog(user, 'Submit feedback', page, workspace.id);
+
+    try {
+      await supabase.from('feedback').insert({
+        id: feedback.id,
+        workspace_id: feedback.workspaceId,
+        user_id: feedback.userId,
+        user_name: feedback.userName,
+        page: feedback.page,
+        message: feedback.message,
+        created_at: feedback.timestamp,
+      });
+    } catch (err) {
+      console.warn('Feedback sync failed, saved locally:', err);
+    }
+
+    return { ok: true, message: 'Feedback sent. Thank you.' };
+  }, [activePage, appendAuditLog, user, workspace]);
+
+  const trackAiUsage = useCallback(async () => {
+    if (!user || !workspace) return { ok: false, message: 'Sign in before using AI.' };
+    const today = new Date().toISOString().slice(0, 10);
+    const limit = isAdminLevelRole(user.role) ? 100 : 25;
+    const existing = aiUsage.find(item => item.workspaceId === workspace.id && item.userId === user.id && item.date === today);
+    const currentRequests = existing?.requests || 0;
+
+    if (currentRequests >= limit) {
+      return { ok: false, message: `Daily AI limit reached (${limit} requests).` };
+    }
+
+    const nextUsage: AiUsageRecord = {
+      workspaceId: workspace.id,
+      userId: user.id,
+      date: today,
+      requests: currentRequests + 1,
+      limit,
+    };
+
+    setAiUsage(prev => {
+      const updated = existing
+        ? prev.map(item => item.workspaceId === workspace.id && item.userId === user.id && item.date === today ? nextUsage : item)
+        : [nextUsage, ...prev];
+      localStorage.setItem('nexus_ai_usage', JSON.stringify(updated));
+      return updated;
+    });
+
+    try {
+      await supabase.from('ai_usage').upsert({
+        workspace_id: workspace.id,
+        user_id: user.id,
+        usage_date: today,
+        requests: nextUsage?.requests || 1,
+        request_limit: limit,
+      });
+    } catch (err) {
+      console.warn('AI usage sync failed, saved locally:', err);
+    }
+
+    return { ok: true, message: 'AI usage recorded.' };
+  }, [aiUsage, user, workspace]);
+
   const sendTeamMessage = useCallback(async (receiverId: string, content: string, media?: { url: string; name: string; type: string }) => {
     if (!user) return;
+    const sharedWorkspace = workspaceMembers.some(member =>
+      member.userId === user.id &&
+      member.status === 'active' &&
+      workspaceMembers.some(other =>
+        other.workspaceId === member.workspaceId &&
+        other.userId === receiverId &&
+        other.status === 'active'
+      )
+    );
+    if (!sharedWorkspace) {
+      toast.error('You can only message users who share a team with you.');
+      return;
+    }
     const msgId = `tmsg-${Date.now()}`;
     const encryptedContent = encryptMessage(content);
     const newMsg: ChatMessage = {
@@ -2033,20 +2471,19 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         ...prev,
         [receiverId]: [...currentDMs, newMsg]
       };
-      localStorage.setItem('nexus_team_messages', JSON.stringify(updated));
       return updated;
     });
 
     try {
-      await supabase.from('team_messages').insert({
+      await supabase.from('direct_messages').insert({
         id: msgId,
         sender_id: user.id,
         receiver_id: receiverId,
         content: encryptedContent,
-        timestamp: newMsg.timestamp
+        created_at: newMsg.timestamp
       });
     } catch (e) {
-      console.warn('Sync DM to team_messages failed:', e);
+      console.warn('Sync DM to direct_messages failed:', e);
     }
 
     const receiver = allUsers.find(u => u.id === receiverId);
@@ -2114,22 +2551,21 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             ...prev,
             [receiverId]: [...currentDMs, replyMsg]
           };
-          localStorage.setItem('nexus_team_messages', JSON.stringify(updated));
           return updated;
         });
 
         try {
-          supabase.from('team_messages').insert({
+          supabase.from('direct_messages').insert({
             id: replyId,
             sender_id: receiverId,
             receiver_id: user.id,
             content: encryptedReply,
-            timestamp: replyMsg.timestamp
+            created_at: replyMsg.timestamp
           }).then();
         } catch (err) {}
       }, 1500);
     }
-  }, [user, allUsers]);
+  }, [user, allUsers, workspaceMembers]);
 
   // ── Enterprise Status, Channels, CRM & OKR Operations ────────
   const setCustomStatus = useCallback(async (statusText: string) => {
@@ -2138,7 +2574,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     if (user) {
       const updated = { ...user, customStatus: statusText };
       setUser(updated);
-      localStorage.setItem('nexus_user', JSON.stringify(updated));
       setAllUsers(prev => prev.map(u => u.id === user.id ? updated : u));
       try {
         await supabase.from('profiles').update({ custom_status: statusText }).eq('id', user.id);
@@ -2152,7 +2587,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     if (user) {
       const updated = { ...user, dnd: dndVal };
       setUser(updated);
-      localStorage.setItem('nexus_user', JSON.stringify(updated));
       setAllUsers(prev => prev.map(u => u.id === user.id ? updated : u));
       try {
         await supabase.from('profiles').update({ dnd: dndVal }).eq('id', user.id);
@@ -2175,7 +2609,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setChannelMessages(prev => {
       const current = prev[channelId] || [];
       const updated = { ...prev, [channelId]: [...current, newMsg] };
-      localStorage.setItem('nexus_channel_messages', JSON.stringify(updated));
       return updated;
     });
 
@@ -2213,7 +2646,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         return msg;
       });
       const updated = { ...prev, [channelId]: updatedList };
-      localStorage.setItem('nexus_channel_messages', JSON.stringify(updated));
       return updated;
     });
 
@@ -2252,7 +2684,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     };
     setChannels(prev => {
       const updated = [...prev, newCh];
-      localStorage.setItem('nexus_channels', JSON.stringify(updated));
       return updated;
     });
     try {
@@ -2261,13 +2692,156 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         name,
         category,
         is_group: isGroup,
-        starred_by: []
+        starred_by: [],
+        workspace_id: workspace?.id || null
       });
     } catch (e) {
       console.warn("Sync create channel failed:", e);
     }
     return id;
-  }, []);
+  }, [workspace]);
+
+  const createWorkspace = useCallback(async (name: string) => {
+    if (!user) return false;
+    try {
+      const workspaceId = `ws-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+      const newSlug = `${name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'workspace'}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+      const { error: wsErr } = await supabase.from('workspaces').insert({
+        id: workspaceId,
+        name,
+        slug: newSlug,
+        owner_id: user.id
+      });
+      if (wsErr) throw wsErr;
+
+      const { error: memberErr } = await supabase.from('workspace_members').insert({
+        workspace_id: workspaceId,
+        user_id: user.id,
+        role: 'Admin',
+        status: 'active'
+      });
+      if (memberErr) throw memberErr;
+
+      const { error: profileErr } = await supabase.from('profiles').update({
+        role: 'Admin'
+      }).eq('id', user.id);
+      if (profileErr) throw profileErr;
+
+      const updatedUser = { ...user, role: 'Admin' };
+      setUser(updatedUser);
+
+      setWorkspace({
+        id: workspaceId,
+        name,
+        slug: newSlug,
+        ownerId: user.id,
+        createdAt: new Date().toISOString()
+      });
+
+      setWorkspaceMembers([{
+        workspaceId,
+        userId: user.id,
+        role: 'Admin',
+        status: 'active',
+        joinedAt: new Date().toISOString()
+      }]);
+
+      appendAuditLog(updatedUser, 'Workspace created', name, workspaceId);
+      toast.success(`Team "${name}" created successfully!`);
+      return true;
+    } catch (err: any) {
+      console.error('Failed to create workspace:', err);
+      toast.error(err.message || 'Failed to create workspace.');
+      return false;
+    }
+  }, [user, appendAuditLog]);
+
+  const joinWorkspaceByCode = useCallback(async (code: string) => {
+    if (!user) return { ok: false, message: 'Please sign in first.' };
+    if (!code || !code.trim()) return { ok: false, message: 'Code cannot be empty.' };
+
+    try {
+      const response = await fetch('/api/invites/join', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ code }),
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        return { ok: false, message: data.error || data.message || 'Failed to join the workspace.' };
+      }
+
+      const nextRole = data.role || 'Member';
+      const updatedUser = { ...user, role: nextRole };
+      setUser(updatedUser);
+
+      const { data: dbProfiles } = await supabase.from('profiles').select('*');
+      const profiles = (dbProfiles || []).map((p: any) => ({
+        id: p.id,
+        name: p.username,
+        email: p.email,
+        avatar: p.avatar || '',
+        role: p.role || 'Member',
+        tag: p.tag || '1000',
+        status: p.status || 'offline',
+        lastSeenAt: p.last_seen_at
+      }));
+      await hydrateTeamAccess(updatedUser, profiles);
+
+      appendAuditLog(updatedUser, 'Join workspace', `Joined workspace via invite code: ${code}`, data.workspaceId);
+      return { ok: true, message: data.message || 'Successfully joined the team!' };
+    } catch (err: any) {
+      console.error('Failed to join workspace:', err);
+      return { ok: false, message: err.message || 'An error occurred while joining the team.' };
+    }
+  }, [user, hydrateTeamAccess, appendAuditLog]);
+
+  const updateMemberRole = useCallback(async (targetUserId: string, nextRole: string) => {
+    if (!user || !workspace) return false;
+    if (!isAdminLevelRole(user.role)) {
+      toast.error('Only admins can change team roles.');
+      return false;
+    }
+
+    try {
+      const { error: memberErr } = await supabase
+        .from('workspace_members')
+        .update({ role: nextRole })
+        .eq('workspace_id', workspace.id)
+        .eq('user_id', targetUserId);
+      if (memberErr) throw memberErr;
+
+      const { error: profileErr } = await supabase
+        .from('profiles')
+        .update({ role: nextRole })
+        .eq('id', targetUserId);
+      if (profileErr) throw profileErr;
+
+      setWorkspaceMembers(prev => prev.map(member => 
+        member.userId === targetUserId && member.workspaceId === workspace.id
+          ? { ...member, role: nextRole }
+          : member
+      ));
+
+      setAllUsers(prev => prev.map(u => 
+        u.id === targetUserId 
+          ? { ...u, role: nextRole }
+          : u
+      ));
+
+      appendAuditLog(user, 'Toggle member authority', `${targetUserId} set to ${nextRole}`, workspace.id);
+      toast.success(`Role updated successfully to ${nextRole}!`);
+      return true;
+    } catch (err: any) {
+      console.error('Failed to update member role:', err);
+      toast.error(err.message || 'Failed to update member role.');
+      return false;
+    }
+  }, [user, workspace, appendAuditLog]);
 
   const toggleStarChannel = useCallback(async (channelId: string) => {
     if (!user) return;
@@ -2283,7 +2857,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         }
         return c;
       });
-      localStorage.setItem('nexus_channels', JSON.stringify(updated));
       return updated;
     });
     try {
@@ -2311,7 +2884,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         return m;
       });
       const updated = { ...prev, [channelId]: updatedList };
-      localStorage.setItem('nexus_channel_messages', JSON.stringify(updated));
       return updated;
     });
     try {
@@ -2336,7 +2908,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           return m;
         });
       const updated = { ...prev, [channelId]: updatedList };
-      localStorage.setItem('nexus_channel_messages', JSON.stringify(updated));
       return updated;
     });
     try {
@@ -2366,7 +2937,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         return m;
       });
       const updated = { ...prev, [channelId]: updatedList };
-      localStorage.setItem('nexus_channel_messages', JSON.stringify(updated));
       return updated;
     });
     try {
@@ -2394,7 +2964,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         return m;
       });
       const updated = { ...prev, [channelId]: updatedList };
-      localStorage.setItem('nexus_channel_messages', JSON.stringify(updated));
       return updated;
     });
     try {
@@ -2421,7 +2990,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         return m;
       });
       const updated = { ...prev, [channelId]: updatedList };
-      localStorage.setItem('nexus_channel_messages', JSON.stringify(updated));
       return updated;
     });
     try {
@@ -2456,6 +3024,22 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const addDeal = useCallback(async (deal: Deal) => {
+    setDeals(prev => {
+      const updated = [...prev, deal];
+      localStorage.setItem('nexus_deals', JSON.stringify(updated));
+      return updated;
+    });
+  }, []);
+
+  const deleteDeal = useCallback(async (dealId: string) => {
+    setDeals(prev => {
+      const updated = prev.filter(d => d.id !== dealId);
+      localStorage.setItem('nexus_deals', JSON.stringify(updated));
+      return updated;
+    });
+  }, []);
+
   const startTimer = useCallback((taskName: string) => {
     setActiveTimerTask(taskName || 'Unspecified Task');
     setIsTimerRunning(true);
@@ -2478,19 +3062,21 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       const secs = timerElapsed % 60;
       toast.success(`Logged ${mins}m ${secs}s to task: "${taskName}"`);
       
-      addTask({
-        title: `Time Log: ${taskName}`,
-        description: `Logged ${mins}m ${secs}s of work.`,
-        status: 'done',
-        priority: 'low',
-        dueDate: new Date().toISOString().split('T')[0],
-        tags: ['time-log'],
-        subtasks: [],
-        assignee: user || seedUsers[0]
-      });
+      if (user) {
+        addTask({
+          title: `Time Log: ${taskName}`,
+          description: `Logged ${mins}m ${secs}s of work.`,
+          status: 'done',
+          priority: 'low',
+          dueDate: new Date().toISOString().split('T')[0],
+          tags: ['time-log'],
+          subtasks: [],
+          assignee: user,
+        });
+      }
     }
     resetTimer();
-  }, [activeTimerTask, timerElapsed, resetTimer, addTask]);
+  }, [activeTimerTask, timerElapsed, resetTimer, addTask, user]);
 
   // ── Email Actions ──────────────────────────────────────────
   const addEmail = useCallback(async (email: Omit<Email, 'id' | 'createdAt'>) => {
@@ -2656,7 +3242,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             
             const dbPayload = {
               id: msg.id,
-              to_name: 'Sarah Chen',
+              to_name: user?.name ?? 'Workspace',
               to: account.address,
               from_name: msg.from.name || msg.from.address,
               from_email: msg.from.address,
@@ -2702,7 +3288,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsSyncingEmails(false);
     }
-  }, []);
+  }, [user]);
 
   // Poll inbound emails on mount and periodic intervals
   useEffect(() => {
@@ -2805,7 +3391,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         id: newMessage.id,
         conversation_id: conversationId,
         role: newMessage.role,
-        content: newMessage.content,
+        content: encryptMessage(newMessage.content),
         timestamp: newMessage.timestamp,
         sources: newMessage.sources || null
       });
@@ -2831,15 +3417,18 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     isOnline,
     isAppLoading,
     documents, addDocument, deleteDocument, selectedDocumentId, setSelectedDocumentId,
-    tasks, addTask, deleteTask, moveTask, updateTask, taskView, setTaskView,
+    tasks, addTask, deleteTask, moveTask, updateTask, taskView, setTaskView, selectedTaskId, setSelectedTaskId,
     calendarEvents, selectedDate, setSelectedDate, addEventToCalendar, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent,
-    user, userStatus, allUsers, teamMessages, login, register, logout, setUserStatus, sendTeamMessage,
+    user, userStatus, allUsers, friendIds, canManageTeamMembers,
+    workspace, workspaceMembers, workspaceInvites, auditLogs, feedbackItems, aiUsage,
+    createInviteLink, submitFeedback, trackAiUsage,
+    teamMessages, login, sendOtp, verifyOtp, register, logout, setUserStatus, addFriendByTag, sendTeamMessage,
     customStatus, dnd, setCustomStatus, setDnd,
-    channels, channelMessages, sendChannelMessage, sendChannelReply,
+    channels, channelMessages, sendChannelMessage, sendChannelReply, activeChannelId, setActiveChannelId, activeDmUserId, setActiveDmUserId,
     goals, addGoal, updateGoal, deleteGoal,
     roles, addRole,
     loginActivities,
-    deals, updateDealStage,
+    deals, updateDealStage, addDeal, deleteDeal, selectedDealId, setSelectedDealId,
     activeTimerTask, isTimerRunning, timerElapsed, startTimer, pauseTimer, resetTimer, logTimer,
     emails, addEmail, editEmail, deleteEmail, updateEmailStatus,
     inboundEmailAddress, isSyncingEmails, syncInboundEmails,
@@ -2854,6 +3443,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     typingUsers, onlinePresence, broadcastTyping,
     toggleStarChannel, editChannelMessage, deleteChannelMessage,
     addReaction, removeReaction, togglePinMessage, markMessageAsRead, createChannel,
+    createWorkspace, joinWorkspaceByCode, updateMemberRole,
   };
 
   return (

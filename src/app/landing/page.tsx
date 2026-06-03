@@ -4,7 +4,7 @@ import React from 'react';
 import { useRouter } from 'next/navigation';
 import { Navbar } from '@/components/landing/Navbar';
 import { Hero } from '@/components/landing/Hero';
-// import { LogoCloud } from '@/components/landing/LogoCloud';
+import { LogoCloud } from '@/components/landing/LogoCloud';
 import { Features } from '@/components/landing/Features';
 import { AIChief } from '@/components/landing/AIChief';
 import { Pricing } from '@/components/landing/Pricing';

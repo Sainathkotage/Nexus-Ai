@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient, createSupabaseAdminClient } from '@/lib/supabase/server';
+import { invitationService } from '@/lib/services/invitationService';
 
 export async function POST(
   req: Request,
@@ -7,96 +8,75 @@ export async function POST(
 ) {
   try {
     const { token } = await params;
+    
+    // Check if user is logged in
     const auth = await createSupabaseServerClient();
     const { data: { user } } = await auth.auth.getUser();
+    
+    let loggedInUserId = user?.id;
+    let fullName = '';
+    let username = '';
+    let password = '';
+    let avatarFile: File | null = null;
+    let avatarUrl = '';
 
-    if (!user) {
-      return NextResponse.json({ error: 'Sign in required.' }, { status: 401 });
+    // If user is not logged in, read onboarding credentials from request body
+    if (!loggedInUserId) {
+      const contentType = req.headers.get('content-type') || '';
+      
+      if (contentType.includes('multipart/form-data')) {
+        const formData = await req.formData();
+        fullName = String(formData.get('fullName') || '');
+        username = String(formData.get('username') || '');
+        password = String(formData.get('password') || '');
+        avatarFile = formData.get('avatar') as File | null;
+      } else {
+        const body = await req.json().catch(() => ({}));
+        fullName = body.fullName || '';
+        username = body.username || '';
+        password = body.password || '';
+        avatarUrl = body.avatarUrl || '';
+      }
+
+      // Handle avatar file upload if present
+      if (avatarFile) {
+        const supabaseAdmin = createSupabaseAdminClient();
+        const fileName = `${Date.now()}-${avatarFile.name}`;
+        
+        try {
+          await supabaseAdmin.storage.createBucket('avatars', { public: true });
+        } catch (_) {}
+
+        const buffer = await avatarFile.arrayBuffer();
+        const { error: storageErr } = await supabaseAdmin.storage
+          .from('avatars')
+          .upload(fileName, Buffer.from(buffer), {
+            contentType: avatarFile.type,
+            upsert: true
+          });
+
+        if (!storageErr) {
+          const { data: { publicUrl } } = supabaseAdmin.storage
+            .from('avatars')
+            .getPublicUrl(fileName);
+          avatarUrl = publicUrl;
+        } else {
+          console.warn('Could not upload avatar image:', storageErr);
+        }
+      }
     }
 
-    const supabase = createSupabaseAdminClient();
-
-    // 1. Fetch invitation
-    const { data: invite, error: inviteErr } = await supabase
-      .from('invitations')
-      .select('*')
-      .eq('token', token)
-      .maybeSingle();
-
-    if (inviteErr || !invite) {
-      return NextResponse.json({ error: 'Invitation not found.' }, { status: 404 });
-    }
-
-    if (invite.status !== 'pending') {
-      return NextResponse.json({ error: `This invitation has already been ${invite.status}.` }, { status: 400 });
-    }
-
-    if (invite.expires_at && new Date(invite.expires_at).getTime() < Date.now()) {
-      return NextResponse.json({ error: 'This invitation has expired.' }, { status: 400 });
-    }
-
-    // 2. If it is an email-based invitation, verify the user's email matches
-    if (invite.email && invite.email.toLowerCase() !== user.email?.toLowerCase()) {
-      return NextResponse.json({ 
-        error: 'Forbidden: This invitation was sent to a different email address.' 
-      }, { status: 403 });
-    }
-
-    // 3. Check if they are already in the project
-    const { data: existingMember } = await supabase
-      .from('project_members')
-      .select('id')
-      .eq('project_id', invite.project_id)
-      .eq('user_id', user.id)
-      .maybeSingle();
-
-    if (existingMember) {
-      // Auto-update invitation status so it doesn't stay pending
-      await supabase
-        .from('invitations')
-        .update({
-          status: 'accepted',
-          accepted_at: new Date().toISOString()
-        })
-        .eq('id', invite.id);
-
-      return NextResponse.json({
-        ok: true,
-        message: 'You are already a member of this project.',
-        projectId: invite.project_id
-      });
-    }
-
-    // 4. Insert into project_members
-    const { error: memberErr } = await supabase
-      .from('project_members')
-      .insert({
-        project_id: invite.project_id,
-        user_id: user.id,
-        role: invite.role || 'member'
-      });
-
-    if (memberErr) {
-      throw memberErr;
-    }
-
-    // 5. Update invitations status
-    const { error: updateErr } = await supabase
-      .from('invitations')
-      .update({
-        status: 'accepted',
-        accepted_at: new Date().toISOString()
-      })
-      .eq('id', invite.id);
-
-    if (updateErr) {
-      throw updateErr;
-    }
+    const result = await invitationService.acceptInvitation(
+      token, 
+      !loggedInUserId ? { fullName, username, password, avatarUrl } : undefined,
+      loggedInUserId
+    );
 
     return NextResponse.json({
       ok: true,
       message: 'Successfully joined the project team!',
-      projectId: invite.project_id
+      projectId: result.projectId,
+      userId: result.userId
     });
   } catch (error: any) {
     console.error('Accept invitation API error:', error);

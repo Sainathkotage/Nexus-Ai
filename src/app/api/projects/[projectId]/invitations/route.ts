@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { invitationService } from '@/lib/services/invitationService';
 
 export async function POST(
   req: Request,
@@ -71,27 +72,12 @@ export async function POST(
       return NextResponse.json({ error: 'A pending invitation has already been sent to this email.' }, { status: 400 });
     }
 
-    // 4. Generate token and expires_at (7 days)
-    const token = crypto.randomUUID();
-    const expires_at = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-
-    const { data: newInvite, error: inviteErr } = await auth
-      .from('invitations')
-      .insert({
-        project_id: projectId,
-        email,
-        role,
-        invited_by: user.id,
-        token,
-        status: 'pending',
-        expires_at
-      })
-      .select()
-      .single();
-
-    if (inviteErr) {
-      throw inviteErr;
-    }
+    // 4. Delegate to invitationService (creates invitation and sends email via Resend)
+    const newInvite = await invitationService.createInvitation(projectId, user.id, {
+      email,
+      role,
+      message
+    });
 
     return NextResponse.json({
       ok: true,

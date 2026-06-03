@@ -6,6 +6,7 @@ import { useWorkspace } from '@/lib/store';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { LogIn, CheckCircle2, Clock, XCircle, AlertCircle, UserPlus, ArrowRight } from 'lucide-react';
+import { OnboardingWizard } from '@/components/projects/OnboardingWizard';
 
 interface WorkspaceDetails {
   id: string;
@@ -207,19 +208,23 @@ export default function InvitePage() {
 
             {/* Content states based on auth and membership */}
             {!user ? (
-              <div className="w-full space-y-4">
-                <div className="bg-zinc-950/50 border border-zinc-800/60 rounded-xl p-4 text-left text-xs text-zinc-400 mb-2">
-                  <span className="font-semibold text-zinc-300 block mb-1">Sign-in Required</span>
-                  You must be authenticated to join. Sign up or log in to continue.
+              isProject ? (
+                <OnboardingWizard inviteToken={code} />
+              ) : (
+                <div className="w-full space-y-4">
+                  <div className="bg-zinc-950/50 border border-zinc-800/60 rounded-xl p-4 text-left text-xs text-zinc-400 mb-2">
+                    <span className="font-semibold text-zinc-300 block mb-1">Sign-in Required</span>
+                    You must be authenticated to join. Sign up or log in to continue.
+                  </div>
+                  <button
+                    onClick={handleSignIn}
+                    className="w-full py-3 px-4 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-black font-semibold rounded-lg text-sm transition-all shadow-lg shadow-emerald-500/10 flex items-center justify-center gap-2 hover:scale-[1.01] cursor-pointer"
+                  >
+                    <LogIn size={18} />
+                    Sign In to Join
+                  </button>
                 </div>
-                <button
-                  onClick={handleSignIn}
-                  className="w-full py-3 px-4 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-black font-semibold rounded-lg text-sm transition-all shadow-lg shadow-emerald-500/10 flex items-center justify-center gap-2 hover:scale-[1.01] cursor-pointer"
-                >
-                  <LogIn size={18} />
-                  Sign In to Join
-                </button>
-              </div>
+              )
             ) : isMember ? (
               <div className="w-full space-y-4">
                 <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-4 text-emerald-400 flex items-center gap-3 text-left text-sm mb-2">

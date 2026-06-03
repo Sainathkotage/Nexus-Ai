@@ -5,7 +5,7 @@ import { useWorkspace, decryptMessage, encryptMessage } from '@/lib/store';
 import { supabase } from '@/lib/supabase';
 import { Person, ChatMessage, Channel, ChannelMessage, MessageReaction, MessageRead } from '@/types';
 import { 
-  Send, Users, MessageSquare, Clock, ShieldCheck, Check, 
+  Send, Users, MessageSquare, Clock, ShieldCheck, Check, CheckCheck, 
   Search, Circle, MessageCircle, Hash, ChevronRight, X,
   Paperclip, Phone, Video, Lock, Unlock, Mic, MicOff,
   VideoOff, Shield, PhoneOff, Star, Pin, Smile, Trash2, Edit3,
@@ -1550,11 +1550,17 @@ export default function TeamChatPage() {
                       )}
                       
                       <span className={cn("text-[8px] text-muted-foreground/60 flex items-center gap-1 mt-0.5", isMe ? 'justify-end' : '')}>
-                        {isMe && (msg.status === 'sending' ? (
-                          <Clock className="w-2.5 h-2.5 text-muted-foreground/50 animate-pulse" />
-                        ) : (
-                          <Check className="w-2.5 h-2.5 text-emerald-500" strokeWidth={3} />
-                        ))}
+                        {isMe && (
+                          msg.status === 'sending' ? (
+                            <Clock className="w-2.5 h-2.5 text-muted-foreground/50 animate-pulse" />
+                          ) : (
+                            activeFriend && getTeammateStatus(activeFriend.id, activeFriend.status as any) === 'online' ? (
+                              <CheckCheck className="w-3 h-3 text-emerald-500" strokeWidth={3} />
+                            ) : (
+                              <Check className="w-2.5 h-2.5 text-emerald-500" strokeWidth={3} />
+                            )
+                          )
+                        )}
                         {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         {isCipherToggled && <span className="text-[7px] text-indigo-500 font-bold bg-indigo-50 dark:bg-indigo-950/40 px-1.5 py-0.2 rounded font-sans uppercase">Encrypted</span>}
                         {msg.editedAt && <span className="text-[7.5px] font-semibold text-muted-foreground italic">(edited)</span>}
@@ -1614,7 +1620,18 @@ export default function TeamChatPage() {
                           {msg.sender.name}
                           <span className="text-[9px] font-normal text-muted-foreground">#{msg.sender.tag || '0000'}</span>
                         </span>
-                        <span className="text-[8px] text-muted-foreground font-mono">
+                        <span className="text-[8px] text-muted-foreground font-mono flex items-center gap-1">
+                          {isSenderMe && (
+                            msg.status === 'sending' ? (
+                              <Clock className="w-2.5 h-2.5 text-muted-foreground/50 animate-pulse" />
+                            ) : (
+                              readers.length > 0 ? (
+                                <CheckCheck className="w-3 h-3 text-emerald-500" strokeWidth={3} />
+                              ) : (
+                                <Check className="w-2.5 h-2.5 text-emerald-500" strokeWidth={3} />
+                              )
+                            )
+                          )}
                           {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </span>
                         {msg.editedAt && <span className="text-[7.5px] font-semibold text-muted-foreground italic">(edited)</span>}

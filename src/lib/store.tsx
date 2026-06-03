@@ -1109,10 +1109,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
               status: p.status || 'offline',
               lastSeenAt: p.last_seen_at
             }));
-            setAllUsers(currentUserId
-              ? mappedProfilesList.filter(profile => profile.id === currentUserId)
-              : []
-            );
+            // Only clear allUsers if not logged in.
+            // If logged in, hydrateTeamAccess will handle setting visible users correctly.
+            if (!currentUserId) {
+              setAllUsers([]);
+            }
           }
 
           // Fetch team memberships and DMs involving this user.
@@ -1508,6 +1509,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   workspaceRef.current = workspace;
   const myWorkspacesRef = useRef(myWorkspaces);
   myWorkspacesRef.current = myWorkspaces;
+  const allUsersRef = useRef(allUsers);
+  allUsersRef.current = allUsers;
 
   // Unified Realtime Postgres Sync
   useEffect(() => {
@@ -1524,7 +1527,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
               const chId = newDbMsg.channel_id || 'c1';
               const current = prev[chId] || [];
               if (current.some(m => m.id === newDbMsg.id)) return prev;
-              const mapped = mapDbChannelMessage(newDbMsg, allUsers);
+              const mapped = mapDbChannelMessage(newDbMsg, allUsersRef.current);
               
               if (newDbMsg.parent_id) {
                 return {
@@ -1560,7 +1563,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             if (currentUser && newDbMsg.sender_id !== currentUser.id) {
               const decryptedContent = decryptMessage(newDbMsg.content);
               if (decryptedContent.includes(`@${currentUser.name}`)) {
-                const senderUser = allUsers.find(u => u.id === newDbMsg.sender_id);
+                const senderUser = allUsersRef.current.find(u => u.id === newDbMsg.sender_id);
                 const chName = channelsRef.current.find(c => c.id === (newDbMsg.channel_id || 'c1'))?.name || 'chat';
                 addNotificationRef.current({
                   senderName: senderUser?.name || 'Someone',
@@ -1731,7 +1734,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [allUsers]);
+  }, []);
 
   // Workspace and Member Real-time Sync
   useEffect(() => {

@@ -425,6 +425,10 @@ interface WorkspaceState {
   reviewJoinRequest: (requestId: string, status: 'approved' | 'rejected') => Promise<boolean>;
   regenerateWorkspaceInviteCode: () => Promise<boolean>;
   updateMemberRole: (userId: string, role: string) => Promise<boolean>;
+  removeWorkspaceMember: (userId: string) => Promise<boolean>;
+  banWorkspaceMember: (userId: string) => Promise<boolean>;
+  unbanWorkspaceMember: (userId: string) => Promise<boolean>;
+  deleteWorkspace: (workspaceId: string) => Promise<boolean>;
 
   // Custom Status & DND
   customStatus: string;
@@ -1500,6 +1504,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const channelsRef = useRef(channels);
   channelsRef.current = channels;
   const addNotificationRef = useRef<any>(null);
+  const workspaceRef = useRef(workspace);
+  workspaceRef.current = workspace;
+  const myWorkspacesRef = useRef(myWorkspaces);
+  myWorkspacesRef.current = myWorkspaces;
 
   // Unified Realtime Postgres Sync
   useEffect(() => {
@@ -1724,6 +1732,78 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       supabase.removeChannel(channel);
     };
   }, [allUsers]);
+
+  // Workspace and Member Real-time Sync
+  useEffect(() => {
+    if (!user) return;
+
+    const channel = supabase
+      .channel('workspace_realtime_sync')
+      .on(
+        'postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'workspaces' },
+        (payload: any) => {
+          const { old: oldRecord } = payload;
+          const currentWs = workspaceRef.current;
+          if (currentWs && oldRecord.id === currentWs.id) {
+            toast.error('This workspace has been deleted.');
+            setWorkspace(null);
+            setMyWorkspaces(prev => prev.filter(ws => ws.id !== oldRecord.id));
+            if (typeof window !== 'undefined') {
+              window.location.href = '/';
+            }
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'workspace_members' },
+        (payload: any) => {
+          const { eventType, old: oldRecord, new: newRecord } = payload;
+          const memberRecord = eventType === 'DELETE' ? oldRecord : newRecord;
+          const currentWs = workspaceRef.current;
+
+          if (memberRecord.user_id === user.id) {
+            const isRemoved = eventType === 'DELETE' || memberRecord.status === 'banned' || memberRecord.status === 'removed';
+            if (isRemoved && currentWs && memberRecord.workspace_id === currentWs.id) {
+              const action = memberRecord.status === 'banned' ? 'banned' : 'removed';
+              toast.error(`You have been ${action} from this workspace.`);
+              setWorkspace(null);
+              setMyWorkspaces(prev => prev.filter(ws => ws.id !== currentWs.id));
+              if (typeof window !== 'undefined') {
+                window.location.href = '/';
+              }
+            }
+          } else {
+            if (currentWs && memberRecord.workspace_id === currentWs.id) {
+              if (eventType === 'DELETE' || memberRecord.status === 'banned' || memberRecord.status === 'removed') {
+                setWorkspaceMembers(prev => prev.filter(m => m.userId !== memberRecord.user_id));
+              } else if (memberRecord.status === 'active') {
+                setWorkspaceMembers(prev => {
+                  const exists = prev.some(m => m.userId === memberRecord.user_id);
+                  if (exists) {
+                    return prev.map(m => m.userId === memberRecord.user_id ? { ...m, role: memberRecord.role || 'Member', status: memberRecord.status } : m);
+                  } else {
+                    return [...prev, {
+                      workspaceId: memberRecord.workspace_id,
+                      userId: memberRecord.user_id,
+                      role: memberRecord.role || 'Member',
+                      status: memberRecord.status,
+                      joinedAt: memberRecord.joined_at || new Date().toISOString()
+                    }];
+                  }
+                });
+              }
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user]);
 
   // Presence and Typing indicators logic
   useEffect(() => {
@@ -3115,7 +3195,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         .from('workspace_members')
         .select('workspace_id, user_id, role, status, added_by, joined_at')
         .eq('workspace_id', workspaceId)
-        .eq('status', 'active');
+        .in('status', ['active', 'banned']);
 
       if (error) throw error;
 
@@ -3131,7 +3211,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
       const teammateIds = Array.from(new Set(
         mappedMembers
-          .filter(member => member.userId !== user.id)
+          .filter(member => member.userId !== user.id && member.status === 'active')
           .map(member => member.userId)
       ));
       setFriendIds(teammateIds);
@@ -3404,6 +3484,157 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       return false;
     }
   }, [user, workspace, appendAuditLog]);
+
+  const removeWorkspaceMember = useCallback(async (targetUserId: string) => {
+    if (!user || !workspace) return false;
+    if (!isAdminLevelRole(user.role)) {
+      toast.error('Only admins can remove team members.');
+      return false;
+    }
+    if (targetUserId === workspace.ownerId) {
+      toast.error('Cannot remove the workspace owner.');
+      return false;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('workspace_members')
+        .delete()
+        .eq('workspace_id', workspace.id)
+        .eq('user_id', targetUserId);
+      if (error) throw error;
+
+      setWorkspaceMembers(prev => prev.filter(m => m.userId !== targetUserId));
+      setFriendIds(prev => prev.filter(id => id !== targetUserId));
+      setAllUsers(prev => prev.filter(u => u.id !== targetUserId));
+
+      appendAuditLog(user, 'Remove member', `Removed user ${targetUserId}`, workspace.id);
+      toast.success('Member removed successfully!');
+      return true;
+    } catch (err: any) {
+      console.error('Failed to remove member:', err);
+      toast.error(err.message || 'Failed to remove member.');
+      return false;
+    }
+  }, [user, workspace, appendAuditLog]);
+
+  const banWorkspaceMember = useCallback(async (targetUserId: string) => {
+    if (!user || !workspace) return false;
+    if (!isAdminLevelRole(user.role)) {
+      toast.error('Only admins can ban team members.');
+      return false;
+    }
+    if (targetUserId === workspace.ownerId) {
+      toast.error('Cannot ban the workspace owner.');
+      return false;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('workspace_members')
+        .update({ status: 'banned' })
+        .eq('workspace_id', workspace.id)
+        .eq('user_id', targetUserId);
+      if (error) throw error;
+
+      setWorkspaceMembers(prev => prev.map(m => m.userId === targetUserId ? { ...m, status: 'banned' as any } : m));
+      setFriendIds(prev => prev.filter(id => id !== targetUserId));
+      setAllUsers(prev => prev.filter(u => u.id !== targetUserId));
+
+      appendAuditLog(user, 'Ban member', `Banned user ${targetUserId}`, workspace.id);
+      toast.success('Member banned successfully!');
+      return true;
+    } catch (err: any) {
+      console.error('Failed to ban member:', err);
+      toast.error(err.message || 'Failed to ban member.');
+      return false;
+    }
+  }, [user, workspace, appendAuditLog]);
+
+  const unbanWorkspaceMember = useCallback(async (targetUserId: string) => {
+    if (!user || !workspace) return false;
+    if (!isAdminLevelRole(user.role)) {
+      toast.error('Only admins can unban team members.');
+      return false;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('workspace_members')
+        .update({ status: 'active' })
+        .eq('workspace_id', workspace.id)
+        .eq('user_id', targetUserId);
+      if (error) throw error;
+
+      setWorkspaceMembers(prev => prev.map(m => m.userId === targetUserId ? { ...m, status: 'active' as any } : m));
+      
+      const { data: profile } = await supabase.from('profiles').eq('id', targetUserId).maybeSingle();
+      if (profile) {
+        const personRecord: Person = {
+          id: profile.id,
+          name: profile.username,
+          email: profile.email,
+          avatar: profile.avatar || '',
+          role: profile.role || 'Member',
+          tag: profile.tag || '1000',
+          status: profile.status || 'offline',
+          lastSeenAt: profile.last_seen_at
+        };
+        setAllUsers(prev => {
+          if (prev.some(u => u.id === targetUserId)) return prev;
+          return [...prev, personRecord];
+        });
+        setFriendIds(prev => {
+          if (prev.includes(targetUserId)) return prev;
+          return [...prev, targetUserId];
+        });
+      }
+
+      appendAuditLog(user, 'Unban member', `Unbanned user ${targetUserId}`, workspace.id);
+      toast.success('Member unbanned successfully!');
+      return true;
+    } catch (err: any) {
+      console.error('Failed to unban member:', err);
+      toast.error(err.message || 'Failed to unban member.');
+      return false;
+    }
+  }, [user, workspace, appendAuditLog]);
+
+  const deleteWorkspace = useCallback(async (workspaceId: string) => {
+    if (!user) return false;
+    const targetWs = myWorkspaces.find(ws => ws.id === workspaceId);
+    if (!targetWs) return false;
+    if (targetWs.ownerId !== user.id) {
+      toast.error('Only the workspace owner can delete the workspace.');
+      return false;
+    }
+
+    try {
+      await supabase.from('workspace_members').delete().eq('workspace_id', workspaceId);
+      
+      const { error } = await supabase
+        .from('workspaces')
+        .delete()
+        .eq('id', workspaceId);
+      if (error) throw error;
+
+      if (workspace && workspace.id === workspaceId) {
+        setWorkspace(null);
+        setActivePage('dashboard');
+        if (typeof window !== 'undefined') {
+          window.location.href = '/';
+        }
+      }
+      setMyWorkspaces(prev => prev.filter(ws => ws.id !== workspaceId));
+
+      toast.success('Workspace deleted successfully!');
+      return true;
+    } catch (err: any) {
+      console.error('Failed to delete workspace:', err);
+      toast.error(err.message || 'Failed to delete workspace.');
+      return false;
+    }
+  }, [user, workspace, myWorkspaces]);
 
   const toggleStarChannel = useCallback(async (channelId: string) => {
     if (!user) return;
@@ -4007,6 +4238,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     toggleStarChannel, editChannelMessage, deleteChannelMessage,
     addReaction, removeReaction, togglePinMessage, markMessageAsRead, createChannel,
     createWorkspace, joinWorkspaceByCode, createJoinRequest, reviewJoinRequest, regenerateWorkspaceInviteCode, updateMemberRole, switchWorkspace,
+    removeWorkspaceMember, banWorkspaceMember, unbanWorkspaceMember, deleteWorkspace,
   };
 
   return (

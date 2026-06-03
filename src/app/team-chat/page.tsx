@@ -1320,7 +1320,7 @@ export default function TeamChatPage() {
 
       {/* Main Chat Feed */}
       <div className={cn("flex-1 flex overflow-hidden relative h-full", mobileView === 'chat' ? 'flex' : 'hidden md:flex')}>
-        <div className="flex-1 flex flex-col h-full bg-[#fafafa] dark:bg-[#161616] overflow-hidden">
+        <div onContextMenu={(e) => e.preventDefault()} className="flex-1 flex flex-col h-full bg-[#fafafa] dark:bg-[#161616] overflow-hidden">
           
           {/* Header */}
           <div className="h-14 border-b border-border/50 bg-background/50 px-4 md:px-6 flex items-center shrink-0 gap-2 w-full">
@@ -1484,6 +1484,7 @@ export default function TeamChatPage() {
                           <div 
                             onContextMenu={(e) => {
                               e.preventDefault();
+                              e.stopPropagation();
                               setContextMenu({
                                 x: e.clientX,
                                 y: e.clientY,
@@ -1591,6 +1592,7 @@ export default function TeamChatPage() {
                     className="flex gap-3 items-start group relative"
                     onContextMenu={(e) => {
                       e.preventDefault();
+                      e.stopPropagation();
                       setContextMenu({
                         x: e.clientX,
                         y: e.clientY,

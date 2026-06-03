@@ -80,6 +80,11 @@ export default function SettingsPage() {
     createInviteLink,
     submitFeedback,
     updateMemberRole,
+    removeWorkspaceMember,
+    banWorkspaceMember,
+    unbanWorkspaceMember,
+    deleteWorkspace,
+    allUsers,
   } = useWorkspace();
   const [activeSection, setActiveSection] = useState('general');
 
@@ -192,7 +197,7 @@ export default function SettingsPage() {
   useEffect(() => {
     if (!user || realWorkspaceMembers.length === 0) return;
     setWorkspaceMembers(realWorkspaceMembers.map((member) => {
-      const profile = member.userId === user.id ? user : undefined;
+      const profile = allUsers.find(u => u.id === member.userId);
       return {
         id: member.userId,
         name: profile?.name || member.userId,
@@ -201,7 +206,7 @@ export default function SettingsPage() {
         status: member.status === 'active' ? 'Active' : member.status,
       };
     }));
-  }, [realWorkspaceMembers, user]);
+  }, [realWorkspaceMembers, user, allUsers]);
 
   useEffect(() => {
     if (loginActivities.length === 0) return;
@@ -352,29 +357,42 @@ export default function SettingsPage() {
   };
 
   // Remove workspace seat
-  const handleRemoveMember = (id: string, name: string) => {
+  const handleRemoveMember = async (id: string, name: string) => {
     if (user && id === user.id) {
       toast.error('Cannot remove the workspace owner.');
       return;
     }
-    if (confirm(`Are you sure you want to deallocate the seat for ${name}?`)) {
-      setWorkspaceMembers(prev => {
-        const updated = prev.filter(m => m.id !== id);
-        void syncSeatsToRazorpay(updated.length);
-        return updated;
-      });
-      toast.success(`Seat for ${name} deallocated.`);
+    if (confirm(`Are you sure you want to remove ${name} from this workspace?`)) {
+      const success = await removeWorkspaceMember(id);
+      if (success) {
+        setWorkspaceMembers(prev => {
+          const updated = prev.filter(m => m.id !== id);
+          void syncSeatsToRazorpay(updated.length);
+          return updated;
+        });
+      }
+    }
+  };
 
-      // Append to audit logs
-      const newAudit = {
-        id: `log-${Date.now()}`,
-        timestamp: new Date().toISOString(),
-        actor: userProfile.name || 'You',
-        action: 'Deallocate User Seat',
-        target: `${name}`,
-        ip: '192.168.1.42',
-      };
-      setAuditLogs(prev => [newAudit, ...prev]);
+  const handleBanMember = async (id: string, name: string) => {
+    if (user && id === user.id) {
+      toast.error('Cannot ban the workspace owner.');
+      return;
+    }
+    if (confirm(`Are you sure you want to BAN ${name} from this workspace? They will be immediately kicked out and will not be able to re-join.`)) {
+      const success = await banWorkspaceMember(id);
+      if (success) {
+        setWorkspaceMembers(prev => prev.map(m => m.id === id ? { ...m, status: 'Banned' } : m));
+      }
+    }
+  };
+
+  const handleUnbanMember = async (id: string, name: string) => {
+    if (confirm(`Are you sure you want to UNBAN ${name}? They will be able to join the workspace again.`)) {
+      const success = await unbanWorkspaceMember(id);
+      if (success) {
+        setWorkspaceMembers(prev => prev.map(m => m.id === id ? { ...m, status: 'Active' } : m));
+      }
     }
   };
 
@@ -591,6 +609,45 @@ export default function SettingsPage() {
                   </div>
                 </div>
               </section>
+
+              {/* Danger Zone */}
+              {workspace && workspace.ownerId === user?.id && (
+                <section className="flex flex-col gap-5 border border-red-500/20 rounded-xl p-5 bg-red-500/5 max-w-lg">
+                  <div>
+                    <h2 className="text-base font-semibold text-red-500 mb-1 flex items-center gap-2">
+                      <AlertTriangle className="w-5 h-5 animate-pulse" />
+                      Danger Zone
+                    </h2>
+                    <p className="text-xs text-muted-foreground">Irreversible administrative actions for this workspace.</p>
+                  </div>
+                  <div className="h-px bg-red-500/20" />
+                  
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex flex-col gap-1">
+                      <span className="text-xs font-semibold text-foreground">Delete this workspace</span>
+                      <span className="text-[10px] text-muted-foreground">Once you delete a workspace, there is no going back. All chat logs, documents, and lists will be permanently deleted.</span>
+                    </div>
+                    <Button 
+                      type="button" 
+                      variant="destructive"
+                      className="bg-red-600 hover:bg-red-700 text-white font-semibold text-xs h-8 px-4 shrink-0"
+                      onClick={async () => {
+                        const confirmName = prompt(`Are you sure you want to delete this workspace? Type the workspace name "${workspace.name}" to confirm:`);
+                        if (confirmName === workspace.name) {
+                          const success = await deleteWorkspace(workspace.id);
+                          if (success) {
+                            toast.success('Workspace deleted.');
+                          }
+                        } else if (confirmName !== null) {
+                          toast.error('Workspace name did not match.');
+                        }
+                      }}
+                    >
+                      Delete Workspace
+                    </Button>
+                  </div>
+                </section>
+              )}
             </div>
           )}
 
@@ -738,25 +795,62 @@ export default function SettingsPage() {
                           <span className="text-xs font-bold text-foreground truncate">{member.name}</span>
                           <span className="text-[10px] text-muted-foreground truncate">{member.email}</span>
                         </div>
-                        <div className="flex items-center gap-4 shrink-0">
+                        <div className="flex items-center gap-2 shrink-0">
+                          {member.status === 'Banned' || member.status === 'banned' ? (
+                            <span className="text-[9px] px-1.5 py-0.5 rounded font-bold border bg-red-500/10 border-red-500/30 text-red-500 uppercase tracking-wider shrink-0">
+                              Banned
+                            </span>
+                          ) : null}
+
                           {canManageTeamMembers && member.id !== user?.id ? (
-                            <select
-                              value={member.role}
-                              onChange={async (e) => {
-                                const newRole = e.target.value;
-                                const success = await updateMemberRole(member.id, newRole);
-                                if (success) {
-                                  setWorkspaceMembers(prev => prev.map(m => m.id === member.id ? { ...m, role: newRole } : m));
-                                }
-                              }}
-                              className="px-2 py-1.5 border border-border rounded-md bg-background text-[10px] focus:ring-1 focus:ring-ring focus:outline-none h-7"
-                            >
-                              <option value="Admin">Admin</option>
-                              <option value="Member">Member</option>
-                              <option value="Developer">Developer</option>
-                              <option value="Designer">Designer</option>
-                              <option value="Guest">Guest</option>
-                            </select>
+                            member.status === 'Banned' || member.status === 'banned' ? (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="h-7 text-[10px] text-emerald-500 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/10"
+                                onClick={() => handleUnbanMember(member.id, member.name)}
+                              >
+                                Unban
+                              </Button>
+                            ) : (
+                              <>
+                                <select
+                                  value={member.role}
+                                  onChange={async (e) => {
+                                    const newRole = e.target.value;
+                                    const success = await updateMemberRole(member.id, newRole);
+                                    if (success) {
+                                      setWorkspaceMembers(prev => prev.map(m => m.id === member.id ? { ...m, role: newRole } : m));
+                                    }
+                                  }}
+                                  className="px-2 py-1.5 border border-border rounded-md bg-background text-[10px] focus:ring-1 focus:ring-ring focus:outline-none h-7"
+                                >
+                                  <option value="Admin">Admin</option>
+                                  <option value="Member">Member</option>
+                                  <option value="Developer">Developer</option>
+                                  <option value="Designer">Designer</option>
+                                  <option value="Guest">Guest</option>
+                                </select>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 text-[10px] text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/10 shrink-0"
+                                  onClick={() => handleBanMember(member.id, member.name)}
+                                >
+                                  Ban
+                                </Button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveMember(member.id, member.name)}
+                                  className="text-zinc-500 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 p-1.5 rounded transition-colors"
+                                  title="Remove colleague seat"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </>
+                            )
                           ) : (
                             <span className={cn(
                               "text-[9px] px-2 py-0.5 rounded font-bold border",
@@ -764,16 +858,6 @@ export default function SettingsPage() {
                             )}>
                               {member.role}
                             </span>
-                          )}
-                          {canManageTeamMembers && member.id !== user?.id && (
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveMember(member.id, member.name)}
-                              className="text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20 p-1.5 rounded transition-colors"
-                              title="Remove colleague seat"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
                           )}
                         </div>
                       </div>

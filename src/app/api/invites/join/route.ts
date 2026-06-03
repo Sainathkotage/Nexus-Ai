@@ -42,6 +42,18 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (workspace) {
+      // Check if user is banned
+      const { data: existingMember } = await supabase
+        .from('workspace_members')
+        .select('status')
+        .eq('workspace_id', workspace.id)
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (existingMember && existingMember.status === 'banned') {
+        return NextResponse.json({ error: 'You are banned from this workspace.' }, { status: 403 });
+      }
+
       // Direct join workspace
       const { error: memberErr } = await supabase.from('workspace_members').insert({
         workspace_id: workspace.id,
@@ -95,6 +107,18 @@ export async function POST(req: Request) {
     }
     if (new Date(invite.expires_at).getTime() < Date.now()) {
       return NextResponse.json({ error: 'This invite code has expired.' }, { status: 400 });
+    }
+
+    // Check if user is banned
+    const { data: existingInviteMember } = await supabase
+      .from('workspace_members')
+      .select('status')
+      .eq('workspace_id', invite.workspace_id)
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (existingInviteMember && existingInviteMember.status === 'banned') {
+      return NextResponse.json({ error: 'You are banned from this workspace.' }, { status: 403 });
     }
 
     // 4. Insert into workspace_members (bypassing RLS)

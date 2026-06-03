@@ -638,7 +638,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [mentionBadgeCount, setMentionBadgeCount] = useState(0);
 
   // Themes Config State
-  const [themeConfig, setThemeConfigState] = useState<ThemeConfig>({ name: 'notion' });
+  const [themeConfig, setThemeConfigState] = useState<ThemeConfig>({ name: 'vintage' });
 
   // Chat presence & typing states
   const [typingUsers, setTypingUsers] = useState<Record<string, { userId: string; username: string; timestamp: number }[]>>({});
@@ -825,11 +825,33 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       root.style.removeProperty('--accent-foreground');
       root.style.removeProperty('--border');
       root.style.removeProperty('--sidebar-border');
+      
+      // Clean up extra vintage theme variables
+      root.style.removeProperty('--whitesmoke-100');
+      root.style.removeProperty('--darkslategray-100');
+      root.style.removeProperty('--darkslategray-200');
+      root.style.removeProperty('--black-100');
+      root.style.removeProperty('--black-200');
+      root.style.removeProperty('--black-300');
+      root.style.removeProperty('--lightslategray-100');
+      root.style.removeProperty('--darkgray-100');
+      root.style.removeProperty('--antiquewhite');
+      root.style.removeProperty('--black');
+      root.style.removeProperty('--gray');
+      root.style.removeProperty('--floralwhite');
+      root.style.removeProperty('--sienna');
+      root.style.removeProperty('--darkgray');
+      root.style.removeProperty('--silver');
+      root.style.removeProperty('--mediumseagreen');
     } else {
       const isDark = theme === 'dark';
       let colors: any = null;
 
-      if (themeConfig.name === 'apricot') {
+      if (themeConfig.name === 'vintage') {
+        colors = isDark
+          ? { bg: '#151617', fg: '#f5f4ec', card: '#22201e', sidebar: '#1c1713', accent: '#2d2d2d', primary: '#8f573b', border: '#3d342b' }
+          : { bg: '#f5f4ec', fg: '#2f251d', card: '#ffffff', sidebar: '#e9dfcd', accent: '#f5f5f5', primary: '#8f573b', border: '#998d7a' };
+      } else if (themeConfig.name === 'apricot') {
         colors = isDark 
           ? { bg: '#1c1815', fg: '#e6dfd8', card: '#25201c', sidebar: '#201b18', accent: '#3d2b21', primary: '#f6b894', border: '#332a24' }
           : { bg: '#faf6ee', fg: '#4f3c32', card: '#ffffff', sidebar: '#f3ede2', accent: '#fbece0', primary: '#aa6b4f', border: '#e6ded4' };
@@ -875,6 +897,43 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         root.style.setProperty('--border', colors.border);
         root.style.setProperty('--sidebar-border', colors.border);
         root.style.setProperty('--ring', colors.primary);
+
+        // Handle extra vintage variables setting / cleaning
+        if (themeConfig.name === 'vintage') {
+          root.style.setProperty('--whitesmoke-100', '#f5f5f5');
+          root.style.setProperty('--darkslategray-100', '#2d2d2d');
+          root.style.setProperty('--darkslategray-200', 'rgba(45,47,53,0.08)');
+          root.style.setProperty('--black-100', '#151617');
+          root.style.setProperty('--black-200', 'rgba(0,0,0,0.15)');
+          root.style.setProperty('--black-300', 'rgba(0,0,0,0)');
+          root.style.setProperty('--lightslategray-100', '#878c9f');
+          root.style.setProperty('--darkgray-100', '#999');
+          root.style.setProperty('--antiquewhite', 'rgb(233, 223, 205)');
+          root.style.setProperty('--black', 'rgb(47, 37, 29)');
+          root.style.setProperty('--gray', 'rgb(153, 141, 122)');
+          root.style.setProperty('--floralwhite', 'rgb(245, 244, 236)');
+          root.style.setProperty('--sienna', 'rgb(143, 87, 59)');
+          root.style.setProperty('--darkgray', 'rgb(187, 176, 156)');
+          root.style.setProperty('--silver', 'rgb(195, 186, 173)');
+          root.style.setProperty('--mediumseagreen', 'rgb(80, 198, 128)');
+        } else {
+          root.style.removeProperty('--whitesmoke-100');
+          root.style.removeProperty('--darkslategray-100');
+          root.style.removeProperty('--darkslategray-200');
+          root.style.removeProperty('--black-100');
+          root.style.removeProperty('--black-200');
+          root.style.removeProperty('--black-300');
+          root.style.removeProperty('--lightslategray-100');
+          root.style.removeProperty('--darkgray-100');
+          root.style.removeProperty('--antiquewhite');
+          root.style.removeProperty('--black');
+          root.style.removeProperty('--gray');
+          root.style.removeProperty('--floralwhite');
+          root.style.removeProperty('--sienna');
+          root.style.removeProperty('--darkgray');
+          root.style.removeProperty('--silver');
+          root.style.removeProperty('--mediumseagreen');
+        }
       }
     }
   }, [theme, themeConfig]);

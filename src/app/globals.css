@@ -8,8 +8,25 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-inter), ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-serif: var(--font-fraunces), ui-serif, Georgia, serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
   --font-heading: var(--font-inter), ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --color-cream-50: #f8f3e8;
+  --color-cream-100: #f2ebd9;
+  --color-cream-200: #e8dfc5;
+  --color-cream-300: #d9cdaa;
+  --color-cream-400: #c3b58a;
+  --color-ink-900: #1c1713;
+  --color-ink-800: #2a231d;
+  --color-ink-700: #3d342b;
+  --color-ink-600: #554a3d;
+  --color-ink-500: #776a58;
+  --color-ink-400: #9a8d78;
+  --color-ink-300: #b8ab94;
+  --color-accent-500: #c2410c;
+  --color-accent-600: #9a3412;
+  --color-sepia-100: #ebe0c7;
+  --color-sepia-200: #dccfa9;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -361,4 +378,134 @@
 .custom-scrollbar {
   scrollbar-width: thin;
   scrollbar-color: rgba(120, 119, 116, 0.25) transparent;
+}
+
+/* ── Vintage Landing Page Theme Styles ──────────────────── */
+
+/* Vintage paper texture overlay */
+.paper-texture {
+  position: relative;
+}
+.paper-texture::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(circle at 20% 30%, rgba(194, 65, 12, 0.03) 0%, transparent 50%),
+    radial-gradient(circle at 80% 70%, rgba(120, 80, 40, 0.04) 0%, transparent 50%),
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.3 0 0 0 0 0.2 0 0 0 0 0.1 0 0 0 0.08 0'/></filter><rect width='200' height='200' filter='url(%23n)'/></svg>");
+  mix-blend-mode: multiply;
+  opacity: 0.7;
+  z-index: 0;
+}
+.paper-texture > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Aged paper edge vignette */
+.paper-vignette::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 55%, rgba(80, 50, 20, 0.12) 100%);
+  z-index: 1;
+}
+
+/* Decorative vintage divider */
+.vintage-divider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: #776a58;
+}
+.vintage-divider::before,
+.vintage-divider::after {
+  content: '';
+  height: 1px;
+  flex: 1;
+  max-width: 100px;
+  background: linear-gradient(to right, transparent, #9a8d78, transparent);
+}
+
+/* Small ornamental flourish */
+.flourish {
+  display: inline-block;
+  color: #9a8d78;
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 1.2em;
+}
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes float-slow {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.2); }
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.8s ease-out both;
+}
+
+.animate-fade-in {
+  animation: fade-in 1.2s ease-out both;
+}
+
+.animate-float {
+  animation: float-slow 6s ease-in-out infinite;
+}
+
+.animate-pulse-dot {
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+.delay-100 { animation-delay: 0.1s; }
+.delay-200 { animation-delay: 0.2s; }
+.delay-300 { animation-delay: 0.3s; }
+.delay-400 { animation-delay: 0.4s; }
+.delay-500 { animation-delay: 0.5s; }
+
+.grain {
+  background-image: radial-gradient(circle at 1px 1px, rgba(80, 50, 20, 0.08) 1px, transparent 0);
+  background-size: 3px 3px;
+}
+
+/* Vintage card styling */
+.vintage-card {
+  background: linear-gradient(180deg, #f8f3e8 0%, #f2ebd9 100%);
+  border: 1px solid rgba(80, 50, 20, 0.12);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.5) inset,
+    0 2px 8px rgba(80, 50, 20, 0.06),
+    0 8px 24px rgba(80, 50, 20, 0.04);
+}
+
+/* Double-line border for vintage feel */
+.vintage-border {
+  border: 1px solid rgba(80, 50, 20, 0.2);
+  outline: 1px solid rgba(80, 50, 20, 0.08);
+  outline-offset: 3px;
 }

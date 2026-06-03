@@ -1017,6 +1017,7 @@ export default function SettingsPage() {
                 
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-w-lg">
                   {[
+                    { id: 'vintage', label: 'Vintage Cream', colors: ['#f5f4ec', '#e9dfcd', '#8f573b'] },
                     { id: 'notion', label: 'Notion Default', colors: ['#ffffff', '#fbfbfa', '#37352f'] },
                     { id: 'apricot', label: 'Warm Apricot', colors: ['#faf6ee', '#f3ede2', '#8e573e'] },
                     { id: 'ocean', label: 'Nordic Ocean', colors: ['#edf3f6', '#e2edf2', '#2c5a70'] },

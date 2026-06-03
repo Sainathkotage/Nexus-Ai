@@ -123,154 +123,110 @@ export default function DashboardPage() {
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-stretch">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-stretch mt-6">
             {/* Create Workspace Card */}
-            <div className="bg-card border-4 border-black dark:border-zinc-800 rounded-[28px] flex flex-col justify-between shadow-xl relative overflow-hidden transition-all duration-300 min-h-[380px]">
-              {/* Top Banner Gradient */}
-              <div className="h-[110px] w-full bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-blue-600 via-indigo-600 to-purple-900 relative flex items-start justify-end p-4">
-                <span className="text-[9px] font-mono font-bold tracking-widest text-white/50 uppercase">
-                  Setup Workspace
-                </span>
+            <div className="bg-zinc-50/60 dark:bg-zinc-900/30 rounded-2xl p-10 pl-8 pr-8 flex flex-col justify-between min-h-[420px] transition-all duration-300">
+              <div className="flex flex-col">
+                {/* Section Label */}
+                <div className="flex items-center gap-1.5 text-xs font-semibold tracking-tight text-indigo-600 dark:text-indigo-400">
+                  <span className="text-[10px]">●</span>
+                  <span>SETUP</span>
+                </div>
+                
+                {/* Title */}
+                <h2 className="text-[32px] font-bold text-foreground tracking-tight leading-tight mt-4">
+                  Create Workspace
+                </h2>
+                
+                {/* Subtitle */}
+                <h3 className="text-base font-medium text-foreground/90 mt-3">
+                  Start a new team environment.
+                </h3>
+                
+                {/* Description */}
+                <p className="text-[14px] text-muted-foreground mt-2 leading-relaxed">
+                  Generate invite codes and create a shared space for chat, documents, and tasks.
+                </p>
               </div>
 
-              {/* Folder Tab Shape Container & Bottom Section */}
-              <div className="bg-[#161618] dark:bg-[#101012] flex-1 flex flex-col justify-between p-6 pt-10 relative">
-                {/* Custom Folder Tab SVG Overlay */}
-                <div className="absolute top-0 left-0 w-full h-[24px] -translate-y-[23px] pointer-events-none">
-                  <svg 
-                    width="100%" 
-                    height="24" 
-                    viewBox="0 0 100 24" 
-                    preserveAspectRatio="none" 
-                    className="text-[#161618] dark:text-[#101012]"
-                    fill="currentColor"
-                  >
-                    <path d="M 0 0 L 45 0 C 49 0, 51 20, 56 20 L 100 20 L 100 24 L 0 24 Z" />
-                  </svg>
+              {/* Form & Button */}
+              <form onSubmit={handleCreateTeam} className="flex flex-col gap-6 mt-10">
+                <div className="flex flex-col gap-2">
+                  <label className="text-[13px] font-medium text-foreground/80">
+                    Team Name
+                  </label>
+                  <input
+                    type="text"
+                    value={teamName}
+                    onChange={(e) => setTeamName(e.target.value)}
+                    placeholder="e.g. Acme Corporation or Dev Team"
+                    className="w-full bg-[#fcfcfb] dark:bg-[#1a1a1a] border border-border rounded-lg px-3.5 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-600 focus:border-indigo-600 transition-all"
+                  />
                 </div>
-
-                {/* Tab Header Text */}
-                <div className="absolute left-6 -top-5 flex flex-col">
-                  <span className="text-sm font-extrabold text-white leading-tight">Create Workspace</span>
-                  <span className="text-[9px] text-zinc-500 font-semibold uppercase tracking-wider">Start Fresh</span>
-                </div>
-
-                {/* Card Body - Content & Form */}
-                <div className="flex flex-col gap-4 flex-1 mt-1 justify-between">
-                  <p className="text-[11px] text-zinc-400 leading-relaxed max-w-sm">
-                    Generate invite codes and set up a new home for your teams to chat, edit docs, and track tasks.
-                  </p>
-                  
-                  <form onSubmit={handleCreateTeam} className="flex flex-col gap-3">
-                    <div className="flex flex-col gap-1">
-                      <label className="text-[9px] font-bold text-zinc-500 uppercase tracking-wider">Team Name</label>
-                      <input
-                        type="text"
-                        value={teamName}
-                        onChange={(e) => setTeamName(e.target.value)}
-                        placeholder="e.g. Acme Corp"
-                        className="w-full bg-[#202022] dark:bg-[#19191b] border border-zinc-800 rounded-xl px-3.5 py-1.5 text-xs text-white placeholder-zinc-650 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                      />
-                    </div>
-                    <Button
-                      type="submit"
-                      disabled={loading}
-                      className="w-full bg-white hover:bg-zinc-200 text-black font-extrabold transition-all text-[11px] py-1.5 h-8.5 rounded-xl mt-1 shadow-md cursor-pointer"
-                    >
-                      {loading ? 'Creating...' : 'Create Team Workspace'}
-                    </Button>
-                  </form>
-                </div>
-
-                {/* Card Bottom Row */}
-                <div className="flex justify-between items-end border-t border-zinc-800/60 mt-4 pt-3.5">
-                  <div className="flex items-baseline gap-1">
-                    <span className="text-2xl font-black text-white/90 leading-none">01</span>
-                    <span className="text-[8px] font-bold uppercase tracking-wider text-zinc-600">Step</span>
-                  </div>
-                  <span className="text-[8px] font-bold uppercase tracking-widest text-zinc-500">
-                    Direct Sync
-                  </span>
-                </div>
-              </div>
+                <Button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full bg-foreground text-background hover:opacity-90 font-bold transition-all text-xs h-10 mt-2 cursor-pointer"
+                >
+                  {loading ? 'Creating...' : 'Create Workspace'}
+                </Button>
+              </form>
             </div>
 
             {/* Join Workspace Card */}
-            <div className="bg-card border-4 border-black dark:border-zinc-800 rounded-[28px] flex flex-col justify-between shadow-xl relative overflow-hidden transition-all duration-300 min-h-[380px]">
-              {/* Top Banner Gradient */}
-              <div className="h-[110px] w-full bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-600 via-pink-600 to-indigo-950 relative flex items-start justify-end p-4">
-                <span className="text-[9px] font-mono font-bold tracking-widest text-white/50 uppercase">
-                  Teammate Access
-                </span>
+            <div className="bg-zinc-50/60 dark:bg-zinc-900/30 rounded-2xl p-10 pl-8 pr-8 flex flex-col justify-between min-h-[420px] transition-all duration-300">
+              <div className="flex flex-col">
+                {/* Section Label */}
+                <div className="flex items-center gap-1.5 text-xs font-semibold tracking-tight text-indigo-600 dark:text-indigo-400">
+                  <span className="text-[10px]">●</span>
+                  <span>JOIN</span>
+                </div>
+                
+                {/* Title */}
+                <h2 className="text-[30px] font-semibold text-foreground tracking-tight leading-tight mt-4">
+                  Join Existing Team
+                </h2>
+                
+                {/* Subtitle */}
+                <h3 className="text-base font-medium text-foreground/90 mt-3">
+                  Already invited?
+                </h3>
+                
+                {/* Description */}
+                <p className="text-[14px] text-muted-foreground mt-2 leading-relaxed">
+                  Enter an invite code or workspace link to request access.
+                </p>
               </div>
 
-              {/* Folder Tab Shape Container & Bottom Section */}
-              <div className="bg-[#161618] dark:bg-[#101012] flex-1 flex flex-col justify-between p-6 pt-10 relative">
-                {/* Custom Folder Tab SVG Overlay */}
-                <div className="absolute top-0 left-0 w-full h-[24px] -translate-y-[23px] pointer-events-none">
-                  <svg 
-                    width="100%" 
-                    height="24" 
-                    viewBox="0 0 100 24" 
-                    preserveAspectRatio="none" 
-                    className="text-[#161618] dark:text-[#101012]"
-                    fill="currentColor"
-                  >
-                    <path d="M 0 0 L 45 0 C 49 0, 51 20, 56 20 L 100 20 L 100 24 L 0 24 Z" />
-                  </svg>
+              {/* Form & Button */}
+              <form onSubmit={handleJoinTeam} className="flex flex-col gap-6 mt-10">
+                <div className="flex flex-col gap-2">
+                  <label className="text-[13px] font-medium text-foreground/80">
+                    Invite Code or Link
+                  </label>
+                  <input
+                    type="text"
+                    value={inviteCode}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val.includes('/') || val.includes('?') || val.includes('http')) {
+                        setInviteCode(extractAndCleanCode(val));
+                      } else {
+                        setInviteCode(val.toUpperCase());
+                      }
+                    }}
+                    placeholder="e.g. ABCDEFGH"
+                    className="w-full bg-[#fcfcfb] dark:bg-[#1a1a1a] border border-border rounded-lg px-3.5 py-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-indigo-600 focus:border-indigo-600 transition-all"
+                  />
                 </div>
-
-                {/* Tab Header Text */}
-                <div className="absolute left-6 -top-5 flex flex-col">
-                  <span className="text-sm font-extrabold text-white leading-tight">Join Existing Team</span>
-                  <span className="text-[9px] text-zinc-500 font-semibold uppercase tracking-wider">Access Code</span>
-                </div>
-
-                {/* Card Body - Content & Form */}
-                <div className="flex flex-col gap-4 flex-1 mt-1 justify-between">
-                  <p className="text-[11px] text-zinc-400 leading-relaxed max-w-sm">
-                    Enter the invite code or shareable invite link here to immediately join the workspace and start collaborating.
-                  </p>
-                  
-                  <form onSubmit={handleJoinTeam} className="flex flex-col gap-3">
-                    <div className="flex flex-col gap-1">
-                      <label className="text-[9px] font-bold text-zinc-500 uppercase tracking-wider">Invite Code or Link</label>
-                      <input
-                        type="text"
-                        value={inviteCode}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          if (val.includes('/') || val.includes('?') || val.includes('http')) {
-                            setInviteCode(extractAndCleanCode(val));
-                          } else {
-                            setInviteCode(val.toUpperCase());
-                          }
-                        }}
-                        placeholder="e.g. ABCDEFGH"
-                        className="w-full bg-[#202022] dark:bg-[#19191b] border border-zinc-800 rounded-xl px-3.5 py-1.5 text-xs text-white placeholder-zinc-650 font-mono focus:outline-none focus:ring-1 focus:ring-pink-500 focus:border-pink-500 transition-all"
-                      />
-                    </div>
-                    <Button
-                      type="submit"
-                      disabled={loading}
-                      className="w-full bg-white hover:bg-zinc-200 text-black font-extrabold transition-all text-[11px] py-1.5 h-8.5 rounded-xl mt-1 shadow-md cursor-pointer"
-                    >
-                      {loading ? 'Joining...' : 'Join Team Workspace'}
-                    </Button>
-                  </form>
-                </div>
-
-                {/* Card Bottom Row */}
-                <div className="flex justify-between items-end border-t border-zinc-800/60 mt-4 pt-3.5">
-                  <div className="flex items-baseline gap-1">
-                    <span className="text-2xl font-black text-white/90 leading-none">02</span>
-                    <span className="text-[8px] font-bold uppercase tracking-wider text-zinc-600">Step</span>
-                  </div>
-                  <span className="text-[8px] font-bold uppercase tracking-widest text-zinc-500">
-                    Realtime Sync
-                  </span>
-                </div>
-              </div>
+                <Button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full bg-foreground text-background hover:opacity-90 font-bold transition-all text-xs h-10 mt-2 cursor-pointer"
+                >
+                  {loading ? 'Joining...' : 'Join Workspace'}
+                </Button>
+              </form>
             </div>
           </div>
         </div>

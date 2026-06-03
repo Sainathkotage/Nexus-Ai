@@ -28,37 +28,59 @@ export async function POST(req: Request) {
 
     const admin = createSupabaseAdminClient();
 
-    // 1. Fetch the invite using admin client (bypassing RLS)
-    const { data: invite, error: inviteErr } = await admin
-      .from('workspace_invites')
-      .select('*')
-      .eq('code', cleanedCode)
-      .single();
+    // 1. Check if this is a general workspace-wide invite code
+    const { data: workspace, error: wsErr } = await admin
+      .from('workspaces')
+      .select('id, owner_id')
+      .eq('invite_code', cleanedCode)
+      .maybeSingle();
 
-    if (inviteErr || !invite) {
-      return NextResponse.json({ error: 'Invalid or unrecognized invite code.' }, { status: 404 });
+    let targetWorkspaceId: string;
+    let targetRole = 'Member';
+    let addedBy: string | null = null;
+    let inviteIdToUpdate: string | null = null;
+
+    if (workspace) {
+      targetWorkspaceId = workspace.id;
+      addedBy = workspace.owner_id;
+    } else {
+      // 2. Fetch the individual invite using admin client (bypassing RLS)
+      const { data: invite, error: inviteErr } = await admin
+        .from('workspace_invites')
+        .select('*')
+        .eq('code', cleanedCode)
+        .single();
+
+      if (inviteErr || !invite) {
+        return NextResponse.json({ error: 'Invalid or unrecognized invite code.' }, { status: 404 });
+      }
+
+      // 3. Validate invite state
+      if (invite.used_at || invite.used_by) {
+        return NextResponse.json({ error: 'This invite code has already been used.' }, { status: 400 });
+      }
+      if (invite.revoked_at) {
+        return NextResponse.json({ error: 'This invite code has been revoked.' }, { status: 400 });
+      }
+      if (new Date(invite.expires_at).getTime() < Date.now()) {
+        return NextResponse.json({ error: 'This invite code has expired.' }, { status: 400 });
+      }
+
+      targetWorkspaceId = invite.workspace_id;
+      targetRole = invite.role || 'Member';
+      addedBy = invite.created_by;
+      inviteIdToUpdate = invite.id;
     }
 
-    // 2. Validate invite state
-    if (invite.used_at || invite.used_by) {
-      return NextResponse.json({ error: 'This invite code has already been used.' }, { status: 400 });
-    }
-    if (invite.revoked_at) {
-      return NextResponse.json({ error: 'This invite code has been revoked.' }, { status: 400 });
-    }
-    if (new Date(invite.expires_at).getTime() < Date.now()) {
-      return NextResponse.json({ error: 'This invite code has expired.' }, { status: 400 });
-    }
-
-    // 3. Generate guest credentials
+    // 4. Generate guest credentials
     const rand = Math.floor(1000 + Math.random() * 9000);
     const guestEmail = `guest_${Date.now()}_${rand}@nexus-ai.com`;
     const guestPassword = `GuestPass_${rand}_${Date.now()}!`;
     const guestUsername = `Guest_${rand}`;
     const guestTag = rand.toString();
-    const guestRole = invite.role || 'Member';
+    const guestRole = targetRole;
 
-    // 4. Create user with admin client (confirms email automatically)
+    // 5. Create user with admin client (confirms email automatically)
     const { data: authData, error: authErr } = await admin.auth.admin.createUser({
       email: guestEmail,
       password: guestPassword,
@@ -76,7 +98,7 @@ export async function POST(req: Request) {
 
     const guestUserId = authData.user.id;
 
-    // 5. Insert profile row manually (bypassing RLS)
+    // 6. Insert profile row manually (bypassing RLS)
     // Note: The DB trigger handle_new_user might run, but let's make sure it is updated/overwritten or runs.
     const { error: profileErr } = await admin.from('profiles').upsert({
       id: guestUserId,
@@ -91,27 +113,29 @@ export async function POST(req: Request) {
       console.warn('Admin profile upsert warning:', profileErr.message);
     }
 
-    // 6. Insert into workspace_members (bypassing RLS)
+    // 7. Insert into workspace_members (bypassing RLS)
     const { error: memberErr } = await admin.from('workspace_members').insert({
-      workspace_id: invite.workspace_id,
+      workspace_id: targetWorkspaceId,
       user_id: guestUserId,
       role: guestRole,
       status: 'active',
-      added_by: invite.created_by
+      added_by: addedBy
     });
 
     if (memberErr) {
       throw memberErr;
     }
 
-    // 7. Update the invite as used (bypassing RLS)
-    await admin
-      .from('workspace_invites')
-      .update({
-        used_by: guestUserId,
-        used_at: new Date().toISOString()
-      })
-      .eq('id', invite.id);
+    // 8. Update the invite as used (bypassing RLS) if it's an individual invite
+    if (inviteIdToUpdate) {
+      await admin
+        .from('workspace_invites')
+        .update({
+          used_by: guestUserId,
+          used_at: new Date().toISOString()
+        })
+        .eq('id', inviteIdToUpdate);
+    }
 
     return NextResponse.json({
       ok: true,

@@ -46,7 +46,9 @@ export function LeftSidebar({ onOpenSearch }: LeftSidebarProps) {
     workspace,
     setWorkspace,
     myWorkspaces,
-    switchWorkspace
+    switchWorkspace,
+    mentionBadgeCount,
+    clearMentionBadge
   } = useWorkspace();
   const router = useRouter();
   const [showUserMenu, setShowUserMenu] = React.useState(false);
@@ -54,6 +56,9 @@ export function LeftSidebar({ onOpenSearch }: LeftSidebarProps) {
 
   const handleNav = (id: PageId) => {
     setActivePage(id);
+    if (id === 'team-chat') {
+      clearMentionBadge();
+    }
     router.push(id === 'dashboard' ? '/' : `/${id}`);
   };
 
@@ -164,14 +169,17 @@ export function LeftSidebar({ onOpenSearch }: LeftSidebarProps) {
             key={item.id}
             onClick={() => handleNav(item.id)}
             className={cn(
-              "flex items-center gap-2.5 px-2 py-1.5 rounded-md transition-colors text-sm w-full text-left",
+              "flex items-center gap-2.5 px-2 py-1.5 rounded-md transition-colors text-sm w-full text-left relative",
               activePage === item.id 
                 ? "bg-accent text-foreground font-medium" 
                 : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
             )}
           >
             <item.icon className="w-4 h-4 shrink-0" />
-            <span className="truncate">{item.label}</span>
+            <span className="truncate flex-1">{item.label}</span>
+            {item.id === 'team-chat' && mentionBadgeCount > 0 && activePage !== 'team-chat' && (
+              <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
+            )}
           </button>
         ))}
 

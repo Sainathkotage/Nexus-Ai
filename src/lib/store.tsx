@@ -507,6 +507,8 @@ interface WorkspaceState {
   notifications: NotificationItem[];
   markNotificationsAsRead: () => void;
   addNotification: (notification: Omit<NotificationItem, 'id' | 'timestamp' | 'read'>) => void;
+  mentionBadgeCount: number;
+  clearMentionBadge: () => void;
 
   // Search
   searchQuery: string;
@@ -629,6 +631,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   // Notifications State
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [mentionBadgeCount, setMentionBadgeCount] = useState(0);
 
   // Themes Config State
   const [themeConfig, setThemeConfigState] = useState<ThemeConfig>({ name: 'notion' });
@@ -1489,6 +1492,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // ── Advanced Real-time & Presence Subscriptions ─────────────────
   const presenceChannelRef = useRef<any>(null);
 
+  // Refs for mention detection in realtime handlers (avoids re-subscribing)
+  const activePageRef = useRef(activePage);
+  activePageRef.current = activePage;
+  const userRef = useRef(user);
+  userRef.current = user;
+  const channelsRef = useRef(channels);
+  channelsRef.current = channels;
+  const addNotificationRef = useRef<any>(null);
+
   // Unified Realtime Postgres Sync
   useEffect(() => {
     const channel = supabase
@@ -1534,6 +1546,25 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                 };
               }
             });
+
+            // Detect if incoming message mentions the current user (via refs)
+            const currentUser = userRef.current;
+            if (currentUser && newDbMsg.sender_id !== currentUser.id) {
+              const decryptedContent = decryptMessage(newDbMsg.content);
+              if (decryptedContent.includes(`@${currentUser.name}`)) {
+                const senderUser = allUsers.find(u => u.id === newDbMsg.sender_id);
+                const chName = channelsRef.current.find(c => c.id === (newDbMsg.channel_id || 'c1'))?.name || 'chat';
+                addNotificationRef.current({
+                  senderName: senderUser?.name || 'Someone',
+                  title: `Mentioned you in #${chName}`,
+                  message: `${senderUser?.name || 'Someone'} mentioned you: "${decryptedContent.substring(0, 80)}"`,
+                  type: 'mention',
+                });
+                if (activePageRef.current !== 'team-chat') {
+                  setMentionBadgeCount(prev => prev + 1);
+                }
+              }
+            }
           } else if (eventType === 'UPDATE') {
             const updatedDbMsg = payload.new;
             setChannelMessages(prev => {
@@ -2173,6 +2204,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
   }, [user]);
 
+  addNotificationRef.current = addNotification;
+
+  const clearMentionBadge = useCallback(() => {
+    setMentionBadgeCount(0);
+  }, []);
+
   // ── Authentication & Dynamic Status Actions ──────────────────
   const register = useCallback(async (email: string, username: string, tag: string, role: string, password: string) => {
     let finalRole = safeSignupRole(role, false);
@@ -2795,6 +2832,22 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       console.warn('Sync DM to direct_messages failed:', e);
     }
 
+    // Detect @mentions in the DM content
+    allUsers.forEach(u => {
+      if (u.id !== user.id && content.includes(`@${u.name}`)) {
+        const receiver = allUsers.find(r => r.id === receiverId);
+        addNotification({
+          senderName: user.name,
+          title: `Mentioned in DM`,
+          message: `${user.name} mentioned @${u.name} in a direct message`,
+          type: 'mention',
+        });
+        if (activePage !== 'team-chat') {
+          setMentionBadgeCount(prev => prev + 1);
+        }
+      }
+    });
+
     const receiver = allUsers.find(u => u.id === receiverId);
     if (receiver && receiver.status === 'online' && receiverId.startsWith('p')) {
       setTimeout(() => {
@@ -2863,6 +2916,19 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           return updated;
         });
 
+        // Check if auto-reply mentions the current user - trigger notification + badge
+        if (user && randomReply.includes(`@${user.name}`)) {
+          addNotification({
+            senderName: receiver.name,
+            title: `${receiver.name} mentioned you`,
+            message: `${receiver.name} mentioned you in a direct message`,
+            type: 'mention',
+          });
+          if (activePage !== 'team-chat') {
+            setMentionBadgeCount(prev => prev + 1);
+          }
+        }
+
         try {
           supabase.from('direct_messages').insert({
             id: replyId,
@@ -2874,7 +2940,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         } catch (err) {}
       }, 1500);
     }
-  }, [user, allUsers, workspaceMembers]);
+  }, [user, allUsers, workspaceMembers, addNotification, activePage]);
 
   // ── Enterprise Status, Channels, CRM & OKR Operations ────────
   const setCustomStatus = useCallback(async (statusText: string) => {
@@ -2942,7 +3008,26 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     } catch (e) {
       console.warn("Sync channel message to Supabase failed:", e);
     }
-  }, [user]);
+
+    // Detect @mentions and create notifications + badge for mentioned users
+    const channelName = channels.find(c => c.id === channelId)?.name || 'chat';
+    allUsers.forEach(u => {
+      if (u.id !== user.id && content.includes(`@${u.name}`)) {
+        // In a real multi-user app, this would push to the mentioned user's notification feed.
+        // For this demo, we add a notification to the current user's bell to simulate the flow.
+        addNotification({
+          senderName: user.name,
+          title: `Mentioned in #${channelName}`,
+          message: `${user.name} mentioned @${u.name}: "${decryptMessage(encryptedContent).substring(0, 80)}..."`,
+          type: 'mention',
+        });
+        // Increment mention badge if user is not on team-chat page
+        if (activePage !== 'team-chat') {
+          setMentionBadgeCount(prev => prev + 1);
+        }
+      }
+    });
+  }, [user, allUsers, channels, addNotification, activePage]);
 
   const sendChannelReply = useCallback(async (channelId: string, messageId: string, content: string) => {
     if (!user) return;
@@ -3915,6 +4000,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     theme, toggleTheme,
     themeConfig, setThemeConfig,
     notifications, markNotificationsAsRead, addNotification,
+    mentionBadgeCount, clearMentionBadge,
     searchQuery, setSearchQuery,
     commandPaletteOpen, setCommandPaletteOpen,
     typingUsers, onlinePresence, broadcastTyping, dmReactions, setDmReactions,

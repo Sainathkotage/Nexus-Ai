@@ -322,6 +322,7 @@ export interface NotificationItem {
   read: boolean;
   link?: string;
   type?: string;
+  title?: string;
   requestId?: string;
 }
 

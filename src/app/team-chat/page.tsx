@@ -52,7 +52,8 @@ export default function TeamChatPage() {
     activeChannelId,
     setActiveChannelId,
     activeDmUserId,
-    setActiveDmUserId
+    setActiveDmUserId,
+    clearMentionBadge
   } = useWorkspace();
 
   if (!workspace) {
@@ -180,12 +181,13 @@ export default function TeamChatPage() {
   // Request push permission on load
   useEffect(() => {
     setActivePage('team-chat');
+    clearMentionBadge();
     if (typeof window !== 'undefined' && 'Notification' in window) {
       if (Notification.permission === 'default') {
         Notification.requestPermission();
       }
     }
-  }, [setActivePage]);
+  }, [setActivePage, clearMentionBadge]);
 
   // Scroll to bottom on message/thread updates
   useEffect(() => {

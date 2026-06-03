@@ -66,7 +66,7 @@ export function Footer() {
 
         <div className="pt-8 border-t border-ink-900/10 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
           <p className="text-xs text-ink-500 font-sans">
-            © 2026 Nexus AI, Inc. Crafted with care in San Francisco & Berlin.
+            © 2026 Nexus AI, Inc. Crafted with care in Nagpur, India.
           </p>
           <div className="flex items-center gap-4 text-xs text-ink-500 font-sans">
             <a href="#" className="hover:text-accent-600 transition-colors">Twitter</a>

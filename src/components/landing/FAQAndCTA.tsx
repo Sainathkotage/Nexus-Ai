@@ -108,7 +108,7 @@ export function FinalCTA({ onStart, onBookDemo }: { onStart?: (e: React.MouseEve
               </span>
             </h2>
             <p className="mt-6 text-lg text-cream-200 max-w-xl mx-auto italic font-serif">
-              Join 20,000+ teams who have made Nexus the center of their work.
+              Join & Manage your team more Efficiently ^.^
             </p>
             <div className="mt-10 flex flex-col sm:flex-row gap-3 justify-center">
               <button

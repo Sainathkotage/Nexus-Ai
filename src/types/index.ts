@@ -145,6 +145,8 @@ export interface ChatMessage {
   sources?: SourceReference[];
   isStreaming?: boolean;
   media?: { url: string; name: string; type: string };
+  status?: 'sending' | 'delivered';
+  editedAt?: string;
 }
 
 export interface Conversation {
@@ -258,6 +260,7 @@ export interface ChannelMessage {
   pinnedAt?: string;
   reactions?: MessageReaction[];
   reads?: MessageRead[];
+  status?: 'sending' | 'delivered';
 }
 
 export interface ChannelMessageReply {

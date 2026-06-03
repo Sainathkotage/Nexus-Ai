@@ -518,6 +518,8 @@ interface WorkspaceState {
   typingUsers: Record<string, { userId: string; username: string; timestamp: number }[]>;
   onlinePresence: Record<string, { status: string; lastSeen: string }>;
   broadcastTyping: (channelId: string, isTyping: boolean) => void;
+  dmReactions: Record<string, MessageReaction[]>;
+  setDmReactions: React.Dispatch<React.SetStateAction<Record<string, MessageReaction[]>>>;
 
   // Starring, Editing, Reactions, Pinning & Reads
   toggleStarChannel: (channelId: string) => Promise<void>;
@@ -634,6 +636,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // Chat presence & typing states
   const [typingUsers, setTypingUsers] = useState<Record<string, { userId: string; username: string; timestamp: number }[]>>({});
   const [onlinePresence, setOnlinePresence] = useState<Record<string, { status: string; lastSeen: string }>>({});
+  const [dmReactions, setDmReactions] = useState<Record<string, MessageReaction[]>>({});
 
   // Time Tracker State
   const [activeTimerTask, setActiveTimerTask] = useState('');
@@ -980,6 +983,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         } else {
           setDeals([]);
         }
+
+        const storedDmReactions = localStorage.getItem('nexus_dm_reactions');
+        if (storedDmReactions) {
+          setDmReactions(JSON.parse(storedDmReactions));
+        }
       } catch (e) {
         console.error('Failed to parse from localStorage:', e);
       }
@@ -1267,30 +1275,60 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       .on(
         'postgres_changes',
         {
-          event: 'INSERT',
+          event: '*',
           schema: 'public',
           table: 'direct_messages'
         },
         (payload: any) => {
-          const newDbMsg = payload.new;
-          if (newDbMsg.sender_id === user.id || newDbMsg.receiver_id === user.id) {
-            const partnerId = newDbMsg.sender_id === user.id ? newDbMsg.receiver_id : newDbMsg.sender_id;
-            
-            const incomingMsg: ChatMessage = {
-              id: newDbMsg.id,
-              role: newDbMsg.sender_id === user.id ? 'user' : 'assistant',
-              content: newDbMsg.content,
-              timestamp: newDbMsg.timestamp
-            };
-
-            setTeamMessages(prev => {
-              const partnerMsgs = prev[partnerId] || [];
-              if (partnerMsgs.some(m => m.id === incomingMsg.id)) return prev;
+          const eventType = payload.eventType;
+          if (eventType === 'INSERT') {
+            const newDbMsg = payload.new;
+            if (newDbMsg.sender_id === user.id || newDbMsg.receiver_id === user.id) {
+              const partnerId = newDbMsg.sender_id === user.id ? newDbMsg.receiver_id : newDbMsg.sender_id;
               
-              const updated = {
-                ...prev,
-                [partnerId]: [...partnerMsgs, incomingMsg]
+              const incomingMsg: ChatMessage = {
+                id: newDbMsg.id,
+                role: newDbMsg.sender_id === user.id ? 'user' : 'assistant',
+                content: newDbMsg.content,
+                timestamp: newDbMsg.created_at || newDbMsg.timestamp,
+                status: 'delivered' as const
               };
+
+              setTeamMessages(prev => {
+                const partnerMsgs = prev[partnerId] || [];
+                if (partnerMsgs.some(m => m.id === incomingMsg.id)) return prev;
+                
+                const updated = {
+                  ...prev,
+                  [partnerId]: [...partnerMsgs, incomingMsg]
+                };
+                return updated;
+              });
+            }
+          } else if (eventType === 'UPDATE') {
+            const updatedDbMsg = payload.new;
+            if (updatedDbMsg.sender_id === user.id || updatedDbMsg.receiver_id === user.id) {
+              const partnerId = updatedDbMsg.sender_id === user.id ? updatedDbMsg.receiver_id : updatedDbMsg.sender_id;
+              setTeamMessages(prev => {
+                const partnerMsgs = prev[partnerId] || [];
+                return {
+                  ...prev,
+                  [partnerId]: partnerMsgs.map(m => m.id === updatedDbMsg.id ? {
+                    ...m,
+                    content: updatedDbMsg.content,
+                    editedAt: updatedDbMsg.edited_at
+                  } : m)
+                };
+              });
+            }
+          } else if (eventType === 'DELETE') {
+            const deletedDbMsg = payload.old;
+            const deletedId = deletedDbMsg.id;
+            setTeamMessages(prev => {
+              const updated: Record<string, ChatMessage[]> = {};
+              Object.keys(prev).forEach(partnerId => {
+                updated[partnerId] = prev[partnerId].filter(m => m.id !== deletedId);
+              });
               return updated;
             });
           }
@@ -1694,6 +1732,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
               [channelId]: current.filter(t => t.userId !== userId)
             };
           }
+        });
+      })
+      .on('broadcast', { event: 'dm_reaction' }, (payload: any) => {
+        const { messageId, reactions } = payload.payload;
+        setDmReactions(prev => {
+          const updated = {
+            ...prev,
+            [messageId]: reactions
+          };
+          localStorage.setItem('nexus_dm_reactions', JSON.stringify(updated));
+          return updated;
         });
       })
       .subscribe(async (status) => {
@@ -2714,7 +2763,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       role: 'user',
       content: encryptedContent,
       timestamp: new Date().toISOString(),
-      media
+      media,
+      status: 'sending' as const
     };
 
     setTeamMessages(prev => {
@@ -2733,6 +2783,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         receiver_id: receiverId,
         content: encryptedContent,
         created_at: newMsg.timestamp
+      });
+      setTeamMessages(prev => {
+        const currentDMs = prev[receiverId] || [];
+        return {
+          ...prev,
+          [receiverId]: currentDMs.map(m => m.id === msgId ? { ...m, status: 'delivered' as const } : m)
+        };
       });
     } catch (e) {
       console.warn('Sync DM to direct_messages failed:', e);
@@ -2849,13 +2906,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const sendChannelMessage = useCallback(async (channelId: string, content: string, media?: { url: string; name: string; type: string }) => {
     if (!user) return;
     const encryptedContent = encryptMessage(content);
+    const msgId = `cmsg-${Date.now()}`;
     const newMsg: ChannelMessage = {
-      id: `cmsg-${Date.now()}`,
+      id: msgId,
       sender: user,
       content: encryptedContent,
       timestamp: new Date().toISOString(),
       media,
-      replies: []
+      replies: [],
+      status: 'sending' as const
     };
 
     setChannelMessages(prev => {
@@ -2866,12 +2925,19 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
     try {
       await supabase.from('channel_messages').insert({
-        id: newMsg.id,
+        id: msgId,
         channel_id: channelId,
         sender_id: user.id,
         content: encryptedContent,
         timestamp: newMsg.timestamp,
         media
+      });
+      setChannelMessages(prev => {
+        const current = prev[channelId] || [];
+        return {
+          ...prev,
+          [channelId]: current.map(m => m.id === msgId ? { ...m, status: 'delivered' as const } : m)
+        };
       });
     } catch (e) {
       console.warn("Sync channel message to Supabase failed:", e);
@@ -3851,7 +3917,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     notifications, markNotificationsAsRead, addNotification,
     searchQuery, setSearchQuery,
     commandPaletteOpen, setCommandPaletteOpen,
-    typingUsers, onlinePresence, broadcastTyping,
+    typingUsers, onlinePresence, broadcastTyping, dmReactions, setDmReactions,
     toggleStarChannel, editChannelMessage, deleteChannelMessage,
     addReaction, removeReaction, togglePinMessage, markMessageAsRead, createChannel,
     createWorkspace, joinWorkspaceByCode, createJoinRequest, reviewJoinRequest, regenerateWorkspaceInviteCode, updateMemberRole, switchWorkspace,

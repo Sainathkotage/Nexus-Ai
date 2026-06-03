@@ -1,11 +1,11 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { useWorkspace, decryptMessage } from '@/lib/store';
+import { useWorkspace, decryptMessage, encryptMessage } from '@/lib/store';
 import { supabase } from '@/lib/supabase';
 import { Person, ChatMessage, Channel, ChannelMessage, MessageReaction, MessageRead } from '@/types';
 import { 
-  Send, Users, MessageSquare, Clock, ShieldCheck, 
+  Send, Users, MessageSquare, Clock, ShieldCheck, Check, 
   Search, Circle, MessageCircle, Hash, ChevronRight, X,
   Paperclip, Phone, Video, Lock, Unlock, Mic, MicOff,
   VideoOff, Shield, PhoneOff, Star, Pin, Smile, Trash2, Edit3,
@@ -39,6 +39,8 @@ export default function TeamChatPage() {
     typingUsers,
     onlinePresence,
     broadcastTyping,
+    dmReactions,
+    setDmReactions,
     toggleStarChannel,
     editChannelMessage,
     deleteChannelMessage,
@@ -103,6 +105,18 @@ export default function TeamChatPage() {
   // Edit message inline state
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editBuffer, setEditBuffer] = useState('');
+
+  // Right-click Context Menu and Reply states
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    messageId: string;
+    isMe: boolean;
+    content: string;
+    senderName: string;
+    chatType: 'dm' | 'channel';
+  } | null>(null);
+  const [replyingTo, setReplyingTo] = useState<{ id: string; senderName: string; content: string } | null>(null);
 
   // Call simulation states
   const [callState, setCallState] = useState<{
@@ -368,13 +382,11 @@ export default function TeamChatPage() {
     setTypedMessage(value);
 
     // Broadcast Typing state
-    if (activeChat.type === 'channel') {
-      broadcastTyping(activeChat.id, true);
-      if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
-      typingTimerRef.current = setTimeout(() => {
-        broadcastTyping(activeChat.id, false);
-      }, 2000);
-    }
+    broadcastTyping(activeChat.id, true);
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+    typingTimerRef.current = setTimeout(() => {
+      broadcastTyping(activeChat.id, false);
+    }, 2000);
 
     // Capture @ trigger
     const cursor = e.target.selectionStart || 0;
@@ -470,41 +482,152 @@ export default function TeamChatPage() {
     toggleStarChannel(channelId);
   };
 
-  // Reactions syncing
-  const triggerEmojiReaction = (messageId: string, emojiStr: string) => {
-    if (activeChat.type !== 'channel') return;
-    const msg = activeChannelMessages.find(m => m.id === messageId);
-    if (!msg) return;
+  // Group reactions helper for DMs
+  const groupReactions = (reactionsList: MessageReaction[]) => {
+    const grouped: Record<string, { emoji: string; count: number; users: string[] }> = {};
+    (reactionsList || []).forEach(r => {
+      const name = allUsers.find(u => u.id === r.userId)?.name || 'Someone';
+      if (!grouped[r.emoji]) {
+        grouped[r.emoji] = { emoji: r.emoji, count: 0, users: [] };
+      }
+      grouped[r.emoji].count += 1;
+      grouped[r.emoji].users.push(name);
+    });
+    return Object.values(grouped);
+  };
 
-    const existing = (msg.reactions || []).find(r => r.userId === user?.id && r.emoji === emojiStr);
-    if (existing) {
-      removeReaction(activeChat.id, messageId, existing.id || '');
+  // Render message quote block for replies
+  const renderMessageContent = (content: string) => {
+    if (content.startsWith('[reply:')) {
+      const match = content.match(/^\[reply:([^:]+):([^\]]+)\]([\s\S]*)$/);
+      if (match) {
+        const [, senderName, originalText, remainingText] = match;
+        return (
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-1.5 text-[9px] text-muted-foreground/80 border-l-2 border-indigo-500/50 pl-2 py-0.5 mb-1 bg-muted/20 dark:bg-zinc-800/40 rounded-r select-none">
+              <span className="font-semibold text-foreground/80">@{senderName}</span>
+              <span className="truncate max-w-[150px] italic">"{originalText}"</span>
+            </div>
+            {parseRichText(remainingText)}
+          </div>
+        );
+      }
+    }
+    return parseRichText(content);
+  };
+
+  // Reactions syncing
+  const triggerEmojiReaction = async (messageId: string, emojiStr: string) => {
+    if (activeChat.type === 'channel') {
+      const msg = activeChannelMessages.find(m => m.id === messageId);
+      if (!msg) return;
+
+      const existing = (msg.reactions || []).find(r => r.userId === user?.id && r.emoji === emojiStr);
+      if (existing) {
+        await removeReaction(activeChat.id, messageId, existing.id || '');
+      } else {
+        await addReaction(activeChat.id, messageId, emojiStr);
+      }
     } else {
-      addReaction(activeChat.id, messageId, emojiStr);
+      // Direct message reaction (localStorage + broadcast backed)
+      const current = dmReactions[messageId] || [];
+      const existingIdx = current.findIndex(r => r.userId === user?.id && r.emoji === emojiStr);
+      let updated: MessageReaction[];
+      if (existingIdx !== -1) {
+        updated = current.filter((_, idx) => idx !== existingIdx);
+      } else {
+        const newReaction: MessageReaction = {
+          messageId,
+          userId: user?.id || '',
+          emoji: emojiStr,
+        };
+        updated = [...current, newReaction];
+      }
+      const newDmReactions = {
+        ...dmReactions,
+        [messageId]: updated
+      };
+      setDmReactions(newDmReactions);
+      localStorage.setItem('nexus_dm_reactions', JSON.stringify(newDmReactions));
+      
+      // Broadcast to partner via supabase Realtime presence channel lobby
+      try {
+        await supabase.channel('nexus_chat_lobby').send({
+          type: 'broadcast',
+          event: 'dm_reaction',
+          payload: { messageId, reactions: updated }
+        });
+      } catch (err) {}
     }
     setEmojiPickerMsgId(null);
   };
 
   // Edit submission
-  const triggerEdit = (messageId: string) => {
-    if (activeChat.type !== 'channel') return;
-    editChannelMessage(activeChat.id, messageId, editBuffer);
+  const triggerEdit = async (messageId: string) => {
+    if (activeChat.type === 'channel') {
+      editChannelMessage(activeChat.id, messageId, editBuffer);
+      toast.success('Message content edited.');
+    } else {
+      const encryptedContent = encryptMessage(editBuffer);
+      try {
+        const { error } = await supabase
+          .from('direct_messages')
+          .update({ content: encryptedContent, edited_at: new Date().toISOString() })
+          .eq('id', messageId);
+        if (error) throw error;
+        setTeamMessages(prev => {
+          const currentDMs = prev[activeChat.id] || [];
+          return {
+            ...prev,
+            [activeChat.id]: currentDMs.map(m => m.id === messageId ? { ...m, content: encryptedContent, editedAt: new Date().toISOString() } : m)
+          };
+        });
+        toast.success('Message content edited.');
+      } catch (err: any) {
+        toast.error('Failed to edit message.');
+        console.error(err);
+      }
+    }
     setEditingMessageId(null);
     setEditBuffer('');
-    toast.success('Message content edited.');
   };
 
   // Delete message
-  const triggerDelete = (messageId: string) => {
-    if (activeChat.type !== 'channel') return;
-    if (confirm('Delete this message permanently?')) {
-      deleteChannelMessage(activeChat.id, messageId);
-      toast.success('Message deleted.');
+  const triggerDelete = async (messageId: string) => {
+    if (activeChat.type === 'channel') {
+      if (confirm('Delete this message permanently?')) {
+        deleteChannelMessage(activeChat.id, messageId);
+        toast.success('Message deleted.');
+      }
+    } else {
+      if (confirm('Delete this message permanently?')) {
+        try {
+          const { error } = await supabase
+            .from('direct_messages')
+            .delete()
+            .eq('id', messageId);
+          if (error) throw error;
+          
+          setTeamMessages(prev => {
+            const currentDMs = prev[activeChat.id] || [];
+            return {
+              ...prev,
+              [activeChat.id]: currentDMs.filter(m => m.id !== messageId)
+            };
+          });
+          toast.success('Message deleted.');
+        } catch (err: any) {
+          toast.error('Failed to delete message.');
+          console.error(err);
+        }
+      }
     }
   };
 
   // Star mapping helper for headers
-  const activeTypers = activeChat.type === 'channel' ? (typingUsers[activeChat.id] || []) : [];
+  const activeTypers = activeChat.type === 'channel'
+    ? (typingUsers[activeChat.id] || [])
+    : (typingUsers[user?.id || ''] || []).filter(t => t.userId === activeChat.id);
 
   // Starred channel settings triggers
   const handleNotifConfigToggle = (channelId: string, status: 'all' | 'mentions' | 'muted') => {
@@ -627,14 +750,20 @@ export default function TeamChatPage() {
     e.preventDefault();
     if (!typedMessage.trim() && !selectedMedia) return;
 
+    let finalContent = typedMessage.trim();
+    if (replyingTo) {
+      finalContent = `[reply:${replyingTo.senderName}:${replyingTo.content}]${finalContent}`;
+    }
+
     try {
       if (activeChat.type === 'dm') {
-        await sendTeamMessage(activeChat.id, typedMessage.trim(), selectedMedia || undefined);
+        await sendTeamMessage(activeChat.id, finalContent, selectedMedia || undefined);
       } else {
-        await sendChannelMessage(activeChat.id, typedMessage.trim(), selectedMedia || undefined);
+        await sendChannelMessage(activeChat.id, finalContent, selectedMedia || undefined);
       }
       setTypedMessage('');
       setSelectedMedia(null);
+      setReplyingTo(null);
     } catch (err) {
       toast.error('Failed to send message.');
     }
@@ -1315,7 +1444,7 @@ export default function TeamChatPage() {
                 const hasMedia = !!msg.media;
 
                 return (
-                  <div key={msg.id} className={cn("flex gap-3 max-w-[75%] group items-end", isMe ? "ml-auto flex-row-reverse" : "mr-auto")}>
+                  <div key={msg.id} className={cn("flex gap-3 max-w-[75%] group items-end relative", isMe ? "ml-auto flex-row-reverse" : "mr-auto")}>
                     {!isMe && activeFriend && (
                       <div className="w-7 h-7 rounded-full bg-zinc-200 dark:bg-zinc-800 flex items-center justify-center text-[10px] font-bold text-muted-foreground shrink-0 mt-0.5">
                         {getInitials(activeFriend.name)}
@@ -1325,50 +1454,107 @@ export default function TeamChatPage() {
                     {/* Cipher Lock Toggle */}
                     <button
                       onClick={() => toggleCipher(msg.id)}
-                      className="w-6 h-6 flex items-center justify-center rounded-full bg-background border border-border shadow-sm opacity-0 group-hover:opacity-100 transition-opacity duration-150 shrink-0 text-muted-foreground hover:text-foreground cursor-pointer mb-1.5"
+                      className="w-6 h-6 flex items-center justify-center rounded-full bg-background border border-border shadow-sm opacity-0 group-hover:opacity-100 transition-opacity duration-150 shrink-0 text-muted-foreground hover:text-foreground cursor-pointer mb-1.5 animate-in fade-in"
                       title={isCipherToggled ? "Show decrypted plaintext" : "Show raw AES-256 ciphertext"}
                     >
                       {isCipherToggled ? <Lock className="w-3 h-3 text-indigo-500" /> : <Unlock className="w-3 h-3" />}
                     </button>
 
                     <div className="flex flex-col gap-1">
-                      <div className={cn(
-                        "p-3 rounded-2xl text-xs leading-normal flex flex-col gap-2 shadow-sm",
-                        isMe 
-                          ? 'bg-[#37352f] text-white dark:bg-[#e3e3e2] dark:text-[#191919] rounded-br-none' 
-                          : 'bg-background border border-border/50 text-foreground rounded-bl-none'
-                      )}>
-                        {/* Media display */}
-                        {hasMedia && msg.media && (
-                          <div className="rounded overflow-hidden">
-                            {msg.media.type.startsWith('image/') ? (
-                              <img 
-                                src={msg.media.url} 
-                                alt={msg.media.name} 
-                                className="max-w-[200px] max-h-[160px] rounded object-cover cursor-pointer hover:opacity-90 transition-opacity"
-                                onClick={() => msg.media && window.open(msg.media.url, '_blank')}
-                              />
-                            ) : (
-                              <a 
-                                href={msg.media.url} 
-                                download={msg.media.name} 
-                                className="flex items-center gap-2 p-2 rounded-md bg-muted/30 dark:bg-zinc-800/80 border border-border/50 text-[10px] text-foreground font-semibold max-w-[200px] truncate"
-                              >
-                                <span className="text-base shrink-0">📄</span>
-                                <div className="min-w-0 flex-1">
-                                  <p className="font-semibold truncate leading-none mb-0.5">{msg.media.name}</p>
-                                  <p className="text-[8px] text-muted-foreground leading-none">Click to download</p>
-                                </div>
-                              </a>
+                      {editingMessageId === msg.id ? (
+                        <div className="flex items-center gap-1.5 w-full">
+                          <input 
+                            type="text" 
+                            value={editBuffer} 
+                            onChange={e => setEditBuffer(e.target.value)}
+                            className="bg-background border border-border text-xs px-2.5 py-1.5 rounded-lg w-64 text-foreground focus:outline-none focus:border-indigo-500" 
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') triggerEdit(msg.id);
+                              if (e.key === 'Escape') setEditingMessageId(null);
+                            }}
+                            autoFocus
+                          />
+                          <Button size="sm" onClick={() => triggerEdit(msg.id)} className="h-7 text-[10px] bg-indigo-500 text-white hover:bg-indigo-600">Save</Button>
+                          <Button size="sm" variant="ghost" onClick={() => setEditingMessageId(null)} className="h-7 text-[10px]">Cancel</Button>
+                        </div>
+                      ) : (
+                        <>
+                          <div 
+                            onContextMenu={(e) => {
+                              e.preventDefault();
+                              setContextMenu({
+                                x: e.clientX,
+                                y: e.clientY,
+                                messageId: msg.id,
+                                isMe,
+                                content: decryptMessage(msg.content),
+                                senderName: isMe ? (user?.name || '') : (activeFriend?.name || ''),
+                                chatType: 'dm'
+                              });
+                            }}
+                            className={cn(
+                              "p-3 rounded-2xl text-xs leading-normal flex flex-col gap-2 shadow-sm cursor-context-menu select-text",
+                              isMe 
+                                ? 'bg-[#37352f] text-white dark:bg-[#e3e3e2] dark:text-[#191919] rounded-br-none' 
+                                : 'bg-background border border-border/50 text-foreground rounded-bl-none'
                             )}
+                          >
+                            {/* Media display */}
+                            {hasMedia && msg.media && (
+                              <div className="rounded overflow-hidden">
+                                {msg.media.type.startsWith('image/') ? (
+                                  <img 
+                                    src={msg.media.url} 
+                                    alt={msg.media.name} 
+                                    className="max-w-[200px] max-h-[160px] rounded object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                                    onClick={() => msg.media && window.open(msg.media.url, '_blank')}
+                                  />
+                                ) : (
+                                  <a 
+                                    href={msg.media.url} 
+                                    download={msg.media.name} 
+                                    className="flex items-center gap-2 p-2 rounded-md bg-muted/30 dark:bg-zinc-800/80 border border-border/50 text-[10px] text-foreground font-semibold max-w-[200px] truncate"
+                                  >
+                                    <span className="text-base shrink-0">📄</span>
+                                    <div className="min-w-0 flex-1">
+                                      <p className="font-semibold truncate leading-none mb-0.5">{msg.media.name}</p>
+                                      <p className="text-[8px] text-muted-foreground leading-none">Click to download</p>
+                                    </div>
+                                  </a>
+                                )}
+                              </div>
+                            )}
+                            {renderMessageContent(contentToShow)}
                           </div>
-                        )}
-                        <span>{contentToShow}</span>
-                      </div>
+
+                          {/* Render Reactions */}
+                          {dmReactions[msg.id] && dmReactions[msg.id].length > 0 && (
+                            <div className={cn("flex flex-wrap gap-1 mt-1", isMe ? "justify-end" : "justify-start")}>
+                              {groupReactions(dmReactions[msg.id]).map((react, rIdx) => (
+                                <button
+                                  key={rIdx}
+                                  onClick={() => triggerEmojiReaction(msg.id, react.emoji)}
+                                  className="flex items-center gap-1 bg-muted/80 dark:bg-zinc-800/80 hover:bg-accent border border-border/30 rounded px-1.5 py-0.5 text-[9px] font-sans"
+                                  title={react.users.join(', ')}
+                                >
+                                  <span>{react.emoji}</span>
+                                  <span className="font-semibold text-muted-foreground">{react.count}</span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </>
+                      )}
+                      
                       <span className={cn("text-[8px] text-muted-foreground/60 flex items-center gap-1 mt-0.5", isMe ? 'justify-end' : '')}>
-                        <Clock className="w-3 h-3" />
+                        {isMe && (msg.status === 'sending' ? (
+                          <Clock className="w-2.5 h-2.5 text-muted-foreground/50 animate-pulse" />
+                        ) : (
+                          <Check className="w-2.5 h-2.5 text-emerald-500" strokeWidth={3} />
+                        ))}
                         {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         {isCipherToggled && <span className="text-[7px] text-indigo-500 font-bold bg-indigo-50 dark:bg-indigo-950/40 px-1.5 py-0.2 rounded font-sans uppercase">Encrypted</span>}
+                        {msg.editedAt && <span className="text-[7.5px] font-semibold text-muted-foreground italic">(edited)</span>}
                       </span>
                     </div>
                   </div>
@@ -1398,7 +1584,22 @@ export default function TeamChatPage() {
                 const readers = (msg.reads || []).map(r => allUsers.find(u => u.id === r.userId)?.name).filter(Boolean);
 
                 return (
-                  <div key={msg.id} className="flex gap-3 items-start group relative">
+                  <div 
+                    key={msg.id} 
+                    className="flex gap-3 items-start group relative"
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      setContextMenu({
+                        x: e.clientX,
+                        y: e.clientY,
+                        messageId: msg.id,
+                        isMe: isSenderMe,
+                        content: decryptMessage(msg.content),
+                        senderName: msg.sender.name,
+                        chatType: 'channel'
+                      });
+                    }}
+                  >
                     <div className="w-8 h-8 rounded-full bg-gradient-to-br from-orange-400 to-pink-500 flex items-center justify-center text-[10px] font-bold text-white shrink-0 mt-0.5">
                       {getInitials(msg.sender.name)}
                     </div>
@@ -1455,7 +1656,7 @@ export default function TeamChatPage() {
                                 )}
                               </div>
                             )}
-                            {parseRichText(contentToShow)}
+                            {renderMessageContent(contentToShow)}
                           </div>
                         )}
 
@@ -1642,6 +1843,24 @@ export default function TeamChatPage() {
                 <button 
                   type="button" 
                   onClick={() => setSelectedMedia(null)} 
+                  className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/80 shrink-0"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+
+            {/* Show replying to message preview bar */}
+            {replyingTo && (
+              <div className="flex items-center justify-between px-3 py-1.5 border border-indigo-500/20 bg-indigo-500/5 dark:bg-indigo-500/5 rounded-lg mb-2 text-xs">
+                <div className="flex items-center gap-1.5 text-muted-foreground min-w-0">
+                  <span className="shrink-0 text-indigo-500 font-semibold">Replying to</span>
+                  <span className="font-semibold text-foreground shrink-0">@{replyingTo.senderName}</span>
+                  <span className="truncate italic">"{replyingTo.content}"</span>
+                </div>
+                <button 
+                  type="button" 
+                  onClick={() => setReplyingTo(null)} 
                   className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/80 shrink-0"
                 >
                   <X className="w-3.5 h-3.5" />
@@ -2377,6 +2596,87 @@ export default function TeamChatPage() {
 
       {/* Hidden remote stream audio element */}
       <audio ref={remoteAudioRef} autoPlay />
+
+      {/* Custom Context Menu */}
+      {contextMenu && (
+        <div 
+          className="fixed inset-0 z-50 pointer-events-auto cursor-default" 
+          onClick={() => setContextMenu(null)}
+          onContextMenu={(e) => { e.preventDefault(); setContextMenu(null); }}
+        >
+          <div 
+            style={{ top: contextMenu.y, left: contextMenu.x }}
+            className="absolute bg-[#1c1c1e] border border-zinc-800 text-zinc-300 rounded-xl shadow-2xl py-1.5 min-w-[180px] z-50 text-xs font-sans overflow-hidden select-none animate-in fade-in zoom-in-95 duration-100"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Mini emoji reactions row */}
+            <div className="px-2.5 py-1.5 border-b border-zinc-800 flex items-center justify-between gap-1 mb-1">
+              {['👍', '❤️', '😂', '😮', '😢', '🙏'].map(emoji => (
+                <button
+                  key={emoji}
+                  onClick={() => {
+                    triggerEmojiReaction(contextMenu.messageId, emoji);
+                    setContextMenu(null);
+                  }}
+                  className="w-6 h-6 flex items-center justify-center rounded hover:bg-zinc-800 transition-colors text-base"
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+
+            {/* Options */}
+            <button
+              onClick={() => {
+                setEditingMessageId(contextMenu.messageId);
+                setEditBuffer(contextMenu.content);
+                setContextMenu(null);
+              }}
+              className="w-full text-left px-3 py-2 hover:bg-indigo-500 hover:text-white transition-colors flex items-center gap-2"
+            >
+              <Edit3 className="w-3.5 h-3.5" />
+              <span>Modify</span>
+            </button>
+
+            <button
+              onClick={() => {
+                setReplyingTo({
+                  id: contextMenu.messageId,
+                  senderName: contextMenu.senderName,
+                  content: contextMenu.content
+                });
+                setContextMenu(null);
+              }}
+              className="w-full text-left px-3 py-2 hover:bg-indigo-500 hover:text-white transition-colors flex items-center gap-2"
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+              <span>Reply</span>
+            </button>
+
+            <button
+              onClick={() => {
+                setEmojiPickerMsgId(contextMenu.messageId);
+                setContextMenu(null);
+              }}
+              className="w-full text-left px-3 py-2 hover:bg-indigo-500 hover:text-white transition-colors flex items-center gap-2"
+            >
+              <Smile className="w-3.5 h-3.5" />
+              <span>Emoji React</span>
+            </button>
+
+            <button
+              onClick={() => {
+                triggerDelete(contextMenu.messageId);
+                setContextMenu(null);
+              }}
+              className="w-full text-left px-3 py-2 hover:bg-red-600 hover:text-white transition-colors flex items-center gap-2 text-red-400"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Delete</span>
+            </button>
+          </div>
+        </div>
+      )}
 
     </div>
   );

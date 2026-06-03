@@ -13,6 +13,11 @@ interface WorkspaceDetails {
   slug: string;
 }
 
+interface ProjectDetails {
+  id: string;
+  name: string;
+}
+
 export default function InvitePage() {
   const router = useRouter();
   const params = useParams();
@@ -23,6 +28,8 @@ export default function InvitePage() {
   const [loading, setLoading] = useState(true);
   const [requesting, setRequesting] = useState(false);
   const [workspace, setWorkspace] = useState<WorkspaceDetails | null>(null);
+  const [project, setProject] = useState<ProjectDetails | null>(null);
+  const [isProject, setIsProject] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isMember, setIsMember] = useState(false);
 
@@ -32,20 +39,46 @@ export default function InvitePage() {
     const fetchInviteDetails = async () => {
       try {
         setLoading(true);
+        
+        // 1. First try to load as workspace invite
         const res = await fetch(`/api/invites/details?code=${code}`);
         const data = await res.json();
 
         if (!res.ok || !data.ok) {
-          setErrorMsg(data.error || 'Invalid or unrecognized invite code.');
+          // 2. Fallback to check if it is a project invite token
+          const projectRes = await fetch(`/api/invitations/${code}`);
+          const projectData = await projectRes.json();
+
+          if (!projectRes.ok || !projectData.ok) {
+            setErrorMsg(projectData.error || data.error || 'Invalid or unrecognized invite code.');
+            setLoading(false);
+            return;
+          }
+
+          setProject(projectData.invitation.project);
+          setIsProject(true);
+
+          // If signed in, check project membership
+          if (user) {
+            const { data: member } = await supabase
+              .from('project_members')
+              .select('id')
+              .eq('project_id', projectData.invitation.project.id)
+              .eq('user_id', user.id)
+              .maybeSingle();
+
+            if (member) {
+              setIsMember(true);
+            }
+          }
           setLoading(false);
           return;
         }
 
         setWorkspace(data.workspace);
 
-        // If signed in, check their membership status
+        // If signed in, check workspace membership status
         if (user) {
-          // Check membership
           const { data: member } = await supabase
             .from('workspace_members')
             .select('status')
@@ -55,8 +88,6 @@ export default function InvitePage() {
 
           if (member && member.status === 'active') {
             setIsMember(true);
-            setLoading(false);
-            return;
           }
         }
       } catch (err: any) {
@@ -70,22 +101,44 @@ export default function InvitePage() {
     fetchInviteDetails();
   }, [code, user]);
 
-  const handleJoinWorkspace = async () => {
-    if (!workspace) return;
-    try {
-      setRequesting(true);
-      const res = await joinWorkspaceByCode(code);
-      if (res.ok) {
-        toast.success(res.message);
-        setIsMember(true);
-        router.push('/');
-      } else {
-        toast.error(res.message);
+  const handleJoin = async () => {
+    if (isProject) {
+      if (!project) return;
+      try {
+        setRequesting(true);
+        const res = await fetch(`/api/invitations/${code}/accept`, {
+          method: 'POST'
+        });
+        const data = await res.json();
+        if (res.ok && data.ok) {
+          toast.success(data.message || 'Joined project team successfully!');
+          setIsMember(true);
+          router.push('/');
+        } else {
+          toast.error(data.error || 'Failed to join project.');
+        }
+      } catch (err: any) {
+        toast.error(err.message || 'An error occurred.');
+      } finally {
+        setRequesting(false);
       }
-    } catch (err: any) {
-      toast.error(err.message || 'An error occurred.');
-    } finally {
-      setRequesting(false);
+    } else {
+      if (!workspace) return;
+      try {
+        setRequesting(true);
+        const res = await joinWorkspaceByCode(code);
+        if (res.ok) {
+          toast.success(res.message);
+          setIsMember(true);
+          router.push('/');
+        } else {
+          toast.error(res.message);
+        }
+      } catch (err: any) {
+        toast.error(err.message || 'An error occurred.');
+      } finally {
+        setRequesting(false);
+      }
     }
   };
 
@@ -128,7 +181,7 @@ export default function InvitePage() {
             <p className="text-zinc-400 text-sm mb-6">{errorMsg}</p>
             <button
               onClick={handleGoToDashboard}
-              className="w-full py-2.5 px-4 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 hover:text-white rounded-lg text-sm font-semibold transition-all"
+              className="w-full py-2.5 px-4 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 hover:text-white rounded-lg text-sm font-semibold transition-all cursor-pointer"
             >
               Go to Homepage
             </button>
@@ -140,14 +193,16 @@ export default function InvitePage() {
             </div>
 
             <span className="text-xs font-semibold text-emerald-400 uppercase tracking-widest bg-emerald-500/5 border border-emerald-500/10 rounded-full px-3 py-1 mb-4">
-              Workspace Invite
+              {isProject ? 'Project Invite' : 'Workspace Invite'}
             </span>
 
             <h2 className="text-2xl font-extrabold tracking-tight text-white mb-2">
-              Join {workspace?.name}
+              Join {isProject ? project?.name : workspace?.name}
             </h2>
             <p className="text-zinc-400 text-sm mb-8 leading-relaxed">
-              You have been invited to collaborate. Request access below to join the team workspace.
+              {isProject 
+                ? 'You have been invited to collaborate as a team member on this project.' 
+                : 'You have been invited to collaborate. Request access below to join the team workspace.'}
             </p>
 
             {/* Content states based on auth and membership */}
@@ -155,14 +210,14 @@ export default function InvitePage() {
               <div className="w-full space-y-4">
                 <div className="bg-zinc-950/50 border border-zinc-800/60 rounded-xl p-4 text-left text-xs text-zinc-400 mb-2">
                   <span className="font-semibold text-zinc-300 block mb-1">Sign-in Required</span>
-                  You must be authenticated to request to join workspace. Sign up or log in to continue.
+                  You must be authenticated to join. Sign up or log in to continue.
                 </div>
                 <button
                   onClick={handleSignIn}
-                  className="w-full py-3 px-4 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-black font-semibold rounded-lg text-sm transition-all shadow-lg shadow-emerald-500/10 flex items-center justify-center gap-2 hover:scale-[1.01]"
+                  className="w-full py-3 px-4 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-black font-semibold rounded-lg text-sm transition-all shadow-lg shadow-emerald-500/10 flex items-center justify-center gap-2 hover:scale-[1.01] cursor-pointer"
                 >
                   <LogIn size={18} />
-                  Sign In to Join Workspace
+                  Sign In to Join
                 </button>
               </div>
             ) : isMember ? (
@@ -171,30 +226,30 @@ export default function InvitePage() {
                   <CheckCircle2 className="shrink-0 text-emerald-400" size={20} />
                   <div>
                     <span className="font-semibold block text-white text-xs">Already a Member</span>
-                    You are already registered as a member of this workspace.
+                    You are already registered as a member of this {isProject ? 'project' : 'workspace'}.
                   </div>
                 </div>
                 <button
                   onClick={handleGoToDashboard}
-                  className="w-full py-3 px-4 bg-zinc-800 hover:bg-zinc-700 text-white font-semibold rounded-lg text-sm transition-all flex items-center justify-center gap-2"
+                  className="w-full py-3 px-4 bg-zinc-800 hover:bg-zinc-700 text-white font-semibold rounded-lg text-sm transition-all flex items-center justify-center gap-2 cursor-pointer"
                 >
-                  Go to Workspace Dashboard
+                  Go to Dashboard
                   <ArrowRight size={16} />
                 </button>
               </div>
             ) : (
               <button
-                onClick={handleJoinWorkspace}
+                onClick={handleJoin}
                 disabled={requesting}
-                className="w-full py-3 px-4 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 disabled:from-emerald-500/50 disabled:to-teal-500/50 text-black font-semibold rounded-lg text-sm transition-all shadow-lg shadow-emerald-500/10 flex items-center justify-center gap-2 hover:scale-[1.01]"
+                className="w-full py-3 px-4 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 disabled:from-emerald-500/50 disabled:to-teal-500/50 text-black font-semibold rounded-lg text-sm transition-all shadow-lg shadow-emerald-500/10 flex items-center justify-center gap-2 hover:scale-[1.01] cursor-pointer"
               >
                 {requesting ? (
                   <>
                     <div className="w-4 h-4 rounded-full border-2 border-black border-t-transparent animate-spin" />
-                    Joining Workspace...
+                    Joining...
                   </>
                 ) : (
-                  'Join Workspace'
+                  isProject ? 'Join Project' : 'Join Workspace'
                 )}
               </button>
             )}

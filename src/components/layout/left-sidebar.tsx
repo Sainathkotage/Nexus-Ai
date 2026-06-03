@@ -69,7 +69,7 @@ export function LeftSidebar({ onOpenSearch }: LeftSidebarProps) {
       animate={{ width: 240, opacity: 1 }}
       exit={{ width: 0, opacity: 0 }}
       transition={{ duration: 0.15, ease: 'easeOut' }}
-      className="h-full border-r border-sidebar-border bg-sidebar flex flex-col overflow-hidden shrink-0"
+      className="h-full border-r border-sidebar-border bg-sidebar flex flex-col overflow-hidden shrink-0 max-lg:fixed max-lg:left-0 max-lg:top-0 max-lg:z-30 max-lg:shadow-2xl"
     >
       {/* Workspace Header */}
       <div className="h-12 flex items-center px-3 shrink-0 relative">

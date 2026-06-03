@@ -41,6 +41,11 @@ export default function ChatPage() {
 
   useEffect(() => {
     setActivePage('chat');
+    if (typeof window !== 'undefined') {
+      if (window.innerWidth < 768) {
+        setSidebarCollapsed(true);
+      }
+    }
   }, [setActivePage]);
 
   // Default select all documents on load
@@ -240,7 +245,15 @@ export default function ChatPage() {
   };
 
   return (
-    <div className="flex h-full w-full overflow-hidden bg-background">
+    <div className="flex h-full w-full overflow-hidden bg-background relative">
+      
+      {/* Backdrop for mobile */}
+      {!sidebarCollapsed && (
+        <div 
+          className="fixed inset-0 bg-black/30 backdrop-blur-xs z-20 md:hidden" 
+          onClick={() => setSidebarCollapsed(true)} 
+        />
+      )}
       
       {/* Collapsible Left Sidebar - Chat Manager & Active Context */}
       <AnimatePresence initial={false}>
@@ -249,7 +262,8 @@ export default function ChatPage() {
             initial={{ width: 0, opacity: 0 }}
             animate={{ width: 280, opacity: 1 }}
             exit={{ width: 0, opacity: 0 }}
-            className="border-r border-border bg-sidebar hidden md:flex flex-col h-full shrink-0 overflow-hidden"
+            transition={{ duration: 0.15 }}
+            className="border-r border-border bg-sidebar flex flex-col h-full shrink-0 overflow-hidden max-md:fixed max-md:left-0 max-md:top-0 max-md:h-full max-md:z-30 max-md:shadow-2xl"
           >
             
             {/* Conversations Header */}
@@ -372,7 +386,7 @@ export default function ChatPage() {
               variant="ghost" 
               size="icon" 
               onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-              className="w-8 h-8 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground hidden md:flex"
+              className="w-8 h-8 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground flex"
             >
               <Menu className="w-4 h-4" />
             </Button>

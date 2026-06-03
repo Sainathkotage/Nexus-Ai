@@ -279,13 +279,13 @@ export default function CalendarPage() {
               >
                 {/* Days of Week Header */}
                 <div className="grid grid-cols-7 text-center font-semibold text-xs text-muted-foreground border-b border-border/40 pb-2 mb-1">
-                  <span>Mon</span>
-                  <span>Tue</span>
-                  <span>Wed</span>
-                  <span>Thu</span>
-                  <span>Fri</span>
-                  <span>Sat</span>
-                  <span>Sun</span>
+                  <span><span className="hidden sm:inline">Mon</span><span className="sm:hidden">M</span></span>
+                  <span><span className="hidden sm:inline">Tue</span><span className="sm:hidden">T</span></span>
+                  <span><span className="hidden sm:inline">Wed</span><span className="sm:hidden">W</span></span>
+                  <span><span className="hidden sm:inline">Thu</span><span className="sm:hidden">T</span></span>
+                  <span><span className="hidden sm:inline">Fri</span><span className="sm:hidden">F</span></span>
+                  <span><span className="hidden sm:inline">Sat</span><span className="sm:hidden">S</span></span>
+                  <span><span className="hidden sm:inline">Sun</span><span className="sm:hidden">S</span></span>
                 </div>
                 
                 {/* Monthly Days Grid */}
@@ -323,26 +323,40 @@ export default function CalendarPage() {
                           )}
                         </div>
 
-                        {/* Event Pills List */}
+                        {/* Event Pills List (Desktop) & Dots List (Mobile) */}
                         <div className="flex-1 flex flex-col gap-1 overflow-y-auto max-h-[70px] scrollbar-none">
-                          {dayEvents.map(event => (
-                            <div
-                              key={event.id}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setEditingEvent(event);
-                              }}
-                              data-context-type="event"
-                              data-context-id={event.id}
-                              className={cn(
-                                "text-[9px] font-semibold py-0.5 px-1.5 rounded truncate border border-transparent cursor-pointer hover:brightness-95 dark:hover:brightness-110 transition-all",
-                                getEventBgColor(event.category)
-                              )}
-                              title={event.title}
-                            >
-                              {event.startTime} {event.title}
-                            </div>
-                          ))}
+                          {/* Desktop view: text pills */}
+                          <div className="hidden sm:flex flex-col gap-1">
+                            {dayEvents.map(event => (
+                              <div
+                                key={event.id}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setEditingEvent(event);
+                                }}
+                                data-context-type="event"
+                                data-context-id={event.id}
+                                className={cn(
+                                  "text-[9px] font-semibold py-0.5 px-1.5 rounded truncate border border-transparent cursor-pointer hover:brightness-95 dark:hover:brightness-110 transition-all",
+                                  getEventBgColor(event.category)
+                                )}
+                                title={event.title}
+                              >
+                                {event.startTime} {event.title}
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* Mobile view: small color dots */}
+                          <div className="flex sm:hidden flex-wrap gap-1 justify-center mt-1">
+                            {dayEvents.map(event => (
+                              <span 
+                                key={event.id} 
+                                className={cn("w-1.5 h-1.5 rounded-full shrink-0", getEventDotColor(event.category))}
+                                title={event.title}
+                              />
+                            ))}
+                          </div>
                         </div>
                       </div>
                     );
@@ -385,7 +399,8 @@ export default function CalendarPage() {
                   })}
                 </div>
 
-                <div className="grid grid-cols-7 flex-1 min-h-[400px] gap-2">
+                {/* Desktop view: 7-column grid */}
+                <div className="hidden md:grid grid-cols-7 flex-1 min-h-[400px] gap-2">
                   {weekDays.map((day, idx) => {
                     const dayEvents = calendarEvents.filter(e => isSameDay(new Date(e.date), day));
                     return (
@@ -424,6 +439,44 @@ export default function CalendarPage() {
                       </div>
                     );
                   })}
+                </div>
+
+                {/* Mobile view: list of events for the selected date */}
+                <div className="flex md:hidden flex-col gap-3 flex-1 overflow-y-auto">
+                  <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">
+                    Events for {format(selectedDate, 'EEEE, MMM d')}
+                  </div>
+                  {calendarEvents.filter(e => isSameDay(new Date(e.date), selectedDate)).map(event => (
+                    <div 
+                      key={event.id}
+                      onClick={() => setEditingEvent(event)}
+                      className={cn(
+                        "p-3 rounded-lg border flex flex-col gap-1.5 text-xs relative cursor-pointer bg-background hover:shadow-sm transition-all",
+                        getEventBgColor(event.category),
+                        !event.addedToCalendar && "border-dashed border-amber-500 bg-amber-50/20"
+                      )}
+                    >
+                      {!event.addedToCalendar && (
+                        <div className="absolute top-1.5 right-1.5 flex gap-1 items-center text-[8px] bg-amber-500 text-white font-bold px-1.5 rounded-full uppercase scale-90">
+                          Suggestion
+                        </div>
+                      )}
+                      <span className="font-bold truncate leading-tight pr-8">{event.title}</span>
+                      <span className="text-[10px] opacity-80 flex items-center gap-1">
+                        <Clock className="w-3.5 h-3.5" /> {event.startTime} - {event.endTime}
+                      </span>
+                      {event.category === 'meeting' && event.addedToCalendar && (
+                        <Badge variant="outline" className="w-fit text-[8px] tracking-wide border-current/20 py-0 px-1 bg-background/40 gap-0.5">
+                          <Video className="w-2.5 h-2.5" /> Live
+                        </Badge>
+                      )}
+                    </div>
+                  ))}
+                  {calendarEvents.filter(e => isSameDay(new Date(e.date), selectedDate)).length === 0 && (
+                    <div className="text-xs text-muted-foreground text-center py-8 bg-muted/5 border border-dashed rounded-lg">
+                      No events scheduled for this day.
+                    </div>
+                  )}
                 </div>
               </motion.div>
             )}
@@ -472,6 +525,93 @@ export default function CalendarPage() {
 
           </AnimatePresence>
         </div>
+
+        {/* Mobile/Tablet Agenda Panel (visible when screen < 1024px and viewMode is month) */}
+        {viewMode === 'month' && (
+          <div className="lg:hidden border-t border-border/80 bg-muted/10 flex flex-col shrink-0 max-h-[300px] overflow-y-auto">
+            <div className="p-4 border-b border-border/40 flex flex-col gap-0.5 bg-background/50 shrink-0">
+              <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{format(selectedDate, 'EEEE')}</span>
+              <span className="text-sm font-bold text-foreground">{format(selectedDate, 'MMMM d, yyyy')}</span>
+            </div>
+            
+            <div className="p-4 flex flex-col gap-4">
+              {/* AI Suggested Event section */}
+              {calendarEvents.filter(e => !e.addedToCalendar && isSameDay(new Date(e.date), selectedDate)).map(event => (
+                <div 
+                  key={event.id}
+                  className="p-4 rounded-xl border border-amber-500/20 bg-amber-500/5 flex flex-col gap-3"
+                >
+                  <div className="flex gap-2">
+                    <Sparkles className="w-4 h-4 text-amber-500 mt-0.5 shrink-0 animate-pulse" />
+                    <div className="flex flex-col gap-1">
+                      <span className="text-xs font-bold text-amber-700 dark:text-amber-400">AI Extracted Event Suggestion</span>
+                      <span className="text-sm font-semibold text-foreground leading-tight">{event.title}</span>
+                      <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                        <Clock className="w-3.5 h-3.5" /> {event.startTime} - {event.endTime}
+                      </span>
+                      {event.sourceDocument && (
+                        <span className="text-[10px] text-muted-foreground">Source: {event.sourceDocument.title}</span>
+                      )}
+                    </div>
+                  </div>
+                  
+                  <Button 
+                    onClick={() => handleAddAiEvent(event.id, event.title)}
+                    className="w-full text-xs h-8 bg-amber-500 hover:bg-amber-600 text-white font-medium gap-1.5"
+                  >
+                    <CalendarCheck className="w-4 h-4" /> Confirm & Add
+                  </Button>
+                </div>
+              ))}
+
+              {/* Scheduled Events list */}
+              <div className="flex flex-col gap-2.5">
+                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Scheduled Events</h3>
+                
+                {selectedDateEvents.filter(e => e.addedToCalendar).length === 0 ? (
+                  <div className="p-6 text-center text-xs text-muted-foreground border border-dashed border-border/60 rounded-xl bg-background/50">
+                    No events scheduled for this day.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {selectedDateEvents.filter(e => e.addedToCalendar).map(event => (
+                      <div 
+                        key={event.id}
+                        onClick={() => setEditingEvent(event)}
+                        className="p-3.5 rounded-xl border border-border/40 bg-background flex flex-col gap-2.5 hover:shadow-sm cursor-pointer hover:border-primary/20 transition-all"
+                      >
+                        <div className="flex justify-between items-start">
+                          <span className="text-xs font-bold text-foreground leading-tight">{event.title}</span>
+                          <span className={cn(
+                            "w-1.5 h-1.5 rounded-full shrink-0 mt-1",
+                            getEventDotColor(event.category)
+                          )} />
+                        </div>
+
+                        <div className="flex flex-col gap-1 text-[10px] text-muted-foreground font-medium">
+                          <span className="flex items-center gap-1.5">
+                            <Clock className="w-3.5 h-3.5" /> {event.startTime} - {event.endTime}
+                          </span>
+                          {event.location && (
+                            <span className="flex items-center gap-1.5">
+                              <MapPin className="w-3.5 h-3.5" /> {event.location}
+                            </span>
+                          )}
+                        </div>
+
+                        {event.category === 'meeting' && (
+                          <Button variant="outline" className="w-full h-7 text-[10px] hover:bg-primary/5 hover:text-primary gap-1">
+                            <Video className="w-3 h-3" /> Join Virtual Meeting
+                          </Button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
       </div>
 

@@ -118,7 +118,7 @@ export function RightSidebar() {
       animate={{ width: 280, opacity: 1 }}
       exit={{ width: 0, opacity: 0 }}
       transition={{ duration: 0.15, ease: 'easeOut' }}
-      className="h-full border-l border-border bg-sidebar flex flex-col shrink-0 overflow-hidden"
+      className="h-full border-l border-border bg-sidebar flex flex-col shrink-0 overflow-hidden max-lg:fixed max-lg:right-0 max-lg:top-0 max-lg:h-full max-lg:z-30 max-lg:shadow-2xl"
     >
       <div className="h-11 flex items-center justify-between px-3 border-b border-border shrink-0">
         <span className="text-sm font-semibold text-foreground">Team Members</span>

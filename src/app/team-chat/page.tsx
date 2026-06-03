@@ -9,7 +9,7 @@ import {
   Search, Circle, MessageCircle, Hash, ChevronRight, X,
   Paperclip, Phone, Video, Lock, Unlock, Mic, MicOff,
   VideoOff, Shield, PhoneOff, Star, Pin, Smile, Trash2, Edit3,
-  Sparkles, FileText, ArrowRight, Bell, Volume2, AlertCircle, Plus, Folder, UserPlus
+  Sparkles, FileText, ArrowRight, ArrowLeft, Bell, Volume2, AlertCircle, Plus, Folder, UserPlus
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -81,10 +81,13 @@ export default function TeamChatPage() {
       setActiveChannelId(chat.id);
       setActiveDmUserId(null);
     }
+    setActiveThreadMessageId(null);
+    setMobileView('chat');
   };
 
   const [typedMessage, setTypedMessage] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [mobileView, setMobileView] = useState<'list' | 'chat'>('list');
   
   // Thread state
   const [activeThreadMessageId, setActiveThreadMessageId] = useState<string | null>(null);
@@ -915,7 +918,7 @@ export default function TeamChatPage() {
       )}
 
       {/* Categories Sidebar */}
-      <div className="w-64 border-r border-sidebar-border bg-sidebar flex flex-col h-full shrink-0">
+      <div className={cn("w-64 border-r border-sidebar-border bg-sidebar flex flex-col h-full shrink-0 md:flex", mobileView === 'list' ? 'flex w-full' : 'hidden')}>
         
         {/* Hub Header */}
         <div className="p-3.5 border-b border-border/40 flex flex-col gap-2 shrink-0">
@@ -1185,11 +1188,19 @@ export default function TeamChatPage() {
       </div>
 
       {/* Main Chat Feed */}
-      <div className="flex-1 flex overflow-hidden relative h-full">
+      <div className={cn("flex-1 flex overflow-hidden relative h-full", mobileView === 'chat' ? 'flex' : 'hidden md:flex')}>
         <div className="flex-1 flex flex-col h-full bg-[#fafafa] dark:bg-[#161616] overflow-hidden">
           
           {/* Header */}
-          <div className="h-14 border-b border-border/50 bg-background/50 px-6 flex items-center justify-between shrink-0">
+          <div className="h-14 border-b border-border/50 bg-background/50 px-4 md:px-6 flex items-center shrink-0 gap-2 w-full">
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="md:hidden w-8 h-8 rounded-md hover:bg-muted text-muted-foreground shrink-0"
+              onClick={() => setMobileView('list')}
+            >
+              <ArrowLeft className="w-4 h-4" />
+            </Button>
             {activeChat.type === 'dm' && activeFriend ? (
               <div className="flex items-center justify-between w-full">
                 <div className="flex items-center gap-3">
@@ -1701,7 +1712,7 @@ export default function TeamChatPage() {
               animate={{ width: 340, opacity: 1 }}
               exit={{ width: 0, opacity: 0 }}
               transition={{ duration: 0.15 }}
-              className="h-full border-l border-border/60 bg-[#fbfbfb] dark:bg-[#1a1a1a] flex flex-col overflow-hidden shrink-0 z-10"
+              className="h-full border-l border-border/60 bg-[#fbfbfb] dark:bg-[#1a1a1a] flex flex-col overflow-hidden shrink-0 z-10 max-md:fixed max-md:right-0 max-md:top-0 max-md:w-full max-md:h-full max-md:shadow-2xl"
             >
               {/* Thread Header */}
               <div className="h-14 border-b border-border/50 bg-background/50 px-4 flex items-center justify-between shrink-0">

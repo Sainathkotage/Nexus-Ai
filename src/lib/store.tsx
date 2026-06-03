@@ -535,8 +535,17 @@ const WorkspaceContext = createContext<WorkspaceState | undefined>(undefined);
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // Navigation
   const [activePage, setActivePage] = useState<PageId>('dashboard');
-  const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
-  const [rightSidebarOpen, setRightSidebarOpen] = useState(true);
+  const [leftSidebarOpen, setLeftSidebarOpen] = useState(false);
+  const [rightSidebarOpen, setRightSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      if (window.innerWidth >= 1024) {
+        setLeftSidebarOpen(true);
+        setRightSidebarOpen(true);
+      }
+    }
+  }, []);
 
   // Connectivity
   const [isOnline, setIsOnline] = useState(true);

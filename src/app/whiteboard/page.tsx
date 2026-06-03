@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { useWorkspace } from '@/lib/store';
+import { usePopup } from '@/lib/popup-context';
 import { Button } from '@/components/ui/button';
 import { 
   Palette, Type, Square, Circle as CircleIcon, StickyNote, 
@@ -43,6 +44,7 @@ const COLOR_PALETTE = [
 
 export default function WhiteboardPage() {
   const { setActivePage } = useWorkspace();
+  const { confirm, prompt } = usePopup();
   const [tool, setTool] = useState<Tool>('select');
   const [selectedColor, setSelectedColor] = useState(COLOR_PALETTE[5]); // Default to Slate Dark
   
@@ -381,11 +383,11 @@ export default function WhiteboardPage() {
   };
 
   // Edit element labels (sticky/text nodes)
-  const handleDoubleClick = (id: string, text?: string) => {
+  const handleDoubleClick = async (id: string, text?: string) => {
     const el = elements.find(e => e.id === id);
     if (el?.isLocked) return;
 
-    const newText = prompt('Edit element label:', text || '');
+    const newText = await prompt('Edit element label:', text || '', 'Edit Label');
     if (newText !== null) {
       const updated = elements.map(el => 
         el.id === id ? { ...el, text: newText } : el
@@ -422,8 +424,9 @@ export default function WhiteboardPage() {
   }, [historyIndex, history, elements, selectedElementId]);
 
   // Clean Board
-  const clearCanvas = () => {
-    if (confirm('Clear entire whiteboard canvas?')) {
+  const clearCanvas = async () => {
+    const isConfirmed = await confirm('Clear entire whiteboard canvas?', 'Clear Canvas');
+    if (isConfirmed) {
       pushHistory([]);
       setSelectedElementId(null);
       toast.success('Canvas cleared');

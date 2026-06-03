@@ -8,6 +8,7 @@ import { CloudUpload, CheckCircle2, File, Loader2 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useWorkspace } from '@/lib/store';
 import { DocumentFile } from '@/types';
+import { usePopup } from '@/lib/popup-context';
 
 interface UploadZoneProps {
   open: boolean;
@@ -20,18 +21,19 @@ export function UploadZone({ open, onOpenChange }: UploadZoneProps) {
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { addDocument, user } = useWorkspace();
+  const { alert } = usePopup();
 
   const processFile = async (file: File) => {
     const isPDF = file.name.toLowerCase().endsWith('.pdf');
     const isTXT = file.name.toLowerCase().endsWith('.txt');
     if (!isPDF && !isTXT) {
-      alert('Unsupported file type. Please upload a PDF or TXT file.');
+      await alert('Unsupported file type. Please upload a PDF or TXT file.');
       return;
     }
 
     const MAX_SIZE = 15 * 1024 * 1024;
     if (file.size > MAX_SIZE) {
-      alert('File is too large. Maximum size allowed is 15MB.');
+      await alert('File is too large. Maximum size allowed is 15MB.');
       return;
     }
 
@@ -101,7 +103,7 @@ export function UploadZone({ open, onOpenChange }: UploadZoneProps) {
     } catch (error) {
       console.error(error);
       setIsUploading(false);
-      alert('Upload failed. Please try again.');
+      await alert('Upload failed. Please try again.');
     }
   };
 

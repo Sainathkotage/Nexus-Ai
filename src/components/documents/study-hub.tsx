@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { cn } from '@/lib/utils';
 import { useWorkspace } from '@/lib/store';
 import { DocumentFile } from '@/types';
+import { usePopup } from '@/lib/popup-context';
 import { 
   Play, Pause, RotateCcw, Shuffle, Sparkles, Check, X, ArrowRight, 
   Lightbulb, Volume2, HelpCircle, FileText, Calendar, Layout, User, 
@@ -24,6 +25,7 @@ type StudyFormat = 'infographic' | 'podcast' | 'video-overview' | 'flashcards' |
 
 export function StudyHub({ document }: StudyHubProps) {
   const { workspace } = useWorkspace();
+  const { confirm } = usePopup();
   const [activeFormat, setActiveFormat] = useState<StudyFormat | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingStep, setLoadingStep] = useState('');
@@ -101,8 +103,8 @@ export function StudyHub({ document }: StudyHubProps) {
     }
   };
 
-  const handleReset = (format: StudyFormat) => {
-    if (confirm(`Are you sure you want to regenerate this ${format.replace('-', ' ')}?`)) {
+  const handleReset = async (format: StudyFormat) => {
+    if (await confirm(`Are you sure you want to regenerate this ${format.replace('-', ' ')}?`)) {
       localStorage.removeItem(`nexus_study_${document.id}_${format}`);
       setStudyData(prev => {
         const copy = { ...prev };

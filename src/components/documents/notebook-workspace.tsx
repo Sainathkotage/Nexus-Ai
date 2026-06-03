@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useWorkspace, encryptMessage, decryptMessage } from '@/lib/store';
 import { DocumentFile } from '@/types';
+import { usePopup } from '@/lib/popup-context';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -28,6 +29,7 @@ type ResourceFormat = 'faq' | 'briefing' | 'study-guide' | 'timeline';
 
 export function NotebookWorkspace({ document, onClose }: NotebookWorkspaceProps) {
   const { deleteDocument, workspace, user } = useWorkspace();
+  const { confirm } = usePopup();
   const [activeTab, setActiveTab] = useState<TabType>('resources');
   
   // Left side state
@@ -235,8 +237,8 @@ export function NotebookWorkspace({ document, onClose }: NotebookWorkspaceProps)
     }
   };
 
-  const clearChatHistory = () => {
-    if (confirm('Clear chat history for this document?')) {
+  const clearChatHistory = async () => {
+    if (await confirm('Clear chat history for this document?')) {
       const initial = [
         {
           role: 'assistant' as const,
@@ -379,8 +381,8 @@ export function NotebookWorkspace({ document, onClose }: NotebookWorkspaceProps)
             variant="outline" 
             size="icon" 
             className="h-8 w-8 hover:bg-destructive/10 hover:text-destructive border-border/60"
-            onClick={() => {
-              if (confirm('Are you sure you want to delete this document from your workspace?')) {
+            onClick={async () => {
+              if (await confirm('Are you sure you want to delete this document from your workspace?')) {
                 deleteDocument(document.id);
                 onClose();
               }
@@ -731,8 +733,8 @@ export function NotebookWorkspace({ document, onClose }: NotebookWorkspaceProps)
                               <Button 
                                 variant="outline" 
                                 size="sm" 
-                                onClick={() => {
-                                  if (confirm(`Regenerate this ${activeResource.replace('-', ' ')} resource?`)) {
+                                onClick={async () => {
+                                  if (await confirm(`Regenerate this ${activeResource.replace('-', ' ')} resource?`)) {
                                     handleGenerateResource(activeResource);
                                   }
                                 }}
@@ -985,6 +987,7 @@ export function NotebookWorkspace({ document, onClose }: NotebookWorkspaceProps)
 
 // ── PRACTICE HUB INTERNAL COMPONENT ─────────────────────────────
 function PracticeHubSection({ document, workspaceId }: { document: DocumentFile; workspaceId?: string }) {
+  const { confirm } = usePopup();
   const [subTab, setSubTab] = useState<'cards' | 'quiz'>('cards');
   const [loading, setLoading] = useState(false);
   const [loadingStep, setLoadingStep] = useState('');
@@ -1076,8 +1079,8 @@ function PracticeHubSection({ document, workspaceId }: { document: DocumentFile;
           <Button 
             variant="outline" 
             size="sm" 
-            onClick={() => {
-              if (confirm('Regenerate these practice items?')) handleGenerate();
+            onClick={async () => {
+              if (await confirm('Regenerate these practice items?')) handleGenerate();
             }}
             className="h-6 text-[9px] border-dashed"
           >
@@ -1371,6 +1374,7 @@ function QuizSubView({ data }: { data: any }) {
 
 // ── TABLE EXTRACTOR SECTION ──────────────────────────────────
 function TableSection({ document, workspaceId }: { document: DocumentFile; workspaceId?: string }) {
+  const { confirm } = usePopup();
   const [loading, setLoading] = useState(false);
   const [loadingStep, setLoadingStep] = useState('');
   const [tableData, setTableData] = useState<any>(null);
@@ -1445,8 +1449,8 @@ function TableSection({ document, workspaceId }: { document: DocumentFile; works
           <Button 
             variant="outline" 
             size="sm" 
-            onClick={() => {
-              if (confirm('Regenerate the extracted tables?')) handleGenerate();
+            onClick={async () => {
+              if (await confirm('Regenerate the extracted tables?')) handleGenerate();
             }}
             className="h-8 text-xs border-dashed"
           >

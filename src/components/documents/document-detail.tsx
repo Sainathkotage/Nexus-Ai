@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import { useWorkspace } from '@/lib/store';
+import { usePopup } from '@/lib/popup-context';
 
 interface DocumentDetailProps {
   document: DocumentFile | null;
@@ -26,6 +27,7 @@ interface DocumentDetailProps {
 
 export function DocumentDetail({ document, onClose }: DocumentDetailProps) {
   const { deleteDocument, setActivePage } = useWorkspace();
+  const { confirm } = usePopup();
 
   const handleAiAction = (action: string) => {
     if (!document) return;
@@ -68,9 +70,10 @@ export function DocumentDetail({ document, onClose }: DocumentDetailProps) {
               <Button 
                 variant="outline" 
                 size="icon" 
-                className="h-8 w-8 rounded-full hover:bg-destructive/10 hover:text-destructive transition-colors border-border"
-                onClick={() => {
-                  if (confirm("Are you sure you want to delete this document?")) {
+                className="h-8 w-8 rounded-full hover:bg-destructive/10 hover:text-destructive transition-colors border-border cursor-pointer"
+                onClick={async () => {
+                  const isConfirmed = await confirm("Are you sure you want to delete this document?", "Delete Document");
+                  if (isConfirmed) {
                     deleteDocument(document.id);
                   }
                 }}

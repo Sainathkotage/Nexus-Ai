@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useWorkspace } from '@/lib/store';
+import { usePopup } from '@/lib/popup-context';
 import { 
   Settings, User, Bell, Palette, Shield, CreditCard, Plug, Users, 
   Key, ArrowRight, ShieldCheck, Mail, Database, Globe, Check, AlertTriangle, 
@@ -86,6 +87,7 @@ export default function SettingsPage() {
     deleteWorkspace,
     allUsers,
   } = useWorkspace();
+  const { confirm, prompt } = usePopup();
   const [activeSection, setActiveSection] = useState('general');
 
   const sections = [
@@ -356,13 +358,13 @@ export default function SettingsPage() {
     setAuditLogs(prev => [newAudit, ...prev]);
   };
 
-  // Remove workspace seat
   const handleRemoveMember = async (id: string, name: string) => {
     if (user && id === user.id) {
       toast.error('Cannot remove the workspace owner.');
       return;
     }
-    if (confirm(`Are you sure you want to remove ${name} from this workspace?`)) {
+    const isConfirmed = await confirm(`Are you sure you want to remove ${name} from this workspace?`, "Remove Member");
+    if (isConfirmed) {
       const success = await removeWorkspaceMember(id);
       if (success) {
         setWorkspaceMembers(prev => {
@@ -379,7 +381,8 @@ export default function SettingsPage() {
       toast.error('Cannot ban the workspace owner.');
       return;
     }
-    if (confirm(`Are you sure you want to BAN ${name} from this workspace? They will be immediately kicked out and will not be able to re-join.`)) {
+    const isConfirmed = await confirm(`Are you sure you want to BAN ${name} from this workspace? They will be immediately kicked out and will not be able to re-join.`, "Ban Member");
+    if (isConfirmed) {
       const success = await banWorkspaceMember(id);
       if (success) {
         setWorkspaceMembers(prev => prev.map(m => m.id === id ? { ...m, status: 'Banned' } : m));
@@ -388,7 +391,8 @@ export default function SettingsPage() {
   };
 
   const handleUnbanMember = async (id: string, name: string) => {
-    if (confirm(`Are you sure you want to UNBAN ${name}? They will be able to join the workspace again.`)) {
+    const isConfirmed = await confirm(`Are you sure you want to UNBAN ${name}? They will be able to join the workspace again.`, "Unban Member");
+    if (isConfirmed) {
       const success = await unbanWorkspaceMember(id);
       if (success) {
         setWorkspaceMembers(prev => prev.map(m => m.id === id ? { ...m, status: 'Active' } : m));
@@ -632,7 +636,11 @@ export default function SettingsPage() {
                       variant="destructive"
                       className="bg-red-600 hover:bg-red-700 text-white font-semibold text-xs h-8 px-4 shrink-0"
                       onClick={async () => {
-                        const confirmName = prompt(`Are you sure you want to delete this workspace? Type the workspace name "${workspace.name}" to confirm:`);
+                        const confirmName = await prompt(
+                          `Are you sure you want to delete this workspace? Type the workspace name "${workspace.name}" to confirm:`,
+                          '',
+                          'Delete Workspace'
+                        );
                         if (confirmName === workspace.name) {
                           const success = await deleteWorkspace(workspace.id);
                           if (success) {

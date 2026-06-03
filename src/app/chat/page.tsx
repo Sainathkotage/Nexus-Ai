@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { useWorkspace } from '@/lib/store';
+import { usePopup } from '@/lib/popup-context';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   MessageSquare, Plus, Send, Sparkles, Paperclip, Trash2, FileText, CheckCircle2, ChevronRight, Check, Menu, Mic
@@ -28,6 +29,7 @@ export default function ChatPage() {
     workspace,
     trackAiUsage
   } = useWorkspace();
+  const { confirm } = usePopup();
   
   const [inputValue, setInputValue] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -220,9 +222,10 @@ export default function ChatPage() {
     toast.success('New conversation started');
   };
 
-  const handleDeleteChat = (e: React.MouseEvent, id: string) => {
+  const handleDeleteChat = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    if (confirm('Are you sure you want to delete this conversation?')) {
+    const isConfirmed = await confirm('Are you sure you want to delete this conversation?', 'Delete Conversation');
+    if (isConfirmed) {
       deleteConversation(id);
       toast.success('Conversation deleted');
     }

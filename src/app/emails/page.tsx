@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useWorkspace } from '@/lib/store';
+import { usePopup } from '@/lib/popup-context';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Mail, Search, Star, Send, Inbox, Edit3, 
@@ -30,6 +31,7 @@ export default function EmailsPage() {
     syncInboundEmails,
     user,
   } = useWorkspace();
+  const { confirm } = usePopup();
 
   const [activeTab, setActiveTab] = useState<'inbox' | 'drafts' | 'sent'>('inbox');
   const [selectedEmailId, setSelectedEmailId] = useState<string | null>(null);
@@ -118,9 +120,10 @@ export default function EmailsPage() {
     toast.success(`Approved and sent to ${selectedEmail.toName}`);
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!selectedEmail) return;
-    if (confirm('Are you sure you want to discard this email draft?')) {
+    const isConfirmed = await confirm('Are you sure you want to discard this email draft?', 'Discard Draft');
+    if (isConfirmed) {
       const currentId = selectedEmail.id;
       deleteEmail(currentId);
       setSelectedEmailId(null);

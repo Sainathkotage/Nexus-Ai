@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useWorkspace } from '@/lib/store';
+import { usePopup } from '@/lib/popup-context';
 import { Deal } from '@/types';
 import { 
   BarChart3, Plus, Search, DollarSign, TrendingUp, Briefcase, 
@@ -29,6 +30,7 @@ const STAGES: { id: Stage; label: string; color: string; bg: string }[] = [
 
 export default function CRMPage() {
   const { setActivePage, deals, updateDealStage, addDeal, deleteDeal, selectedDealId, setSelectedDealId } = useWorkspace();
+  const { confirm } = usePopup();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const handleWheel = (e: React.WheelEvent) => {
@@ -100,7 +102,8 @@ export default function CRMPage() {
   };
 
   const handleDeleteDeal = async (id: string) => {
-    if (confirm('Are you sure you want to delete this CRM deal?')) {
+    const isConfirmed = await confirm('Are you sure you want to delete this CRM deal?', 'Delete CRM Deal');
+    if (isConfirmed) {
       await deleteDeal(id);
       toast.info('Deal removed from pipeline');
     }

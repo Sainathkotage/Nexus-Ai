@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useWorkspace, decryptMessage, encryptMessage } from '@/lib/store';
+import { usePopup } from '@/lib/popup-context';
 import { supabase } from '@/lib/supabase';
 import { Person, ChatMessage, Channel, ChannelMessage, MessageReaction, MessageRead } from '@/types';
 import { 
@@ -55,6 +56,7 @@ export default function TeamChatPage() {
     setActiveDmUserId,
     clearMentionBadge
   } = useWorkspace();
+  const { confirm } = usePopup();
 
   if (!workspace) {
     return (
@@ -594,36 +596,34 @@ export default function TeamChatPage() {
     setEditBuffer('');
   };
 
-  // Delete message
   const triggerDelete = async (messageId: string) => {
+    const isConfirmed = await confirm('Delete this message permanently?', 'Delete Message');
+    if (!isConfirmed) return;
+
     if (activeChat.type === 'channel') {
-      if (confirm('Delete this message permanently?')) {
-        deleteChannelMessage(activeChat.id, messageId);
-        toast.success('Message deleted.');
-      }
+      deleteChannelMessage(activeChat.id, messageId);
+      toast.success('Message deleted.');
     } else {
-      if (confirm('Delete this message permanently?')) {
-        try {
-          const { error } = await supabase
-            .from('direct_messages')
-            .delete()
-            .eq('id', messageId);
-          if (error) throw error;
-          
-          setTeamMessages(prev => {
-            const currentDMs = prev[activeChat.id] || [];
-            return {
-              ...prev,
-              [activeChat.id]: currentDMs.filter(m => m.id !== messageId)
-            };
-          });
-          toast.success('Message deleted.');
+      try {
+        const { error } = await supabase
+          .from('direct_messages')
+          .delete()
+          .eq('id', messageId);
+        if (error) throw error;
+        
+        setTeamMessages(prev => {
+          const currentDMs = prev[activeChat.id] || [];
+          return {
+            ...prev,
+            [activeChat.id]: currentDMs.filter(m => m.id !== messageId)
+          };
+        });
+        toast.success('Message deleted.');
         } catch (err: any) {
           toast.error('Failed to delete message.');
           console.error(err);
         }
       }
-    }
   };
 
   // Star mapping helper for headers

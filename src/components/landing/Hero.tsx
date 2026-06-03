@@ -14,7 +14,7 @@ export function Hero({ onStart }: { onStart?: (e: React.MouseEvent) => void }) {
           <div className="inline-flex items-center gap-3 mb-10 animate-fade-in-up">
             <span className="h-px w-10 bg-ink-400" />
             <span className="text-[11px] font-semibold uppercase tracking-[0.35em] text-ink-500 font-sans">
-              Est. 2024 · AI Workspace
+              Est. 2026 · AI Workspace
             </span>
             <span className="h-px w-10 bg-ink-400" />
           </div>

@@ -200,33 +200,33 @@ export default function TeamChatPage() {
 
   const handleWav2Vec2ResultRef = useRef<any>(null);
 
-  // Pre-initialize Wav2Vec2 Web Worker on mount to download and cache model in background
+  // Pre-initialize Whisper Web Worker on mount to download and cache model in background
   useEffect(() => {
     if (typeof window === 'undefined') return;
     
     if (!wav2vec2WorkerRef.current) {
-      console.log("Pre-loading Wav2Vec2 Web Worker...");
-      const worker = new Worker('/wav2vec2-worker.js');
+      console.log("Pre-loading Whisper Web Worker...");
+      const worker = new Worker('/whisper-worker.js');
       
       worker.onmessage = (e) => {
         const { status, message, progress, text } = e.data;
         
         if (status === 'loading') {
-          console.log("Wav2Vec2 worker loading...", message);
+          console.log("Whisper worker loading...", message);
         } else if (status === 'progress') {
           setSttModelProgress(Math.round(progress));
         } else if (status === 'ready') {
           setSttModelProgress(100);
-          console.log("Wav2Vec2 worker ready!");
+          console.log("Whisper worker ready!");
           
           // If the call is already connected, transition to listening
           if (callStateRef.current && callStateRef.current.status === 'connected' && enableSTTRef.current) {
             setSttStatus('listening');
-            toast.success("Wav2Vec2 live transcription ready!");
+            toast.success("Whisper live transcription ready!");
           }
         } else if (status === 'error') {
           setSttStatus('error');
-          console.error("Wav2Vec2 worker error:", message);
+          console.error("Whisper worker error:", message);
         } else if (status === 'result') {
           handleWav2Vec2ResultRef.current?.(text, false);
         } else if (status === 'final-result') {
@@ -324,26 +324,26 @@ export default function TeamChatPage() {
     
     // 1. Initialize Web Worker if not already pre-loaded
     if (!wav2vec2WorkerRef.current) {
-      console.log("Wav2Vec2 worker not loaded. Initializing worker now...");
+      console.log("Whisper worker not loaded. Initializing worker now...");
       setSttStatus('idle');
-      const worker = new Worker('/wav2vec2-worker.js');
+      const worker = new Worker('/whisper-worker.js');
       
       worker.onmessage = (e) => {
         const { status, message, progress, text } = e.data;
         
         if (status === 'loading') {
-          console.log("Wav2Vec2: Loading...", message);
+          console.log("Whisper: Loading...", message);
         } else if (status === 'progress') {
           setSttModelProgress(Math.round(progress));
         } else if (status === 'ready') {
           setSttModelProgress(100);
           if (callStateRef.current && callStateRef.current.status === 'connected' && enableSTTRef.current) {
             setSttStatus('listening');
-            toast.success("Wav2Vec2 live transcription model ready!");
+            toast.success("Whisper live transcription model ready!");
           }
         } else if (status === 'error') {
           setSttStatus('error');
-          toast.error("Wav2Vec2 error: " + message);
+          toast.error("Whisper error: " + message);
         } else if (status === 'result') {
           handleWav2Vec2ResultRef.current?.(text, false);
         } else if (status === 'final-result') {
@@ -427,7 +427,7 @@ export default function TeamChatPage() {
       }
 
     } catch (err) {
-      console.error("Failed to start audio recording for Wav2Vec2:", err);
+      console.error("Failed to start audio recording for Whisper:", err);
       setSttStatus('error');
       toast.error("Microphone access is required for live captions.");
       setEnableSTT(false);
@@ -3107,8 +3107,8 @@ export default function TeamChatPage() {
                                   {sttStatus === 'unsupported' && "Captions Unsupported in this Browser"}
                                   {sttStatus === 'idle' && (
                                     sttModelProgress > 0 && sttModelProgress < 100 
-                                      ? `Loading Wav2Vec2 Model: ${sttModelProgress}%`
-                                      : "Initializing Wav2Vec2..."
+                                      ? `Loading Whisper Model: ${sttModelProgress}%`
+                                      : "Initializing Whisper..."
                                   )}
                                 </span>
                               </div>

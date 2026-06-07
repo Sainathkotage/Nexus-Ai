@@ -739,7 +739,7 @@ export default function CallDiagnostics({
                         "text-zinc-500"
                       )}>
                         {sttStatus === 'idle' && sttModelProgress > 0 && sttModelProgress < 100
-                          ? `LOADING MODEL: ${sttModelProgress}%`
+                          ? `LOADING WHISPER: ${sttModelProgress}%`
                           : sttStatus.toUpperCase()}
                       </span>
                     </div>

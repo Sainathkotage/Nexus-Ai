@@ -1,4 +1,4 @@
-// Web Worker for Wav2Vec2 ASR
+// Web Worker for OpenAI Whisper ASR
 import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2';
 
 // Disable local model loading, fetch from Hugging Face hub
@@ -9,10 +9,10 @@ let transcriber = null;
 // Load the model
 async function initTranscriber() {
   try {
-    self.postMessage({ status: 'loading', message: 'Loading Wav2Vec2 model (~90MB)...' });
+    self.postMessage({ status: 'loading', message: 'Loading Whisper model (~75MB)...' });
     
-    // We use a small, quantized version of Meta's Wav2Vec2: Xenova/wav2vec2-base-960h
-    transcriber = await pipeline('automatic-speech-recognition', 'Xenova/wav2vec2-base-960h', {
+    // We use a small, quantized version of OpenAI's Whisper: Xenova/whisper-tiny.en
+    transcriber = await pipeline('automatic-speech-recognition', 'Xenova/whisper-tiny.en', {
       quantized: true,
       progress_callback: (data) => {
         if (data.status === 'progress') {
@@ -25,9 +25,9 @@ async function initTranscriber() {
       }
     });
 
-    self.postMessage({ status: 'ready', message: 'Wav2Vec2 model loaded successfully!' });
+    self.postMessage({ status: 'ready', message: 'Whisper model loaded successfully!' });
   } catch (err) {
-    console.error('Failed to load Wav2Vec2 model:', err);
+    console.error('Failed to load Whisper model:', err);
     self.postMessage({ status: 'error', message: 'Failed to load model: ' + err.message });
   }
 }
@@ -47,7 +47,7 @@ self.onmessage = async (e) => {
 
   try {
     // Run speech-to-text inference
-    // Wav2Vec2 expects a Float32Array of 16kHz audio sample values
+    // Whisper expects a Float32Array of 16kHz audio sample values
     const output = await transcriber(audioData, {
       chunk_length_s: 30,
       stride_length_s: 5,

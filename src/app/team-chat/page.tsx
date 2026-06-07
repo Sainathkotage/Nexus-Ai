@@ -377,6 +377,26 @@ export default function TeamChatPage() {
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   const [incomingCallOffer, setIncomingCallOffer] = useState<RTCSessionDescriptionInit | null>(null);
   const [activeCallPartnerId, setActiveCallPartnerId] = useState<string | null>(null);
+  const iceCandidatesQueue = useRef<RTCIceCandidateInit[]>([]);
+  const allUsersRef = useRef<Person[]>(allUsers);
+
+  useEffect(() => {
+    allUsersRef.current = allUsers;
+  }, [allUsers]);
+
+  const flushIceCandidatesQueue = async () => {
+    if (pcRef.current && pcRef.current.remoteDescription && iceCandidatesQueue.current.length > 0) {
+      const candidates = [...iceCandidatesQueue.current];
+      iceCandidatesQueue.current = [];
+      for (const candidate of candidates) {
+        try {
+          await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+        } catch (err) {
+          console.error("Error adding queued ICE candidate:", err);
+        }
+      }
+    }
+  };
 
   // Request push permission on load
   useEffect(() => {
@@ -470,7 +490,7 @@ export default function TeamChatPage() {
 
         switch (signalType) {
           case 'offer':
-            const caller = allUsers.find(u => u.id === fromUserId);
+            const caller = allUsersRef.current.find(u => u.id === fromUserId);
             if (caller) {
               setIncomingCallOffer(data);
               setActiveCallPartnerId(fromUserId);
@@ -487,6 +507,7 @@ export default function TeamChatPage() {
           case 'answer':
             if (pcRef.current) {
               await pcRef.current.setRemoteDescription(new RTCSessionDescription(data));
+              await flushIceCandidatesQueue();
               setCallState(prev => prev ? { ...prev, status: 'connected' } : null);
               toast.success("Secure call connected!");
               if (enableSTTRef.current) startTranscription();
@@ -494,11 +515,15 @@ export default function TeamChatPage() {
             break;
 
           case 'ice-candidate':
-            if (pcRef.current && data) {
-              try {
-                await pcRef.current.addIceCandidate(new RTCIceCandidate(data));
-              } catch (err) {
-                console.error("Error adding remote ICE candidate", err);
+            if (data) {
+              if (pcRef.current && pcRef.current.remoteDescription) {
+                try {
+                  await pcRef.current.addIceCandidate(new RTCIceCandidate(data));
+                } catch (err) {
+                  console.error("Error adding remote ICE candidate", err);
+                }
+              } else {
+                iceCandidatesQueue.current.push(data);
               }
             }
             break;
@@ -526,14 +551,16 @@ export default function TeamChatPage() {
             break;
         }
       })
-      .subscribe();
+      .subscribe((status) => {
+        console.log(`Supabase calling channel workspace_calls_${workspace.id} subscription status:`, status);
+      });
 
     callChannelRef.current = callChannel;
 
     return () => {
       supabase.removeChannel(callChannel);
     };
-  }, [user, workspace, allUsers]);
+  }, [user, workspace]);
 
   // Filter approved teammates
   const messagePartnerIds = useMemo(() => Object.keys(teamMessages), [teamMessages]);
@@ -1005,7 +1032,13 @@ export default function TeamChatPage() {
       setLocalStream(stream);
       
       const pc = new RTCPeerConnection({
-        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' },
+          { urls: 'stun:stun3.l.google.com:19302' },
+          { urls: 'stun:stun4.l.google.com:19302' }
+        ]
       });
       pcRef.current = pc;
 
@@ -1082,7 +1115,13 @@ export default function TeamChatPage() {
       setLocalStream(stream);
 
       const pc = new RTCPeerConnection({
-        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' },
+          { urls: 'stun:stun3.l.google.com:19302' },
+          { urls: 'stun:stun4.l.google.com:19302' }
+        ]
       });
       pcRef.current = pc;
 
@@ -1114,6 +1153,7 @@ export default function TeamChatPage() {
       };
 
       await pc.setRemoteDescription(new RTCSessionDescription(incomingCallOffer));
+      await flushIceCandidatesQueue();
       const answer = await pc.createAnswer();
       
       // Inject secure audio codec profile into SDP response
@@ -1164,6 +1204,7 @@ export default function TeamChatPage() {
     setActiveCallPartnerId(null);
     setIsAudioMuted(false);
     setIsVideoMuted(false);
+    iceCandidatesQueue.current = [];
   };
 
   const endCall = () => {

@@ -198,6 +198,46 @@ export default function TeamChatPage() {
     };
   }, []);
 
+  const handleWav2Vec2ResultRef = useRef<any>(null);
+
+  // Pre-initialize Wav2Vec2 Web Worker on mount to download and cache model in background
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    
+    if (!wav2vec2WorkerRef.current) {
+      console.log("Pre-loading Wav2Vec2 Web Worker...");
+      const worker = new Worker('/wav2vec2-worker.js');
+      
+      worker.onmessage = (e) => {
+        const { status, message, progress, text } = e.data;
+        
+        if (status === 'loading') {
+          console.log("Wav2Vec2 worker loading...", message);
+        } else if (status === 'progress') {
+          setSttModelProgress(Math.round(progress));
+        } else if (status === 'ready') {
+          setSttModelProgress(100);
+          console.log("Wav2Vec2 worker ready!");
+          
+          // If the call is already connected, transition to listening
+          if (callStateRef.current && callStateRef.current.status === 'connected' && enableSTTRef.current) {
+            setSttStatus('listening');
+            toast.success("Wav2Vec2 live transcription ready!");
+          }
+        } else if (status === 'error') {
+          setSttStatus('error');
+          console.error("Wav2Vec2 worker error:", message);
+        } else if (status === 'result') {
+          handleWav2Vec2ResultRef.current?.(text, false);
+        } else if (status === 'final-result') {
+          handleWav2Vec2ResultRef.current?.(text, true);
+        }
+      };
+      
+      wav2vec2WorkerRef.current = worker;
+    }
+  }, []);
+
   // Handle call transcription initialization and toggle responses
   useEffect(() => {
     if (callState && callState.status === 'connected') {
@@ -275,12 +315,16 @@ export default function TeamChatPage() {
     }
   };
 
+  // Sync ref to latest callback to avoid stale closures in worker
+  handleWav2Vec2ResultRef.current = handleWav2Vec2Result;
+
   const startTranscription = async () => {
     if (typeof window === 'undefined') return;
     if (!enableSTTRef.current) return;
     
-    // 1. Initialize Web Worker if not already initialized
+    // 1. Initialize Web Worker if not already pre-loaded
     if (!wav2vec2WorkerRef.current) {
+      console.log("Wav2Vec2 worker not loaded. Initializing worker now...");
       setSttStatus('idle');
       const worker = new Worker('/wav2vec2-worker.js');
       
@@ -288,26 +332,33 @@ export default function TeamChatPage() {
         const { status, message, progress, text } = e.data;
         
         if (status === 'loading') {
-          setSttStatus('idle');
           console.log("Wav2Vec2: Loading...", message);
         } else if (status === 'progress') {
-          setSttStatus('idle');
           setSttModelProgress(Math.round(progress));
         } else if (status === 'ready') {
-          setSttStatus('listening');
           setSttModelProgress(100);
-          toast.success("Wav2Vec2 live transcription model ready!");
+          if (callStateRef.current && callStateRef.current.status === 'connected' && enableSTTRef.current) {
+            setSttStatus('listening');
+            toast.success("Wav2Vec2 live transcription model ready!");
+          }
         } else if (status === 'error') {
           setSttStatus('error');
           toast.error("Wav2Vec2 error: " + message);
         } else if (status === 'result') {
-          handleWav2Vec2Result(text, false);
+          handleWav2Vec2ResultRef.current?.(text, false);
         } else if (status === 'final-result') {
-          handleWav2Vec2Result(text, true);
+          handleWav2Vec2ResultRef.current?.(text, true);
         }
       };
       
       wav2vec2WorkerRef.current = worker;
+    }
+
+    // Set initial active state based on model readiness
+    if (sttModelProgress === 100) {
+      setSttStatus('listening');
+    } else {
+      setSttStatus('idle');
     }
 
     // 2. Start audio recording

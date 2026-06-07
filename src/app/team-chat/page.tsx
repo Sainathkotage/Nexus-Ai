@@ -1031,35 +1031,63 @@ export default function TeamChatPage() {
       });
       setLocalStream(stream);
       
+      console.log("Initializing RTCPeerConnection (Caller)...");
       const pc = new RTCPeerConnection({
         iceServers: [
           { urls: 'stun:stun.l.google.com:19302' },
           { urls: 'stun:stun1.l.google.com:19302' },
           { urls: 'stun:stun2.l.google.com:19302' },
           { urls: 'stun:stun3.l.google.com:19302' },
-          { urls: 'stun:stun4.l.google.com:19302' }
+          { urls: 'stun:stun4.l.google.com:19302' },
+          {
+            urls: [
+              'turn:openrelay.metered.ca:80',
+              'turn:openrelay.metered.ca:443',
+              'turn:openrelay.metered.ca:443?transport=tcp'
+            ],
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+          }
         ]
       });
       pcRef.current = pc;
 
       stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
+      pc.onconnectionstatechange = () => {
+        console.log(`WebRTC Connection State changed: ${pc.connectionState}`);
+        if (pc.connectionState === 'connected') {
+          toast.success("WebRTC secure connection established!");
+        }
+        if (pc.connectionState === 'failed') {
+          toast.error("WebRTC connection failed. NAT traversal failed.");
+        }
+      };
+
+      pc.onicegatheringstatechange = () => {
+        console.log(`WebRTC ICE Gathering State: ${pc.iceGatheringState}`);
+      };
+
       pc.onicecandidate = (event) => {
-        if (event.candidate && callChannelRef.current) {
-          callChannelRef.current.send({
-            type: 'broadcast',
-            event: 'signal',
-            payload: {
-              targetUserId: activeFriend.id,
-              fromUserId: user.id,
-              signalType: 'ice-candidate',
-              data: event.candidate
-            }
-          });
+        if (event.candidate) {
+          console.log(`Local ICE Candidate gathered: ${event.candidate.candidate}`);
+          if (callChannelRef.current) {
+            callChannelRef.current.send({
+              type: 'broadcast',
+              event: 'signal',
+              payload: {
+                targetUserId: activeFriend.id,
+                fromUserId: user.id,
+                signalType: 'ice-candidate',
+                data: event.candidate
+              }
+            });
+          }
         }
       };
 
       pc.ontrack = (event) => {
+        console.log("Remote track received:", event.track.kind);
         if (remoteAudioRef.current) {
           remoteAudioRef.current.srcObject = event.streams[0];
         }
@@ -1114,35 +1142,63 @@ export default function TeamChatPage() {
       });
       setLocalStream(stream);
 
+      console.log("Initializing RTCPeerConnection (Callee)...");
       const pc = new RTCPeerConnection({
         iceServers: [
           { urls: 'stun:stun.l.google.com:19302' },
           { urls: 'stun:stun1.l.google.com:19302' },
           { urls: 'stun:stun2.l.google.com:19302' },
           { urls: 'stun:stun3.l.google.com:19302' },
-          { urls: 'stun:stun4.l.google.com:19302' }
+          { urls: 'stun:stun4.l.google.com:19302' },
+          {
+            urls: [
+              'turn:openrelay.metered.ca:80',
+              'turn:openrelay.metered.ca:443',
+              'turn:openrelay.metered.ca:443?transport=tcp'
+            ],
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+          }
         ]
       });
       pcRef.current = pc;
 
       stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
+      pc.onconnectionstatechange = () => {
+        console.log(`WebRTC Connection State changed: ${pc.connectionState}`);
+        if (pc.connectionState === 'connected') {
+          toast.success("WebRTC secure connection established!");
+        }
+        if (pc.connectionState === 'failed') {
+          toast.error("WebRTC connection failed. NAT traversal failed.");
+        }
+      };
+
+      pc.onicegatheringstatechange = () => {
+        console.log(`WebRTC ICE Gathering State: ${pc.iceGatheringState}`);
+      };
+
       pc.onicecandidate = (event) => {
-        if (event.candidate && callChannelRef.current) {
-          callChannelRef.current.send({
-            type: 'broadcast',
-            event: 'signal',
-            payload: {
-              targetUserId: activeCallPartnerId,
-              fromUserId: user.id,
-              signalType: 'ice-candidate',
-              data: event.candidate
-            }
-          });
+        if (event.candidate) {
+          console.log(`Local ICE Candidate gathered: ${event.candidate.candidate}`);
+          if (callChannelRef.current) {
+            callChannelRef.current.send({
+              type: 'broadcast',
+              event: 'signal',
+              payload: {
+                targetUserId: activeCallPartnerId,
+                fromUserId: user.id,
+                signalType: 'ice-candidate',
+                data: event.candidate
+              }
+            });
+          }
         }
       };
 
       pc.ontrack = (event) => {
+        console.log("Remote track received:", event.track.kind);
         if (remoteAudioRef.current) {
           remoteAudioRef.current.srcObject = event.streams[0];
         }

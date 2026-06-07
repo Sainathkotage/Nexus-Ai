@@ -11,7 +11,7 @@ import {
   Paperclip, Phone, Video, Lock, Unlock, Mic, MicOff,
   VideoOff, Shield, PhoneOff, Star, Pin, Smile, Trash2, Edit3,
   Sparkles, FileText, ArrowRight, ArrowLeft, Bell, Volume2, AlertCircle, Plus, Folder, UserPlus,
-  Activity
+  Activity, Subtitles
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -142,7 +142,8 @@ export default function TeamChatPage() {
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
   const callStateRef = useRef<any>(null);
   const enableSTTRef = useRef<boolean>(true);
-  const [transcripts, setTranscripts] = useState<Array<{ senderName: string; text: string; timestamp: string }>>([]);
+  const [transcripts, setTranscripts] = useState<Array<{ senderName: string; text: string; timestamp: string; isFinal?: boolean }>>([]);
+  const [sttStatus, setSttStatus] = useState<'idle' | 'listening' | 'error' | 'unsupported'>('idle');
   
   const [enableSTT, setEnableSTT] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
@@ -199,6 +200,7 @@ export default function TeamChatPage() {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
       console.warn("SpeechRecognition is not supported in this browser.");
+      setSttStatus('unsupported');
       return;
     }
 
@@ -215,6 +217,7 @@ export default function TeamChatPage() {
 
     recognition.onstart = () => {
       isRecognitionActiveRef.current = true;
+      setSttStatus('listening');
     };
 
     recognition.onend = () => {
@@ -224,18 +227,19 @@ export default function TeamChatPage() {
         try {
           recognition.start();
         } catch (e) {}
+      } else {
+        setSttStatus('idle');
       }
     };
 
     recognition.onerror = (event: any) => {
       console.error("SpeechRecognition error:", event.error);
+      setSttStatus('error');
       if (event.error === 'not-allowed') {
         toast.error("Microphone permission denied for captions.");
         setEnableSTT(false);
       }
     };
-
-    let lastFinalText = '';
 
     recognition.onresult = (event: any) => {
       let interimTranscript = '';
@@ -258,14 +262,20 @@ export default function TeamChatPage() {
         const list = [...prev];
         const lastIdx = list.map(e => e.senderName).lastIndexOf('You');
         
-        if (lastIdx !== -1 && list[lastIdx].text === lastFinalText) {
-          list[lastIdx] = { senderName: 'You', text: text.trim(), timestamp: now };
+        if (lastIdx !== -1 && !list[lastIdx].isFinal) {
+          list[lastIdx] = { 
+            senderName: 'You', 
+            text: text.trim(), 
+            timestamp: now, 
+            isFinal: !!finalTranscript 
+          };
         } else {
-          list.push({ senderName: 'You', text: text.trim(), timestamp: now });
-        }
-        
-        if (finalTranscript) {
-          lastFinalText = text.trim();
+          list.push({ 
+            senderName: 'You', 
+            text: text.trim(), 
+            timestamp: now, 
+            isFinal: !!finalTranscript 
+          });
         }
         
         return list;
@@ -291,6 +301,7 @@ export default function TeamChatPage() {
       recognition.start();
     } catch (e) {
       console.error("Error starting SpeechRecognition:", e);
+      setSttStatus('error');
     }
   };
 
@@ -303,6 +314,7 @@ export default function TeamChatPage() {
       recognitionRef.current = null;
     }
     isRecognitionActiveRef.current = false;
+    setSttStatus('idle');
   };
 
   const downloadTranscript = async () => {
@@ -573,10 +585,10 @@ export default function TeamChatPage() {
               const list = [...prev];
               const lastIdx = list.map(e => e.senderName).lastIndexOf(partnerName);
               
-              if (lastIdx !== -1) {
-                list[lastIdx] = { senderName: partnerName, text: data.text, timestamp: partnerNow };
+              if (lastIdx !== -1 && !list[lastIdx].isFinal) {
+                list[lastIdx] = { senderName: partnerName, text: data.text, timestamp: partnerNow, isFinal: !!data.isFinal };
               } else {
-                list.push({ senderName: partnerName, text: data.text, timestamp: partnerNow });
+                list.push({ senderName: partnerName, text: data.text, timestamp: partnerNow, isFinal: !!data.isFinal });
               }
               return list;
             });
@@ -2916,14 +2928,41 @@ export default function TeamChatPage() {
                         )}
 
                         {/* Speech Caption Overlay on Call Feed */}
-                        {enableSTT && transcripts.length > 0 && (
+                        {enableSTT && (
                           <div className="absolute bottom-20 left-4 right-4 bg-black/60 backdrop-blur-md px-4 py-2.5 rounded-xl border border-zinc-800/80 max-w-md mx-auto text-center animate-in fade-in slide-in-from-bottom-2 duration-200 shadow-xl pointer-events-none select-none z-10">
-                            <span className="text-[8px] font-mono font-bold uppercase tracking-wider text-indigo-400 block mb-0.5">
-                              {transcripts[transcripts.length - 1].senderName}
-                            </span>
-                            <p className="text-[11px] text-zinc-200 leading-normal font-medium">
-                              "{transcripts[transcripts.length - 1].text}"
-                            </p>
+                            {transcripts.length > 0 ? (
+                              <>
+                                <span className="text-[8px] font-mono font-bold uppercase tracking-wider text-indigo-400 block mb-0.5">
+                                  {transcripts[transcripts.length - 1].senderName}
+                                </span>
+                                <p className="text-[11px] text-zinc-200 leading-normal font-medium">
+                                  "{transcripts[transcripts.length - 1].text}"
+                                </p>
+                              </>
+                            ) : (
+                              <div className="flex items-center justify-center gap-2 py-1">
+                                <span className="relative flex h-2 w-2">
+                                  {sttStatus === 'listening' ? (
+                                    <>
+                                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                                    </>
+                                  ) : sttStatus === 'error' ? (
+                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                                  ) : sttStatus === 'unsupported' ? (
+                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                                  ) : (
+                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-zinc-500 animate-pulse"></span>
+                                  )}
+                                </span>
+                                <span className="text-[9px] text-zinc-300 font-medium font-mono uppercase tracking-wider">
+                                  {sttStatus === 'listening' && "Captions Active: Speak now..."}
+                                  {sttStatus === 'error' && "Captions Error: Check microphone"}
+                                  {sttStatus === 'unsupported' && "Captions Unsupported in this Browser"}
+                                  {sttStatus === 'idle' && "Captions Starting..."}
+                                </span>
+                              </div>
+                            )}
                           </div>
                         )}
 
@@ -3043,6 +3082,18 @@ export default function TeamChatPage() {
 
                     <Button
                       type="button"
+                      onClick={() => setEnableSTT(prev => !prev)}
+                      className={cn(
+                        "w-12 h-12 rounded-full flex items-center justify-center shadow-lg border border-zinc-800 transition-colors",
+                        enableSTT ? "bg-indigo-600 hover:bg-indigo-700 text-white" : "bg-zinc-900 hover:bg-zinc-800 text-zinc-400"
+                      )}
+                      title={enableSTT ? "Disable Live Captions" : "Enable Live Captions"}
+                    >
+                      <Subtitles className="w-5 h-5" />
+                    </Button>
+
+                    <Button
+                      type="button"
                       onClick={endCall}
                       className="w-12 h-12 rounded-full bg-red-600 hover:bg-red-700 text-white flex items-center justify-center shadow-lg border border-red-500/20 transition-colors"
                     >
@@ -3067,6 +3118,7 @@ export default function TeamChatPage() {
                   setEnableSTT={setEnableSTT}
                   autoSaveTranscripts={autoSaveTranscripts}
                   setAutoSaveTranscripts={setAutoSaveTranscripts}
+                  sttStatus={sttStatus}
                 />
               )}
 

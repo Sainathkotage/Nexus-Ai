@@ -15,12 +15,13 @@ interface CallDiagnosticsProps {
   callType: 'audio' | 'video';
   callStatus: 'connected' | 'dialing' | 'ringing' | 'ended';
   onClose: () => void;
-  transcripts: Array<{ senderName: string; text: string; timestamp: string }>;
+  transcripts: Array<{ senderName: string; text: string; timestamp: string; isFinal?: boolean }>;
   onSaveTranscript: () => void;
   enableSTT: boolean;
   setEnableSTT: (val: boolean) => void;
   autoSaveTranscripts: boolean;
   setAutoSaveTranscripts: (val: boolean) => void;
+  sttStatus?: 'idle' | 'listening' | 'error' | 'unsupported';
 }
 
 type NetworkProfileType = 'fibre' | 'lte' | '3g' | '2g';
@@ -36,7 +37,8 @@ export default function CallDiagnostics({
   enableSTT,
   setEnableSTT,
   autoSaveTranscripts,
-  setAutoSaveTranscripts
+  setAutoSaveTranscripts,
+  sttStatus = 'idle'
 }: CallDiagnosticsProps) {
   const [networkProfile, setNetworkProfile] = useState<NetworkProfileType>('fibre');
   const [activeTab, setActiveTab] = useState<'metrics' | 'pipeline' | 'transcripts'>('metrics');
@@ -717,7 +719,28 @@ export default function CallDiagnostics({
             {/* Transcript Logs */}
             <div className="flex-1 min-h-[160px] bg-zinc-950/60 border border-zinc-900 rounded-xl p-3 flex flex-col overflow-hidden shadow-inner">
               <div className="flex items-center justify-between mb-2 pb-1.5 border-b border-zinc-900 shrink-0">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Live Captions Stream</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Live Captions Stream</span>
+                  {enableSTT && (
+                    <div className="flex items-center gap-1.5 px-1.5 py-0.5 rounded bg-zinc-900 border border-zinc-800/80 text-[7.5px] font-mono font-bold tracking-wide select-none">
+                      <span className={cn(
+                        "w-1 h-1 rounded-full",
+                        sttStatus === 'listening' ? "bg-emerald-500 animate-pulse" :
+                        sttStatus === 'error' ? "bg-amber-500" :
+                        sttStatus === 'unsupported' ? "bg-red-500" :
+                        "bg-zinc-500"
+                      )} />
+                      <span className={cn(
+                        sttStatus === 'listening' ? "text-emerald-400" :
+                        sttStatus === 'error' ? "text-amber-400" :
+                        sttStatus === 'unsupported' ? "text-red-400" :
+                        "text-zinc-500"
+                      )}>
+                        {sttStatus.toUpperCase()}
+                      </span>
+                    </div>
+                  )}
+                </div>
                 {transcripts.length > 0 && (
                   <Button
                     type="button"

@@ -1242,6 +1242,32 @@ export default function TeamChatPage() {
   };
 
   const cleanupCallState = () => {
+    stopTranscription();
+
+    if (transcripts.length > 0) {
+      try {
+        const historyStr = localStorage.getItem('nexus_transcripts_archive');
+        const history = historyStr ? JSON.parse(historyStr) : [];
+        const partnerName = callStateRef.current?.friend?.name || 'Teammate';
+        const session = {
+          id: `session-${Date.now()}`,
+          date: new Date().toISOString(),
+          partner: partnerName,
+          transcripts: transcripts
+        };
+        history.unshift(session);
+        localStorage.setItem('nexus_transcripts_archive', JSON.stringify(history.slice(0, 50)));
+      } catch (e) {
+        console.error("Failed to archive transcripts:", e);
+      }
+
+      if (autoSaveTranscripts) {
+        downloadTranscript();
+      }
+    }
+
+    setTranscripts([]);
+
     if (localStream) {
       localStream.getTracks().forEach(track => track.stop());
       setLocalStream(null);

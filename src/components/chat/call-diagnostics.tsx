@@ -22,6 +22,7 @@ interface CallDiagnosticsProps {
   autoSaveTranscripts: boolean;
   setAutoSaveTranscripts: (val: boolean) => void;
   sttStatus?: 'idle' | 'listening' | 'error' | 'unsupported';
+  sttModelProgress?: number;
 }
 
 type NetworkProfileType = 'fibre' | 'lte' | '3g' | '2g';
@@ -38,7 +39,8 @@ export default function CallDiagnostics({
   setEnableSTT,
   autoSaveTranscripts,
   setAutoSaveTranscripts,
-  sttStatus = 'idle'
+  sttStatus = 'idle',
+  sttModelProgress = 0
 }: CallDiagnosticsProps) {
   const [networkProfile, setNetworkProfile] = useState<NetworkProfileType>('fibre');
   const [activeTab, setActiveTab] = useState<'metrics' | 'pipeline' | 'transcripts'>('metrics');
@@ -736,7 +738,9 @@ export default function CallDiagnostics({
                         sttStatus === 'unsupported' ? "text-red-400" :
                         "text-zinc-500"
                       )}>
-                        {sttStatus.toUpperCase()}
+                        {sttStatus === 'idle' && sttModelProgress > 0 && sttModelProgress < 100
+                          ? `LOADING MODEL: ${sttModelProgress}%`
+                          : sttStatus.toUpperCase()}
                       </span>
                     </div>
                   )}

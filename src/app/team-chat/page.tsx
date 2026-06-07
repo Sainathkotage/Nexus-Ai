@@ -144,6 +144,14 @@ export default function TeamChatPage() {
   const enableSTTRef = useRef<boolean>(true);
   const [transcripts, setTranscripts] = useState<Array<{ senderName: string; text: string; timestamp: string; isFinal?: boolean }>>([]);
   const [sttStatus, setSttStatus] = useState<'idle' | 'listening' | 'error' | 'unsupported'>('idle');
+  const [sttModelProgress, setSttModelProgress] = useState<number>(0);
+
+  // Refs for local Wav2Vec2 transcription
+  const wav2vec2WorkerRef = useRef<Worker | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const audioInputSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const audioProcessorRef = useRef<ScriptProcessorNode | null>(null);
+  const audioStreamRef = useRef<MediaStream | null>(null);
   
   const [enableSTT, setEnableSTT] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
@@ -179,6 +187,17 @@ export default function TeamChatPage() {
     localStorage.setItem('nexus_auto_save_transcripts', autoSaveTranscripts.toString());
   }, [autoSaveTranscripts]);
 
+  // Clean up audio streams and web worker on unmount
+  useEffect(() => {
+    return () => {
+      stopTranscription();
+      if (wav2vec2WorkerRef.current) {
+        wav2vec2WorkerRef.current.terminate();
+        wav2vec2WorkerRef.current = null;
+      }
+    };
+  }, []);
+
   // Handle call transcription initialization and toggle responses
   useEffect(() => {
     if (callState && callState.status === 'connected') {
@@ -193,127 +212,203 @@ export default function TeamChatPage() {
     }
   }, [callState?.status, enableSTT]);
 
-  const startTranscription = () => {
+  const sendAudioToWorker = (bufferList: Float32Array[], isFinal: boolean) => {
+    if (!wav2vec2WorkerRef.current || bufferList.length === 0) return;
+
+    let totalLength = 0;
+    for (const buf of bufferList) {
+      totalLength += buf.length;
+    }
+
+    const mergedBuffer = new Float32Array(totalLength);
+    let offset = 0;
+    for (const buf of bufferList) {
+      mergedBuffer.set(buf, offset);
+      offset += buf.length;
+    }
+
+    wav2vec2WorkerRef.current.postMessage({
+      audioData: mergedBuffer,
+      isFinal
+    });
+  };
+
+  const handleWav2Vec2Result = (text: string, isFinal: boolean) => {
+    if (!text.trim()) return;
+
+    const now = format(new Date(), 'HH:mm:ss');
+    
+    setTranscripts(prev => {
+      const list = [...prev];
+      const lastIdx = list.map(e => e.senderName).lastIndexOf('You');
+      
+      if (lastIdx !== -1 && !list[lastIdx].isFinal) {
+        list[lastIdx] = { 
+          senderName: 'You', 
+          text: text.trim(), 
+          timestamp: now, 
+          isFinal: isFinal 
+        };
+      } else {
+        list.push({ 
+          senderName: 'You', 
+          text: text.trim(), 
+          timestamp: now, 
+          isFinal: isFinal 
+        });
+      }
+      return list;
+    });
+
+    // Broadcast transcription signal to the coworker
+    if (callChannelRef.current && activeCallPartnerId) {
+      callChannelRef.current.send({
+        type: 'broadcast',
+        event: 'signal',
+        payload: {
+          targetUserId: activeCallPartnerId,
+          fromUserId: user?.id,
+          signalType: 'transcript',
+          data: { text: text.trim(), timestamp: now, isFinal: isFinal }
+        }
+      });
+    }
+  };
+
+  const startTranscription = async () => {
     if (typeof window === 'undefined') return;
     if (!enableSTTRef.current) return;
     
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      console.warn("SpeechRecognition is not supported in this browser.");
-      setSttStatus('unsupported');
-      return;
-    }
-
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.abort();
-      } catch (e) {}
-    }
-
-    const recognition = new SpeechRecognition();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = 'en-US';
-
-    recognition.onstart = () => {
-      isRecognitionActiveRef.current = true;
-      setSttStatus('listening');
-    };
-
-    recognition.onend = () => {
-      isRecognitionActiveRef.current = false;
-      // Restart if call is connected
-      if (callStateRef.current && callStateRef.current.status === 'connected' && enableSTTRef.current) {
-        try {
-          recognition.start();
-        } catch (e) {}
-      } else {
-        setSttStatus('idle');
-      }
-    };
-
-    recognition.onerror = (event: any) => {
-      console.error("SpeechRecognition error:", event.error);
-      setSttStatus('error');
-      if (event.error === 'not-allowed') {
-        toast.error("Microphone permission denied for captions.");
-        setEnableSTT(false);
-      }
-    };
-
-    recognition.onresult = (event: any) => {
-      let interimTranscript = '';
-      let finalTranscript = '';
-
-      for (let i = event.resultIndex; i < event.results.length; ++i) {
-        if (event.results[i].isFinal) {
-          finalTranscript += event.results[i][0].transcript;
-        } else {
-          interimTranscript += event.results[i][0].transcript;
-        }
-      }
-
-      const text = finalTranscript || interimTranscript;
-      if (!text.trim()) return;
-
-      const now = format(new Date(), 'HH:mm:ss');
+    // 1. Initialize Web Worker if not already initialized
+    if (!wav2vec2WorkerRef.current) {
+      setSttStatus('idle');
+      const worker = new Worker('/wav2vec2-worker.js');
       
-      setTranscripts(prev => {
-        const list = [...prev];
-        const lastIdx = list.map(e => e.senderName).lastIndexOf('You');
+      worker.onmessage = (e) => {
+        const { status, message, progress, text } = e.data;
         
-        if (lastIdx !== -1 && !list[lastIdx].isFinal) {
-          list[lastIdx] = { 
-            senderName: 'You', 
-            text: text.trim(), 
-            timestamp: now, 
-            isFinal: !!finalTranscript 
-          };
-        } else {
-          list.push({ 
-            senderName: 'You', 
-            text: text.trim(), 
-            timestamp: now, 
-            isFinal: !!finalTranscript 
-          });
+        if (status === 'loading') {
+          setSttStatus('idle');
+          console.log("Wav2Vec2: Loading...", message);
+        } else if (status === 'progress') {
+          setSttStatus('idle');
+          setSttModelProgress(Math.round(progress));
+        } else if (status === 'ready') {
+          setSttStatus('listening');
+          setSttModelProgress(100);
+          toast.success("Wav2Vec2 live transcription model ready!");
+        } else if (status === 'error') {
+          setSttStatus('error');
+          toast.error("Wav2Vec2 error: " + message);
+        } else if (status === 'result') {
+          handleWav2Vec2Result(text, false);
+        } else if (status === 'final-result') {
+          handleWav2Vec2Result(text, true);
         }
-        
-        return list;
-      });
+      };
+      
+      wav2vec2WorkerRef.current = worker;
+    }
 
-      // Broadcast transcription signal to the coworker
-      if (callChannelRef.current && activeCallPartnerId) {
-        callChannelRef.current.send({
-          type: 'broadcast',
-          event: 'signal',
-          payload: {
-            targetUserId: activeCallPartnerId,
-            fromUserId: user?.id,
-            signalType: 'transcript',
-            data: { text: text.trim(), timestamp: now, isFinal: !!finalTranscript }
-          }
-        });
-      }
-    };
-
-    recognitionRef.current = recognition;
+    // 2. Start audio recording
     try {
-      recognition.start();
-    } catch (e) {
-      console.error("Error starting SpeechRecognition:", e);
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioStreamRef.current = stream;
+
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
+      audioContextRef.current = audioContext;
+
+      const source = audioContext.createMediaStreamSource(stream);
+      audioInputSourceRef.current = source;
+
+      // ScriptProcessor with buffer size 4096, 1 input channel, 1 output channel
+      const processor = audioContext.createScriptProcessor(4096, 1, 1);
+      audioProcessorRef.current = processor;
+
+      source.connect(processor);
+      processor.connect(audioContext.destination);
+
+      let audioBufferList: Float32Array[] = [];
+      let lastActiveTime = Date.now();
+      let lastSilenceProcessed = true;
+      let lastTranscriptionTime = Date.now();
+
+      processor.onaudioprocess = (e) => {
+        const inputData = e.inputBuffer.getChannelData(0);
+        
+        // Copy audio data
+        const chunk = new Float32Array(inputData.length);
+        chunk.set(inputData);
+        audioBufferList.push(chunk);
+
+        // Calculate RMS (volume level) for voice activity detection
+        let sum = 0;
+        for (let i = 0; i < inputData.length; i++) {
+          sum += inputData[i] * inputData[i];
+        }
+        const rms = Math.sqrt(sum / inputData.length);
+
+        const now = Date.now();
+        
+        // Voice Activity Detection threshold
+        if (rms > 0.015) {
+          lastActiveTime = now;
+          lastSilenceProcessed = false;
+        }
+
+        // Send interim results every 1.5 seconds if speaking
+        if (!lastSilenceProcessed && now - lastTranscriptionTime > 1500) {
+          sendAudioToWorker(audioBufferList, false);
+          lastTranscriptionTime = now;
+        }
+
+        // If user is silent for 1.5 seconds, finalize the transcription
+        if (!lastSilenceProcessed && now - lastActiveTime > 1500) {
+          sendAudioToWorker(audioBufferList, true);
+          audioBufferList = []; // clear buffer list for next sentence
+          lastSilenceProcessed = true;
+          lastTranscriptionTime = now;
+        }
+      };
+
+      if (sttStatus !== 'idle') {
+        setSttStatus('listening');
+      }
+
+    } catch (err) {
+      console.error("Failed to start audio recording for Wav2Vec2:", err);
       setSttStatus('error');
+      toast.error("Microphone access is required for live captions.");
+      setEnableSTT(false);
     }
   };
 
   const stopTranscription = () => {
-    if (recognitionRef.current) {
+    if (audioProcessorRef.current) {
       try {
-        recognitionRef.current.onend = null;
-        recognitionRef.current.stop();
+        audioProcessorRef.current.disconnect();
       } catch (e) {}
-      recognitionRef.current = null;
+      audioProcessorRef.current = null;
     }
-    isRecognitionActiveRef.current = false;
+    if (audioInputSourceRef.current) {
+      try {
+        audioInputSourceRef.current.disconnect();
+      } catch (e) {}
+      audioInputSourceRef.current = null;
+    }
+    if (audioContextRef.current) {
+      try {
+        audioContextRef.current.close();
+      } catch (e) {}
+      audioContextRef.current = null;
+    }
+    if (audioStreamRef.current) {
+      try {
+        audioStreamRef.current.getTracks().forEach(track => track.stop());
+      } catch (e) {}
+      audioStreamRef.current = null;
+    }
+
     setSttStatus('idle');
   };
 
@@ -2959,7 +3054,11 @@ export default function TeamChatPage() {
                                   {sttStatus === 'listening' && "Captions Active: Speak now..."}
                                   {sttStatus === 'error' && "Captions Error: Check microphone"}
                                   {sttStatus === 'unsupported' && "Captions Unsupported in this Browser"}
-                                  {sttStatus === 'idle' && "Captions Starting..."}
+                                  {sttStatus === 'idle' && (
+                                    sttModelProgress > 0 && sttModelProgress < 100 
+                                      ? `Loading Wav2Vec2 Model: ${sttModelProgress}%`
+                                      : "Initializing Wav2Vec2..."
+                                  )}
                                 </span>
                               </div>
                             )}
@@ -3119,6 +3218,7 @@ export default function TeamChatPage() {
                   autoSaveTranscripts={autoSaveTranscripts}
                   setAutoSaveTranscripts={setAutoSaveTranscripts}
                   sttStatus={sttStatus}
+                  sttModelProgress={sttModelProgress}
                 />
               )}
 

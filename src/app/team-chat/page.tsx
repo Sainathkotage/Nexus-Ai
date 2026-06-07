@@ -1261,7 +1261,7 @@ export default function TeamChatPage() {
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      className="flex h-[calc(100vh-44px)] w-full overflow-hidden bg-background relative selection:bg-indigo-500/10"
+      className="flex h-full w-full overflow-hidden bg-background relative selection:bg-indigo-500/10"
     >
       
       {/* Drag & Drop File Upload Overlay */}
@@ -2705,11 +2705,12 @@ export default function TeamChatPage() {
             className="absolute inset-0 bg-zinc-950/95 z-50 flex flex-col items-center justify-between p-6 text-white font-sans"
           >
             {/* Call Screen Top Bar */}
-            <div className="w-full flex items-center justify-between shrink-0">
+            <div className="w-full flex items-center justify-between shrink-0 gap-2">
               <div className="w-24 h-8 hidden md:block" /> {/* Spacer */}
-              <div className="flex items-center gap-2 bg-zinc-900/80 px-4 py-1.5 rounded-full border border-zinc-800 shadow-lg text-[10px] font-bold text-emerald-400 tracking-wide">
+              <div className="flex items-center gap-1 sm:gap-2 bg-zinc-900/80 px-2.5 py-1.5 sm:px-4 sm:py-1.5 rounded-full border border-zinc-800 shadow-lg text-[10px] font-bold text-emerald-400 tracking-wide">
                 <ShieldCheck className="w-4 h-4 animate-pulse shrink-0" />
-                <span>AES-256 END-TO-END SECURE ENCRYPTED CONNECTION</span>
+                <span className="hidden sm:inline">AES-256 END-TO-END SECURE ENCRYPTED CONNECTION</span>
+                <span className="inline sm:hidden">AES-256 SECURE E2EE</span>
               </div>
               <Button
                 type="button"
@@ -2717,14 +2718,15 @@ export default function TeamChatPage() {
                 size="sm"
                 onClick={() => setShowDiagnostics(prev => !prev)}
                 className={cn(
-                  "text-[10px] font-bold tracking-wider uppercase flex items-center gap-1.5 px-3 py-1.5 rounded-full border transition-all shrink-0",
+                  "text-[10px] font-bold tracking-wider uppercase flex items-center gap-1 sm:gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-1.5 rounded-full border transition-all shrink-0",
                   showDiagnostics
                     ? "bg-indigo-600/25 border-indigo-500 text-indigo-300 hover:bg-indigo-600/40"
                     : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-800"
                 )}
               >
                 <Activity className="w-3.5 h-3.5" />
-                Diagnostics HUD
+                <span className="hidden sm:inline">Diagnostics HUD</span>
+                <span className="inline sm:hidden">Diagnostics</span>
               </Button>
             </div>
 
@@ -2797,7 +2799,7 @@ export default function TeamChatPage() {
                         )}
                       </div>
 
-                      <div className="absolute bottom-4 right-4 w-32 aspect-video bg-black border border-zinc-700 rounded-lg overflow-hidden shadow-lg flex items-center justify-center">
+                      <div className="absolute bottom-4 right-4 w-24 sm:w-32 aspect-video bg-black border border-zinc-700 rounded-lg overflow-hidden shadow-lg flex items-center justify-center">
                         {localStream && callState.type === 'video' && !isVideoMuted ? (
                           <video
                             ref={localVideoRef}

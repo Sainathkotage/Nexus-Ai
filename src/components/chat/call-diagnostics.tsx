@@ -339,7 +339,7 @@ export default function CallDiagnostics({
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#111113] border-l border-zinc-800 text-zinc-300 w-80 md:w-96 select-none shrink-0 font-sans shadow-2xl relative overflow-hidden backdrop-blur-md">
+    <div className="flex flex-col h-full bg-[#111113]/95 border-l border-zinc-800 text-zinc-300 w-full sm:w-80 md:w-96 select-none shrink-0 font-sans shadow-2xl absolute sm:relative inset-y-0 right-0 z-50 overflow-hidden backdrop-blur-md">
       
       {/* Header */}
       <div className="p-4 border-b border-zinc-800 flex items-center justify-between bg-zinc-900/40 shrink-0">

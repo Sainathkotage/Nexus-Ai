@@ -172,18 +172,25 @@ export default function TeamChatPage() {
   useEffect(() => {
     localStorage.setItem('nexus_enable_transcription', enableSTT.toString());
     enableSTTRef.current = enableSTT;
-    if (callStateRef.current && callStateRef.current.status === 'connected') {
-      if (enableSTT) {
-        startTranscription();
-      } else {
-        stopTranscription();
-      }
-    }
   }, [enableSTT]);
 
   useEffect(() => {
     localStorage.setItem('nexus_auto_save_transcripts', autoSaveTranscripts.toString());
   }, [autoSaveTranscripts]);
+
+  // Handle call transcription initialization and toggle responses
+  useEffect(() => {
+    if (callState && callState.status === 'connected') {
+      if (enableSTT) {
+        console.log("Active call connected. Starting transcription...");
+        startTranscription();
+      } else {
+        stopTranscription();
+      }
+    } else {
+      stopTranscription();
+    }
+  }, [callState?.status, enableSTT]);
 
   const startTranscription = () => {
     if (typeof window === 'undefined') return;
@@ -298,7 +305,7 @@ export default function TeamChatPage() {
     isRecognitionActiveRef.current = false;
   };
 
-  const downloadTranscript = () => {
+  const downloadTranscript = async () => {
     if (transcripts.length === 0) return;
     
     const partnerName = callStateRef.current?.friend?.name || 'Teammate';
@@ -317,11 +324,36 @@ export default function TeamChatPage() {
     
     docContent += `\n--- End of Meeting Transcript ---\n`;
     
+    const fileName = `nexus_transcript_${partnerName.replace(/\s+/g, '_')}_${dateStr}.txt`;
+
+    if (typeof window !== 'undefined' && 'showSaveFilePicker' in window) {
+      try {
+        const handle = await (window as any).showSaveFilePicker({
+          suggestedName: fileName,
+          types: [{
+            description: 'Text Files',
+            accept: { 'text/plain': ['.txt'] }
+          }]
+        });
+        const writable = await handle.createWritable();
+        await writable.write(docContent);
+        await writable.close();
+        toast.success("Transcript saved successfully.");
+        return;
+      } catch (err: any) {
+        if (err.name === 'AbortError') {
+          toast.info("Save cancelled.");
+          return;
+        }
+        console.warn("showSaveFilePicker error, using fallback download method...", err);
+      }
+    }
+    
     const blob = new Blob([docContent], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `nexus_transcript_${partnerName.replace(/\s+/g, '_')}_${dateStr}.txt`;
+    link.download = fileName;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

@@ -121,7 +121,9 @@ export function LoginScreen() {
         
         {/* Logo and Header */}
         <div className="flex flex-col items-center text-center gap-2">
-          <img src="/logo.png" className="w-12 h-12 object-contain" alt="Nexus AI Logo" />
+          <a href={process.env.NEXT_PUBLIC_MARKETING_URL || 'http://localhost:4321'}>
+            <img src="/logo.png" className="w-12 h-12 object-contain cursor-pointer hover:opacity-85 transition-opacity" alt="Nexus AI Logo" />
+          </a>
           <h1 className="text-2xl font-bold tracking-tight text-[#37352f] dark:text-[#e3e3e2]">Welcome to Nexus AI</h1>
           <p className="text-xs text-muted-foreground">Collaborate on tasks, documents, emails, and chat in one place.</p>
         </div>

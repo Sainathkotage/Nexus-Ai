@@ -5,7 +5,7 @@ import { useWorkspace, encryptMessage, decryptMessage } from '@/lib/store';
 import { DocumentFile } from '@/types';
 import { usePopup } from '@/lib/popup-context';
 import { format } from 'date-fns';
-import { cn } from '@/lib/utils';
+import { cn, getDocumentFavicon } from '@/lib/utils';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
+import { MindmapView } from './study-hub';
 
 interface NotebookWorkspaceProps {
   document: DocumentFile;
@@ -25,7 +26,7 @@ interface NotebookWorkspaceProps {
 }
 
 type TabType = 'resources' | 'practice' | 'tables' | 'chat';
-type ResourceFormat = 'faq' | 'briefing' | 'study-guide' | 'timeline';
+type ResourceFormat = 'faq' | 'briefing' | 'study-guide' | 'timeline' | 'mindmap';
 
 export function NotebookWorkspace({ document, onClose }: NotebookWorkspaceProps) {
   const { deleteDocument, workspace, user } = useWorkspace();
@@ -57,7 +58,7 @@ export function NotebookWorkspace({ document, onClose }: NotebookWorkspaceProps)
   // Load resources & chat from localStorage
   useEffect(() => {
     const cachedData: Record<string, any> = {};
-    const formats: string[] = ['faq', 'briefing', 'study-guide', 'timeline', 'insights', 'flashcards', 'quiz', 'table'];
+    const formats: string[] = ['faq', 'briefing', 'study-guide', 'timeline', 'insights', 'flashcards', 'quiz', 'table', 'mindmap'];
     
     formats.forEach(f => {
       const cached = localStorage.getItem(`nexus_study_${document.id}_${f}`);
@@ -367,7 +368,13 @@ export function NotebookWorkspace({ document, onClose }: NotebookWorkspaceProps)
           </Button>
           <Separator orientation="vertical" className="h-4 bg-border" />
           <div className="flex items-center gap-2">
-            <span className="text-xl">{document.thumbnail}</span>
+            {document.thumbnail && (document.thumbnail.startsWith('http') || document.thumbnail.startsWith('/')) ? (
+              <img src={document.thumbnail} className="w-4 h-4 object-contain" alt="" />
+            ) : document.thumbnail ? (
+              <span className="text-xl">{document.thumbnail}</span>
+            ) : (
+              <img src={getDocumentFavicon(document.title)} className="w-4 h-4 object-contain" alt="" />
+            )}
             <span className="font-semibold text-sm max-w-[280px] truncate leading-none">{document.title}</span>
             <Badge variant="secondary" className="text-[10px] uppercase font-bold tracking-wider py-0.5 px-2">
               {document.type}
@@ -670,12 +677,13 @@ export function NotebookWorkspace({ document, onClose }: NotebookWorkspaceProps)
                         <p className="text-[10px] text-muted-foreground">Select a format to construct custom learning resources in real time:</p>
                       </div>
 
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
                         {[
                           { id: 'faq' as ResourceFormat, title: 'FAQ Sheet', desc: 'Q&A sheet', icon: HelpCircle, color: 'hover:border-blue-500/40 hover:bg-blue-500/[0.02] text-blue-500 bg-blue-500/10' },
                           { id: 'briefing' as ResourceFormat, title: 'Briefing Doc', desc: 'Executive brief', icon: BookMarked, color: 'hover:border-purple-500/40 hover:bg-purple-500/[0.02] text-purple-500 bg-purple-500/10' },
                           { id: 'study-guide' as ResourceFormat, title: 'Study Guide', desc: 'Core modules', icon: Brain, color: 'hover:border-emerald-500/40 hover:bg-emerald-500/[0.02] text-emerald-500 bg-emerald-500/10' },
-                          { id: 'timeline' as ResourceFormat, title: 'Timeline', desc: 'Chronology tracker', icon: Clock, color: 'hover:border-amber-500/40 hover:bg-amber-500/[0.02] text-amber-500 bg-amber-500/10' }
+                          { id: 'timeline' as ResourceFormat, title: 'Timeline', desc: 'Chronology tracker', icon: Clock, color: 'hover:border-amber-500/40 hover:bg-amber-500/[0.02] text-amber-500 bg-amber-500/10' },
+                          { id: 'mindmap' as ResourceFormat, title: 'Concept Mindmap', desc: 'Interactive concept map', icon: Brain, color: 'hover:border-indigo-500/40 hover:bg-indigo-500/[0.02] text-indigo-500 bg-indigo-500/10' }
                         ].map(g => {
                           const isGenerated = !!studyData[g.id];
                           const Icon = g.icon;
@@ -865,6 +873,11 @@ export function NotebookWorkspace({ document, onClose }: NotebookWorkspaceProps)
                                     ))}
                                   </div>
                                 </div>
+                              )}
+
+                              {/* Mindmap Viewer */}
+                              {activeResource === 'mindmap' && (
+                                <MindmapView data={studyData['mindmap']} />
                               )}
 
                             </div>
@@ -1298,8 +1311,9 @@ function QuizSubView({ data }: { data: any }) {
           </p>
         </div>
 
-        <div className={cn("text-xs font-bold px-3 py-1.5 rounded-full", passed ? "bg-emerald-500/10 text-emerald-600 border border-emerald-500/20" : "bg-red-500/10 text-red-500 border border-red-500/20")}>
-          {passed ? 'PASSED ✅' : 'FAILED ❌'}
+        <div className={cn("text-xs font-bold px-3 py-1.5 rounded-full flex items-center gap-1.5", passed ? "bg-emerald-500/10 text-emerald-600 border border-emerald-500/20" : "bg-red-500/10 text-red-500 border border-red-500/20")}>
+          {passed ? 'PASSED' : 'FAILED'}
+          <img src="https://www.google.com/s2/favicons?domain=quizlet.com&sz=32" className="w-3.5 h-3.5 object-contain" alt="" />
         </div>
 
         <Button onClick={handleRetake} className="bg-foreground text-background h-8 px-4 text-xs font-bold gap-1 mt-2">

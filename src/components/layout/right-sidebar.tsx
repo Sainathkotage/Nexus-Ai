@@ -13,7 +13,7 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 
 export function RightSidebar() {
-  const { rightSidebarOpen, toggleRightSidebar, allUsers, friendIds, teamMessages, user, setActivePage } = useWorkspace();
+  const { rightSidebarOpen, toggleRightSidebar, allUsers, friendIds, teamMessages, user, setActivePage, onlinePresence } = useWorkspace();
   const router = useRouter();
 
   if (!rightSidebarOpen) return null;
@@ -25,14 +25,15 @@ export function RightSidebar() {
   );
 
   const getDetailedStatus = (member: Person) => {
-    if (member.dnd) return 'dnd';
+    const presence = onlinePresence[member.id];
+    if (!presence) return 'offline';
+
+    const currentStatus = presence.status || 'online';
+
     if (member.customStatus?.toLowerCase().includes('meet') || member.customStatus?.toLowerCase().includes('meeting')) {
       return 'in-meet';
     }
-    if (member.status === 'offline') return 'offline';
-    if (member.status === 'idle') return 'idle';
-    if (member.status === 'dnd') return 'dnd';
-    return member.status || 'online';
+    return currentStatus;
   };
 
   const getStatusDetails = (status: string) => {
@@ -101,8 +102,9 @@ export function RightSidebar() {
           </span>
           <span className="text-[10px] text-muted-foreground truncate leading-none mt-0.5">{member.role}</span>
           {member.customStatus && (
-            <span className="text-[9px] text-primary/80 font-medium truncate mt-1.5 italic leading-none">
-              💬 {member.customStatus}
+            <span className="text-[9px] text-primary/80 font-medium truncate mt-1.5 italic leading-none flex items-center gap-1">
+              <img src="https://www.google.com/s2/favicons?domain=slack.com&sz=32" className="w-2.5 h-2.5 object-contain" alt="" />
+              {member.customStatus}
             </span>
           )}
         </div>

@@ -7,15 +7,16 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   Sparkles, LayoutDashboard, FileText, MessageSquare, 
   CheckSquare, Calendar, Mail, Settings, Plus, Search,
-  ChevronDown, Users, Check, LogOut, Palette, BarChart3, Smile
+  ChevronDown, Users, Check, LogOut, Palette, BarChart3, Smile, Inbox
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, getWorkspaceFavicon } from '@/lib/utils';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { useRouter } from 'next/navigation';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 const navItems: { id: PageId; label: string; icon: React.ElementType }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'ai-inbox', label: 'AI Inbox', icon: Inbox },
   { id: 'documents', label: 'Documents', icon: FileText },
   { id: 'chat', label: 'AI Chat', icon: MessageSquare },
   { id: 'team-chat', label: 'Team Chat', icon: Users },
@@ -48,7 +49,8 @@ export function LeftSidebar({ onOpenSearch }: LeftSidebarProps) {
     myWorkspaces,
     switchWorkspace,
     mentionBadgeCount,
-    clearMentionBadge
+    clearMentionBadge,
+    aiInbox
   } = useWorkspace();
   const router = useRouter();
   const [showUserMenu, setShowUserMenu] = React.useState(false);
@@ -75,6 +77,7 @@ export function LeftSidebar({ onOpenSearch }: LeftSidebarProps) {
       exit={{ width: 0, opacity: 0 }}
       transition={{ duration: 0.15, ease: 'easeOut' }}
       className="h-full border-r border-sidebar-border bg-sidebar flex flex-col overflow-hidden shrink-0 max-lg:fixed max-lg:left-0 max-lg:top-0 max-lg:z-30 max-lg:shadow-2xl"
+      data-tutorial="left-sidebar"
     >
       {/* Workspace Header */}
       <div className="h-12 flex items-center px-3 shrink-0 relative">
@@ -82,7 +85,7 @@ export function LeftSidebar({ onOpenSearch }: LeftSidebarProps) {
           onClick={() => setShowWorkspaceDropdown(!showWorkspaceDropdown)}
           className="flex items-center gap-2 px-1.5 py-1 rounded-md hover:bg-accent/60 transition-colors w-full text-left"
         >
-          <img src="/logo.png" className="w-5 h-5 object-contain rounded shrink-0" alt="Logo" />
+          <img src={getWorkspaceFavicon(workspace ? workspace.name : '')} className="w-5 h-5 object-contain rounded shrink-0" alt="Logo" />
           <span className="text-sm font-semibold text-foreground truncate">
             {workspace ? workspace.name : 'Select Workspace'}
           </span>
@@ -117,7 +120,7 @@ export function LeftSidebar({ onOpenSearch }: LeftSidebarProps) {
                         : "text-muted-foreground hover:bg-accent/40 hover:text-foreground"
                     )}
                   >
-                    <span className="w-2 h-2 rounded-full bg-primary shrink-0" />
+                    <img src={getWorkspaceFavicon(ws.name)} className="w-3.5 h-3.5 object-contain rounded shrink-0" alt="" />
                     <span className="truncate flex-1">{ws.name}</span>
                     {workspace?.id === ws.id && <Check className="w-3.5 h-3.5 text-primary shrink-0" />}
                   </button>
@@ -179,6 +182,11 @@ export function LeftSidebar({ onOpenSearch }: LeftSidebarProps) {
             <span className="truncate flex-1">{item.label}</span>
             {item.id === 'team-chat' && mentionBadgeCount > 0 && activePage !== 'team-chat' && (
               <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
+            )}
+            {item.id === 'ai-inbox' && aiInbox.filter(x => x.status === 'pending').length > 0 && (
+              <span className="bg-indigo-500 text-white text-[9.5px] font-extrabold px-1.5 py-0.2 rounded-full shrink-0 font-mono">
+                {aiInbox.filter(x => x.status === 'pending').length}
+              </span>
             )}
           </button>
         ))}
@@ -306,8 +314,9 @@ export function LeftSidebar({ onOpenSearch }: LeftSidebarProps) {
               <div className="flex flex-col mt-0.5 gap-0.5">
                 <span className="text-[9px] text-muted-foreground truncate leading-none">{user.role}</span>
                 {user.customStatus && (
-                  <span className="text-[8px] text-primary/80 font-medium truncate italic leading-none" title={user.customStatus}>
-                    💬 {user.customStatus}
+                  <span className="text-[8px] text-primary/80 font-medium truncate italic leading-none flex items-center gap-1" title={user.customStatus}>
+                    <img src="https://www.google.com/s2/favicons?domain=slack.com&sz=32" className="w-2.5 h-2.5 object-contain" alt="" />
+                    {user.customStatus}
                   </span>
                 )}
               </div>

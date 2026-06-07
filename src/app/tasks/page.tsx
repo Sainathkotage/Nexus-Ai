@@ -248,6 +248,7 @@ export default function TasksPage() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
               className="h-full flex gap-4 overflow-x-auto pb-2 scrollbar-thin"
+              data-tutorial="tasks-board"
             >
               {COLUMNS.map(column => {
                 const columnTasks = filteredTasks.filter(t => t.status === column.id);
@@ -675,8 +676,9 @@ export default function TasksPage() {
                           )}>
                             {count} / {MAX_CAPACITY} Active Tasks
                           </span>
-                          <span className="block text-[8px] text-muted-foreground mt-1 uppercase font-bold tracking-wider">
-                            {isOverloaded ? 'Overloaded 🛑' : isHeavy ? 'Near capacity ⚠️' : 'Available ✅'}
+                          <span className="block text-[8px] text-muted-foreground mt-1 uppercase font-bold tracking-wider flex items-center justify-end gap-1">
+                            {isOverloaded ? 'Overloaded' : isHeavy ? 'Near capacity' : 'Available'}
+                            <img src="https://www.google.com/s2/favicons?domain=asana.com&sz=32" className="w-2.5 h-2.5 object-contain" alt="" />
                           </span>
                         </div>
                       </div>

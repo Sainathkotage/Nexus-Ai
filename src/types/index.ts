@@ -233,7 +233,7 @@ export interface ActivityItem {
 }
 
 // --- Navigation ---
-export type PageId = 'dashboard' | 'documents' | 'chat' | 'tasks' | 'calendar' | 'emails' | 'settings' | 'team-chat' | 'whiteboard' | 'crm';
+export type PageId = 'dashboard' | 'documents' | 'chat' | 'tasks' | 'calendar' | 'emails' | 'settings' | 'team-chat' | 'whiteboard' | 'crm' | 'ai-inbox';
 
 // --- Enterprise Channels ---
 export interface Channel {
@@ -301,6 +301,15 @@ export interface Deal {
   company: string;
   value: number;
   stage: 'lead' | 'contacted' | 'proposal' | 'negotiation' | 'won' | 'lost';
+  score?: number; // 0-100 AI Deal Score
+  forecastCategory?: 'commit' | 'best_case' | 'pipeline'; // AI Forecasting
+  stageUpdatedAt?: string; // Stale deal tracking
+  lastActivityAt?: string; // Stale deal tracking
+  primaryContactName?: string;
+  primaryContactEmail?: string;
+  ownerId?: string;
+  ownerName?: string;
+  notes?: string;
 }
 
 // --- Login Activities / Audit Logs ---
@@ -332,4 +341,15 @@ export interface ThemeConfig {
   background?: string;
   sidebar?: string;
   accent?: string;
+}
+
+// --- AI Action Inbox ---
+export interface AiInboxItem {
+  id: string;
+  title: string;
+  description: string;
+  type: 'email' | 'crm' | 'meeting' | 'task' | 'general';
+  status: 'pending' | 'completed';
+  createdAt: string;
+  actionData?: any;
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseServiceRole } from '@/lib/supabase';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { getDocumentFavicon } from '@/lib/utils';
 
 export async function POST(req: Request) {
   try {
@@ -171,7 +172,7 @@ ${text.substring(0, 15000)}`;
       extracted_people: analysis.people,
       extracted_organizations: analysis.organizations,
       tags: analysis.tags,
-      thumbnail: file.name.toLowerCase().endsWith('.pdf') ? '📋' : '📄',
+      thumbnail: getDocumentFavicon(file.name),
       processing_status: 'completed',
       content: text
     };

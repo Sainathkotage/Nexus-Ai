@@ -3,7 +3,7 @@
 import React from 'react';
 import { DocumentFile } from '@/types';
 import { format } from 'date-fns';
-import { cn } from '@/lib/utils';
+import { cn, getDocumentFavicon } from '@/lib/utils';
 import { Loader2 } from 'lucide-react';
 
 interface DocumentCardProps {
@@ -32,7 +32,13 @@ export function DocumentCard({ document, onClick }: DocumentCardProps) {
       {/* Top */}
       <div className="flex justify-between items-start">
         <div className={cn("w-10 h-10 rounded-lg flex items-center justify-center text-lg", getTypeColor(document.type))}>
-          {document.thumbnail}
+          {document.thumbnail && (document.thumbnail.startsWith('http') || document.thumbnail.startsWith('/')) ? (
+            <img src={document.thumbnail} className="w-5 h-5 object-contain" alt="" />
+          ) : document.thumbnail ? (
+            document.thumbnail
+          ) : (
+            <img src={getDocumentFavicon(document.title)} className="w-5 h-5 object-contain" alt="" />
+          )}
         </div>
         <div className="flex items-center gap-2">
           <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground bg-muted px-1.5 py-0.5 rounded">

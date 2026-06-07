@@ -19,6 +19,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import { useWorkspace } from '@/lib/store';
 import { usePopup } from '@/lib/popup-context';
+import { getDocumentFavicon } from '@/lib/utils';
 
 interface DocumentDetailProps {
   document: DocumentFile | null;
@@ -50,7 +51,13 @@ export function DocumentDetail({ document, onClose }: DocumentDetailProps) {
           <div className="flex justify-between items-start">
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl bg-primary/10">
-                {document.thumbnail}
+                {document.thumbnail && (document.thumbnail.startsWith('http') || document.thumbnail.startsWith('/')) ? (
+                  <img src={document.thumbnail} className="w-6 h-6 object-contain" alt="" />
+                ) : document.thumbnail ? (
+                  document.thumbnail
+                ) : (
+                  <img src={getDocumentFavicon(document.title)} className="w-6 h-6 object-contain" alt="" />
+                )}
               </div>
               <div className="flex flex-col gap-1">
                 <SheetTitle className="text-xl font-bold leading-tight">{document.title}</SheetTitle>

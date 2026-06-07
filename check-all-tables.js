@@ -37,7 +37,11 @@ const tables = [
   'workspaces',
   'workspace_invites',
   'feedback',
-  'ai_usage'
+  'ai_usage',
+  'projects',
+  'project_members',
+  'invitations',
+  'login_activities'
 ];
 
 async function checkTables() {

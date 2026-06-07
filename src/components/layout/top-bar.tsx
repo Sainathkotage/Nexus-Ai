@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useWorkspace } from '@/lib/store';
+import { useTutorial } from '@/lib/tutorial-context';
 import { 
   PanelLeft, PanelRight, Search, Bell, Sun, Moon, 
   ChevronRight, Menu, Star, MoreHorizontal, Play, Check, Clock
@@ -32,6 +33,8 @@ export function TopBar() {
     markNotificationsAsRead,
     reviewJoinRequest
   } = useWorkspace();
+
+  const { trackInteractiveAction } = useTutorial();
 
   const [time, setTime] = useState('');
   const [localTaskName, setLocalTaskName] = useState('');
@@ -107,7 +110,10 @@ export function TopBar() {
       {/* Right side */}
       <div className="flex items-center gap-0.5">
         {/* Global Time Tracker Widget */}
-        <div className="hidden sm:flex items-center gap-1.5 bg-[#f1f1ef] dark:bg-[#252525] border border-border/80 dark:border-border/10 rounded px-2 py-0.5 mr-2 text-[10px] font-semibold text-muted-foreground transition-all">
+        <div 
+          className="hidden sm:flex items-center gap-1.5 bg-[#f1f1ef] dark:bg-[#252525] border border-border/80 dark:border-border/10 rounded px-2 py-0.5 mr-2 text-[10px] font-semibold text-muted-foreground transition-all"
+          data-tutorial="time-tracker"
+        >
           <Clock className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
           <input
             type="text"
@@ -129,6 +135,7 @@ export function TopBar() {
                 pauseTimer();
               } else {
                 startTimer(localTaskName || 'Active Task');
+                trackInteractiveAction('start_timer');
               }
             }}
           >

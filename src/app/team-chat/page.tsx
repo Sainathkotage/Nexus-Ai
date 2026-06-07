@@ -10,7 +10,8 @@ import {
   Search, Circle, MessageCircle, Hash, ChevronRight, X,
   Paperclip, Phone, Video, Lock, Unlock, Mic, MicOff,
   VideoOff, Shield, PhoneOff, Star, Pin, Smile, Trash2, Edit3,
-  Sparkles, FileText, ArrowRight, ArrowLeft, Bell, Volume2, AlertCircle, Plus, Folder, UserPlus
+  Sparkles, FileText, ArrowRight, ArrowLeft, Bell, Volume2, AlertCircle, Plus, Folder, UserPlus,
+  Activity
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -18,6 +19,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { formatDistanceToNow, format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import CallDiagnostics from '@/components/chat/call-diagnostics';
 
 export default function TeamChatPage() {
   const { 
@@ -45,6 +47,8 @@ export default function TeamChatPage() {
     toggleStarChannel,
     editChannelMessage,
     deleteChannelMessage,
+    editTeamMessage,
+    deleteTeamMessage,
     addReaction,
     removeReaction,
     togglePinMessage,
@@ -129,8 +133,202 @@ export default function TeamChatPage() {
     friend: Person;
   } | null>(null);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [isAudioMuted, setIsAudioMuted] = useState(false);
   const [isVideoMuted, setIsVideoMuted] = useState(false);
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
+
+  // Video call & Local Transcription settings and refs
+  const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
+  const callStateRef = useRef<any>(null);
+  const enableSTTRef = useRef<boolean>(true);
+  const [transcripts, setTranscripts] = useState<Array<{ senderName: string; text: string; timestamp: string }>>([]);
+  
+  const [enableSTT, setEnableSTT] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('nexus_enable_transcription');
+      return saved !== null ? saved === 'true' : true;
+    }
+    return true;
+  });
+
+  const [autoSaveTranscripts, setAutoSaveTranscripts] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('nexus_auto_save_transcripts');
+      return saved !== null ? saved === 'true' : true;
+    }
+    return true;
+  });
+
+  const recognitionRef = useRef<any>(null);
+  const isRecognitionActiveRef = useRef<boolean>(false);
+
+  // Sync call state ref for listener callbacks
+  useEffect(() => {
+    callStateRef.current = callState;
+  }, [callState]);
+
+  // Sync transcription settings to storage
+  useEffect(() => {
+    localStorage.setItem('nexus_enable_transcription', enableSTT.toString());
+    enableSTTRef.current = enableSTT;
+    if (callStateRef.current && callStateRef.current.status === 'connected') {
+      if (enableSTT) {
+        startTranscription();
+      } else {
+        stopTranscription();
+      }
+    }
+  }, [enableSTT]);
+
+  useEffect(() => {
+    localStorage.setItem('nexus_auto_save_transcripts', autoSaveTranscripts.toString());
+  }, [autoSaveTranscripts]);
+
+  const startTranscription = () => {
+    if (typeof window === 'undefined') return;
+    if (!enableSTTRef.current) return;
+    
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      console.warn("SpeechRecognition is not supported in this browser.");
+      return;
+    }
+
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.abort();
+      } catch (e) {}
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
+
+    recognition.onstart = () => {
+      isRecognitionActiveRef.current = true;
+    };
+
+    recognition.onend = () => {
+      isRecognitionActiveRef.current = false;
+      // Restart if call is connected
+      if (callStateRef.current && callStateRef.current.status === 'connected' && enableSTTRef.current) {
+        try {
+          recognition.start();
+        } catch (e) {}
+      }
+    };
+
+    recognition.onerror = (event: any) => {
+      console.error("SpeechRecognition error:", event.error);
+      if (event.error === 'not-allowed') {
+        toast.error("Microphone permission denied for captions.");
+        setEnableSTT(false);
+      }
+    };
+
+    let lastFinalText = '';
+
+    recognition.onresult = (event: any) => {
+      let interimTranscript = '';
+      let finalTranscript = '';
+
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        if (event.results[i].isFinal) {
+          finalTranscript += event.results[i][0].transcript;
+        } else {
+          interimTranscript += event.results[i][0].transcript;
+        }
+      }
+
+      const text = finalTranscript || interimTranscript;
+      if (!text.trim()) return;
+
+      const now = format(new Date(), 'HH:mm:ss');
+      
+      setTranscripts(prev => {
+        const list = [...prev];
+        const lastIdx = list.map(e => e.senderName).lastIndexOf('You');
+        
+        if (lastIdx !== -1 && list[lastIdx].text === lastFinalText) {
+          list[lastIdx] = { senderName: 'You', text: text.trim(), timestamp: now };
+        } else {
+          list.push({ senderName: 'You', text: text.trim(), timestamp: now });
+        }
+        
+        if (finalTranscript) {
+          lastFinalText = text.trim();
+        }
+        
+        return list;
+      });
+
+      // Broadcast transcription signal to the coworker
+      if (callChannelRef.current && activeCallPartnerId) {
+        callChannelRef.current.send({
+          type: 'broadcast',
+          event: 'signal',
+          payload: {
+            targetUserId: activeCallPartnerId,
+            fromUserId: user?.id,
+            signalType: 'transcript',
+            data: { text: text.trim(), timestamp: now, isFinal: !!finalTranscript }
+          }
+        });
+      }
+    };
+
+    recognitionRef.current = recognition;
+    try {
+      recognition.start();
+    } catch (e) {
+      console.error("Error starting SpeechRecognition:", e);
+    }
+  };
+
+  const stopTranscription = () => {
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.onend = null;
+        recognitionRef.current.stop();
+      } catch (e) {}
+      recognitionRef.current = null;
+    }
+    isRecognitionActiveRef.current = false;
+  };
+
+  const downloadTranscript = () => {
+    if (transcripts.length === 0) return;
+    
+    const partnerName = callStateRef.current?.friend?.name || 'Teammate';
+    const dateStr = format(new Date(), 'yyyy-MM-dd_HH-mm-ss');
+    
+    let docContent = `NEXUS AI SECURE MEETING TRANSCRIPT\n`;
+    docContent += `=================================\n`;
+    docContent += `Date: ${format(new Date(), 'PPPP')}\n`;
+    docContent += `Call Participant: ${partnerName}\n`;
+    docContent += `Connection Security: E2EE AES-256-GCM\n`;
+    docContent += `=================================\n\n`;
+    
+    transcripts.forEach(t => {
+      docContent += `[${t.timestamp}] ${t.senderName}: ${t.text}\n\n`;
+    });
+    
+    docContent += `\n--- End of Meeting Transcript ---\n`;
+    
+    const blob = new Blob([docContent], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `nexus_transcript_${partnerName.replace(/\s+/g, '_')}_${dateStr}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    
+    toast.success("Transcript downloaded successfully.");
+  };
 
   // Layout UI overlays togglers
   const [showPinDrawer, setShowPinDrawer] = useState(false);
@@ -239,12 +437,15 @@ export default function TeamChatPage() {
     }
   }, [channelMessages, activeChat, user, channels, notificationConfig]);
 
-  // Bind call stream to local video component
+  // Bind call streams to video components
   useEffect(() => {
     if (localStream && localVideoRef.current) {
       localVideoRef.current.srcObject = localStream;
     }
-  }, [localStream, callState]);
+    if (remoteStream && remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = remoteStream;
+    }
+  }, [localStream, remoteStream, callState]);
 
   // Cleanup stream on component unmount
   useEffect(() => {
@@ -288,6 +489,7 @@ export default function TeamChatPage() {
               await pcRef.current.setRemoteDescription(new RTCSessionDescription(data));
               setCallState(prev => prev ? { ...prev, status: 'connected' } : null);
               toast.success("Secure call connected!");
+              if (enableSTTRef.current) startTranscription();
             }
             break;
 
@@ -303,6 +505,24 @@ export default function TeamChatPage() {
 
           case 'hangup':
             handleRemoteHangup();
+            break;
+
+          case 'transcript':
+            // Partner sent real-time local transcript updates
+            const partnerName = callStateRef.current?.friend?.name || 'Partner';
+            const partnerNow = data.timestamp || format(new Date(), 'HH:mm:ss');
+            
+            setTranscripts(prev => {
+              const list = [...prev];
+              const lastIdx = list.map(e => e.senderName).lastIndexOf(partnerName);
+              
+              if (lastIdx !== -1) {
+                list[lastIdx] = { senderName: partnerName, text: data.text, timestamp: partnerNow };
+              } else {
+                list.push({ senderName: partnerName, text: data.text, timestamp: partnerNow });
+              }
+              return list;
+            });
             break;
         }
       })
@@ -331,10 +551,10 @@ export default function TeamChatPage() {
   );
 
   // Online status presence helper mapping
-  const getTeammateStatus = (teammateId: string, defaultVal: 'online' | 'offline' | 'idle' | 'dnd') => {
+  const getTeammateStatus = (teammateId: string): 'online' | 'offline' | 'idle' | 'dnd' => {
     const presence = onlinePresence[teammateId];
-    if (presence) return presence.status as any;
-    return defaultVal;
+    if (presence) return (presence.status || 'online') as any;
+    return 'offline';
   };
 
   const getTeammateLastSeen = (teammateId: string) => {
@@ -349,8 +569,8 @@ export default function TeamChatPage() {
     return 'recently';
   };
 
-  const onlineFriends = filteredUsers.filter(u => getTeammateStatus(u.id, u.status as any) === 'online');
-  const offlineFriends = filteredUsers.filter(u => getTeammateStatus(u.id, u.status as any) === 'offline');
+  const onlineFriends = filteredUsers.filter(u => getTeammateStatus(u.id) !== 'offline');
+  const offlineFriends = filteredUsers.filter(u => getTeammateStatus(u.id) === 'offline');
 
   // Stars & Starred channels filter lists
   const starredChannels = channels.filter(c => c.starredBy?.includes(user?.id || ''));
@@ -572,20 +792,8 @@ export default function TeamChatPage() {
       editChannelMessage(activeChat.id, messageId, editBuffer);
       toast.success('Message content edited.');
     } else {
-      const encryptedContent = encryptMessage(editBuffer);
       try {
-        const { error } = await supabase
-          .from('direct_messages')
-          .update({ content: encryptedContent, edited_at: new Date().toISOString() })
-          .eq('id', messageId);
-        if (error) throw error;
-        setTeamMessages(prev => {
-          const currentDMs = prev[activeChat.id] || [];
-          return {
-            ...prev,
-            [activeChat.id]: currentDMs.map(m => m.id === messageId ? { ...m, content: encryptedContent, editedAt: new Date().toISOString() } : m)
-          };
-        });
+        await editTeamMessage(activeChat.id, messageId, editBuffer);
         toast.success('Message content edited.');
       } catch (err: any) {
         toast.error('Failed to edit message.');
@@ -605,25 +813,13 @@ export default function TeamChatPage() {
       toast.success('Message deleted.');
     } else {
       try {
-        const { error } = await supabase
-          .from('direct_messages')
-          .delete()
-          .eq('id', messageId);
-        if (error) throw error;
-        
-        setTeamMessages(prev => {
-          const currentDMs = prev[activeChat.id] || [];
-          return {
-            ...prev,
-            [activeChat.id]: currentDMs.filter(m => m.id !== messageId)
-          };
-        });
+        await deleteTeamMessage(activeChat.id, messageId);
         toast.success('Message deleted.');
-        } catch (err: any) {
-          toast.error('Failed to delete message.');
-          console.error(err);
-        }
+      } catch (err: any) {
+        toast.error('Failed to delete message.');
+        console.error(err);
       }
+    }
   };
 
   // Star mapping helper for headers
@@ -796,8 +992,14 @@ export default function TeamChatPage() {
     });
 
     try {
+      // Audio stack constraints optimized specifically for voice communication (WhatsApp-like)
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          channelCount: 1 // Mono optimizes bandwidth specifically for speech coding
+        },
         video: type === 'video'
       });
       setLocalStream(stream);
@@ -828,10 +1030,19 @@ export default function TeamChatPage() {
         if (remoteAudioRef.current) {
           remoteAudioRef.current.srcObject = event.streams[0];
         }
+        if (remoteVideoRef.current) {
+          remoteVideoRef.current.srcObject = event.streams[0];
+        }
+        setRemoteStream(event.streams[0]);
       };
 
       const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
+      
+      // Inject secure audio codec profile into SDP (Opus with FEC and DTX/VAD enabled)
+      const optimizedSDP = optimizeAudioSDP(offer.sdp || '', 24000, true, true);
+      const optimizedOffer = { type: offer.type, sdp: optimizedSDP } as RTCSessionDescriptionInit;
+      
+      await pc.setLocalDescription(optimizedOffer);
 
       if (callChannelRef.current) {
         callChannelRef.current.send({
@@ -841,7 +1052,7 @@ export default function TeamChatPage() {
             targetUserId: activeFriend.id,
             fromUserId: user.id,
             signalType: 'offer',
-            data: offer
+            data: optimizedOffer
           }
         });
       }
@@ -860,7 +1071,12 @@ export default function TeamChatPage() {
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          channelCount: 1
+        },
         video: callState?.type === 'video'
       });
       setLocalStream(stream);
@@ -891,11 +1107,20 @@ export default function TeamChatPage() {
         if (remoteAudioRef.current) {
           remoteAudioRef.current.srcObject = event.streams[0];
         }
+        if (remoteVideoRef.current) {
+          remoteVideoRef.current.srcObject = event.streams[0];
+        }
+        setRemoteStream(event.streams[0]);
       };
 
       await pc.setRemoteDescription(new RTCSessionDescription(incomingCallOffer));
       const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
+      
+      // Inject secure audio codec profile into SDP response
+      const optimizedSDP = optimizeAudioSDP(answer.sdp || '', 24000, true, true);
+      const optimizedAnswer = { type: answer.type, sdp: optimizedSDP } as RTCSessionDescriptionInit;
+      
+      await pc.setLocalDescription(optimizedAnswer);
 
       if (callChannelRef.current) {
         callChannelRef.current.send({
@@ -905,7 +1130,7 @@ export default function TeamChatPage() {
             targetUserId: activeCallPartnerId,
             fromUserId: user.id,
             signalType: 'answer',
-            data: answer
+            data: optimizedAnswer
           }
         });
       }
@@ -932,6 +1157,8 @@ export default function TeamChatPage() {
     if (remoteAudioRef.current) {
       remoteAudioRef.current.srcObject = null;
     }
+    setRemoteStream(null);
+    setShowDiagnostics(false);
     setCallState(null);
     setIncomingCallOffer(null);
     setActiveCallPartnerId(null);
@@ -1041,7 +1268,7 @@ export default function TeamChatPage() {
       {isDragOver && (
         <div className="absolute inset-0 bg-indigo-500/10 border-4 border-dashed border-indigo-500 z-50 flex flex-col items-center justify-center pointer-events-none backdrop-blur-xs">
           <div className="bg-background border border-border p-6 rounded-2xl shadow-xl flex flex-col items-center gap-3">
-            <span className="text-3xl animate-bounce">📁</span>
+            <img src="https://www.google.com/s2/favicons?domain=dropbox.com&sz=64" className="w-8 h-8 animate-bounce object-contain" alt="" />
             <h3 className="text-sm font-bold text-foreground">Drop file to share in chat</h3>
             <p className="text-[10px] text-muted-foreground">Limit 5MB max. Encrypted on send.</p>
           </div>
@@ -1272,15 +1499,20 @@ export default function TeamChatPage() {
                     <div className="w-7 h-7 rounded-full bg-gradient-to-br from-indigo-400 to-violet-500 flex items-center justify-center">
                       <span className="text-[9px] font-bold text-white">{getInitials(friend.name)}</span>
                     </div>
-                    <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-500 border border-background" />
+                    <span className={cn(
+                      "absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-background",
+                      getTeammateStatus(friend.id) === 'dnd' ? "bg-red-500" :
+                      getTeammateStatus(friend.id) === 'idle' ? "bg-amber-500" :
+                      "bg-emerald-500"
+                    )} />
                   </div>
                   <div className="flex-1 min-w-0 flex flex-col gap-0.5">
                     <span className="text-xs truncate text-foreground flex items-center gap-1">
                       {friend.name}
-                      {friend.dnd && <span className="text-[8px] bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400 font-bold px-1 rounded leading-none py-0.5">DND</span>}
+                      {getTeammateStatus(friend.id) === 'dnd' && <span className="text-[8px] bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400 font-bold px-1 rounded leading-none py-0.5">DND</span>}
                     </span>
                     {friend.customStatus && (
-                      <span className="text-[8px] text-primary/75 italic truncate mt-0.5 leading-none">💬 {friend.customStatus}</span>
+                      <span className="text-[8px] text-primary/75 italic truncate mt-0.5 leading-none flex items-center gap-1"><img src="https://www.google.com/s2/favicons?domain=slack.com&sz=32" className="w-2.5 h-2.5 object-contain inline-block shrink-0" alt="" />{friend.customStatus}</span>
                     )}
                   </div>
                 </button>
@@ -1338,12 +1570,15 @@ export default function TeamChatPage() {
                   <div className="relative shrink-0">
                     <div className={cn(
                       "w-8.5 h-8.5 rounded-full flex items-center justify-center",
-                      getTeammateStatus(activeFriend.id, activeFriend.status as any) === 'online' ? 'bg-gradient-to-br from-indigo-400 to-violet-500' : 'bg-zinc-200 dark:bg-zinc-800'
+                      getTeammateStatus(activeFriend.id) !== 'offline' ? 'bg-gradient-to-br from-indigo-400 to-violet-500' : 'bg-zinc-200 dark:bg-zinc-800'
                     )}>
-                      <span className={`text-[10px] font-bold ${getTeammateStatus(activeFriend.id, activeFriend.status as any) === 'online' ? 'text-white' : 'text-muted-foreground'}`}>{getInitials(activeFriend.name)}</span>
+                      <span className={`text-[10px] font-bold ${getTeammateStatus(activeFriend.id) !== 'offline' ? 'text-white' : 'text-muted-foreground'}`}>{getInitials(activeFriend.name)}</span>
                     </div>
                     <span className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-background ${
-                      activeFriend.dnd ? 'bg-red-500' : getTeammateStatus(activeFriend.id, activeFriend.status as any) === 'online' ? 'bg-emerald-500' : 'bg-zinc-400'
+                      getTeammateStatus(activeFriend.id) === 'dnd' ? 'bg-red-500' :
+                      getTeammateStatus(activeFriend.id) === 'idle' ? 'bg-amber-500' :
+                      getTeammateStatus(activeFriend.id) === 'online' ? 'bg-emerald-500' :
+                      'bg-zinc-400'
                     }`} />
                   </div>
                   <div className="flex flex-col">
@@ -1353,7 +1588,7 @@ export default function TeamChatPage() {
                     </span>
                     <span className="text-[9px] text-muted-foreground flex items-center gap-1.5 mt-0.5">
                       {activeFriend.role}
-                      {activeFriend.customStatus && <span className="text-primary italic">💬 {activeFriend.customStatus}</span>}
+                      {activeFriend.customStatus && <span className="text-primary italic flex items-center gap-1"><img src="https://www.google.com/s2/favicons?domain=slack.com&sz=32" className="w-2.5 h-2.5 object-contain inline-block shrink-0" alt="" />{activeFriend.customStatus}</span>}
                     </span>
                   </div>
                 </div>
@@ -1518,7 +1753,7 @@ export default function TeamChatPage() {
                                     download={msg.media.name} 
                                     className="flex items-center gap-2 p-2 rounded-md bg-muted/30 dark:bg-zinc-800/80 border border-border/50 text-[10px] text-foreground font-semibold max-w-[200px] truncate"
                                   >
-                                    <span className="text-base shrink-0">📄</span>
+                                    <img src={msg.media.name.toLowerCase().endsWith('.pdf') ? 'https://www.google.com/s2/favicons?domain=adobe.com&sz=32' : 'https://www.google.com/s2/favicons?domain=docs.google.com&sz=32'} className="w-4 h-4 object-contain shrink-0" alt="" />
                                     <div className="min-w-0 flex-1">
                                       <p className="font-semibold truncate leading-none mb-0.5">{msg.media.name}</p>
                                       <p className="text-[8px] text-muted-foreground leading-none">Click to download</p>
@@ -1554,7 +1789,7 @@ export default function TeamChatPage() {
                           msg.status === 'sending' ? (
                             <Clock className="w-2.5 h-2.5 text-muted-foreground/50 animate-pulse" />
                           ) : (
-                            activeFriend && getTeammateStatus(activeFriend.id, activeFriend.status as any) === 'online' ? (
+                            activeFriend && getTeammateStatus(activeFriend.id) !== 'offline' ? (
                               <CheckCheck className="w-3 h-3 text-emerald-500" strokeWidth={3} />
                             ) : (
                               <Check className="w-2.5 h-2.5 text-emerald-500" strokeWidth={3} />
@@ -1668,7 +1903,7 @@ export default function TeamChatPage() {
                                     download={msg.media.name} 
                                     className="flex items-center gap-2 p-2 rounded-md bg-muted/40 dark:bg-zinc-800/80 border border-border/50 text-[10px] text-foreground font-semibold max-w-[200px] truncate"
                                   >
-                                    <span className="text-base shrink-0">📄</span>
+                                    <img src={msg.media.name.toLowerCase().endsWith('.pdf') ? 'https://www.google.com/s2/favicons?domain=adobe.com&sz=32' : 'https://www.google.com/s2/favicons?domain=docs.google.com&sz=32'} className="w-4 h-4 object-contain shrink-0" alt="" />
                                     <div className="min-w-0 flex-1">
                                       <p className="font-semibold truncate leading-none mb-0.5">{msg.media.name}</p>
                                       <p className="text-[8px] text-muted-foreground leading-none">Click to download</p>
@@ -1855,7 +2090,7 @@ export default function TeamChatPage() {
                 {selectedMedia.type.startsWith('image/') ? (
                   <img src={selectedMedia.url} className="w-8 h-8 rounded object-cover shrink-0" alt="Preview" />
                 ) : (
-                  <span className="text-lg shrink-0">📄</span>
+                  <img src={selectedMedia.name.toLowerCase().endsWith('.pdf') ? 'https://www.google.com/s2/favicons?domain=adobe.com&sz=32' : 'https://www.google.com/s2/favicons?domain=docs.google.com&sz=32'} className="w-4 h-4 object-contain shrink-0" alt="" />
                 )}
                 <div className="flex-1 min-w-0 flex flex-col gap-0.5">
                   <span className="truncate font-semibold text-foreground">{selectedMedia.name}</span>
@@ -2392,7 +2627,7 @@ export default function TeamChatPage() {
                         onClick={() => triggerShareDoc(doc)}
                         className="w-full p-2.5 border border-border/80 bg-background hover:bg-accent rounded-lg flex items-center gap-3 text-left transition-colors"
                       >
-                        <span className="text-xl shrink-0">📄</span>
+                        <img src={doc.type === 'pdf' ? 'https://www.google.com/s2/favicons?domain=adobe.com&sz=32' : 'https://www.google.com/s2/favicons?domain=docs.google.com&sz=32'} className="w-5 h-5 object-contain shrink-0" alt="" />
                         <div className="min-w-0 flex-1">
                           <p className="font-semibold text-foreground truncate">{doc.title}</p>
                           <p className="text-[8px] text-muted-foreground mt-0.5">{doc.size} • {doc.type.toUpperCase()}</p>
@@ -2469,148 +2704,216 @@ export default function TeamChatPage() {
             exit={{ opacity: 0 }}
             className="absolute inset-0 bg-zinc-950/95 z-50 flex flex-col items-center justify-between p-6 text-white font-sans"
           >
-            <div className="flex items-center gap-2 bg-zinc-900/80 px-4 py-1.5 rounded-full border border-zinc-800 shadow-lg text-[10px] font-bold text-emerald-400 tracking-wide">
-              <ShieldCheck className="w-4 h-4 animate-pulse shrink-0" />
-              <span>AES-256 END-TO-END SECURE ENCRYPTED CONNECTION</span>
+            {/* Call Screen Top Bar */}
+            <div className="w-full flex items-center justify-between shrink-0">
+              <div className="w-24 h-8 hidden md:block" /> {/* Spacer */}
+              <div className="flex items-center gap-2 bg-zinc-900/80 px-4 py-1.5 rounded-full border border-zinc-800 shadow-lg text-[10px] font-bold text-emerald-400 tracking-wide">
+                <ShieldCheck className="w-4 h-4 animate-pulse shrink-0" />
+                <span>AES-256 END-TO-END SECURE ENCRYPTED CONNECTION</span>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowDiagnostics(prev => !prev)}
+                className={cn(
+                  "text-[10px] font-bold tracking-wider uppercase flex items-center gap-1.5 px-3 py-1.5 rounded-full border transition-all shrink-0",
+                  showDiagnostics
+                    ? "bg-indigo-600/25 border-indigo-500 text-indigo-300 hover:bg-indigo-600/40"
+                    : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-800"
+                )}
+              >
+                <Activity className="w-3.5 h-3.5" />
+                Diagnostics HUD
+              </Button>
             </div>
 
-            <div className="flex-1 w-full max-w-lg flex flex-col items-center justify-center gap-6 mt-4">
-              {callState.status === 'connected' ? (
-                <div className="relative w-full aspect-video bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden shadow-2xl flex items-center justify-center">
-                  
-                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-900">
-                    <div className="w-20 h-20 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-2xl font-bold mb-3 shadow-lg relative">
-                      {getInitials(callState.friend.name)}
-                      <span className="absolute bottom-0 right-1 w-4 h-4 bg-emerald-500 border border-zinc-900 rounded-full flex items-center justify-center">
-                        <span className="w-2 h-2 bg-white rounded-full animate-ping" />
-                      </span>
-                    </div>
-                    <span className="text-sm font-semibold">{callState.friend.name}</span>
-                    
-                    {callState.type === 'video' ? (
-                      <span className="text-[10px] text-zinc-400 mt-1 flex items-center gap-1.5">
-                        <Video className="w-3 h-3" />
-                        Remote secure feed active
-                      </span>
-                    ) : (
-                      <span className="text-[10px] text-zinc-400 mt-1 flex items-center gap-1.5">
-                        <Mic className="w-3 h-3 text-emerald-400" />
-                        Audio secure stream active
-                      </span>
-                    )}
+            {/* Split layout: Call content on left, Diagnostics on right */}
+            <div className="flex-1 w-full flex overflow-hidden mt-4 gap-4">
+              
+              {/* Left Panel: Avatar, stream and calling buttons */}
+              <div className="flex-1 flex flex-col items-center justify-between py-4">
+                
+                <div className="flex-1 w-full max-w-lg flex flex-col items-center justify-center gap-6">
+                  {callState.status === 'connected' ? (
+                    <div className="relative w-full aspect-video bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden shadow-2xl flex items-center justify-center">
+                      
+                      <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-900">
+                        {callState.type === 'video' ? (
+                          <video
+                            ref={remoteVideoRef}
+                            autoPlay
+                            playsInline
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <>
+                            <div className="w-20 h-20 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-2xl font-bold mb-3 shadow-lg relative">
+                              {getInitials(callState.friend.name)}
+                              <span className="absolute bottom-0 right-1 w-4 h-4 bg-emerald-500 border border-zinc-900 rounded-full flex items-center justify-center">
+                                <span className="w-2 h-2 bg-white rounded-full animate-ping" />
+                              </span>
+                            </div>
+                            <span className="text-sm font-semibold">{callState.friend.name}</span>
+                          </>
+                        )}
 
-                    <div className="flex gap-1 items-end mt-5 h-6">
-                      {[...Array(6)].map((_, i) => (
-                        <motion.div
-                          key={i}
-                          animate={{ height: ['20%', '80%', '40%', '100%', '20%'] }}
-                          transition={{
-                            repeat: Infinity,
-                            duration: 0.8 + (i * 0.1),
-                            ease: 'easeInOut'
-                          }}
-                          className="w-1 bg-emerald-500 rounded-full"
-                          style={{ minHeight: '4px' }}
-                        />
-                      ))}
-                    </div>
-                  </div>
+                        {/* Speech Caption Overlay on Call Feed */}
+                        {enableSTT && transcripts.length > 0 && (
+                          <div className="absolute bottom-20 left-4 right-4 bg-black/60 backdrop-blur-md px-4 py-2.5 rounded-xl border border-zinc-800/80 max-w-md mx-auto text-center animate-in fade-in slide-in-from-bottom-2 duration-200 shadow-xl pointer-events-none select-none z-10">
+                            <span className="text-[8px] font-mono font-bold uppercase tracking-wider text-indigo-400 block mb-0.5">
+                              {transcripts[transcripts.length - 1].senderName}
+                            </span>
+                            <p className="text-[11px] text-zinc-200 leading-normal font-medium">
+                              "{transcripts[transcripts.length - 1].text}"
+                            </p>
+                          </div>
+                        )}
 
-                  <div className="absolute bottom-4 right-4 w-32 aspect-video bg-black border border-zinc-700 rounded-lg overflow-hidden shadow-lg flex items-center justify-center">
-                    {localStream && callState.type === 'video' && !isVideoMuted ? (
-                      <video
-                        ref={localVideoRef}
-                        autoPlay
-                        playsInline
-                        muted
-                        className="w-full h-full object-cover transform -scale-x-100"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex flex-col items-center justify-center bg-zinc-800 text-[9px] text-zinc-400 font-semibold p-1 text-center">
-                        <VideoOff className="w-3.5 h-3.5 mb-1 text-zinc-500" />
-                        Camera Off
+                        {/* Call Active Status Info (only for non-video or collapsable) */}
+                        {callState.type !== 'video' && (
+                          <>
+                            <span className="text-[10px] text-zinc-400 mt-1 flex items-center gap-1.5">
+                              <Mic className="w-3 h-3 text-emerald-400" />
+                              Audio secure stream active
+                            </span>
+
+                            <div className="flex gap-1 items-end mt-5 h-6">
+                              {[...Array(6)].map((_, i) => (
+                                <motion.div
+                                  key={i}
+                                  animate={{ height: ['20%', '80%', '40%', '100%', '20%'] }}
+                                  transition={{
+                                    repeat: Infinity,
+                                    duration: 0.8 + (i * 0.1),
+                                    ease: 'easeInOut'
+                                  }}
+                                  className="w-1 bg-emerald-500 rounded-full"
+                                  style={{ minHeight: '4px' }}
+                                />
+                              ))}
+                            </div>
+                          </>
+                        )}
                       </div>
-                    )}
-                  </div>
 
-                </div>
-              ) : (
-                <div className="flex flex-col items-center gap-6">
-                  <div className="relative">
-                    <div className="absolute -inset-4 rounded-full bg-indigo-500/15 animate-ping duration-1000" />
-                    <div className="w-28 h-28 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-3xl font-bold text-white shadow-2xl relative z-10">
-                      {getInitials(callState.friend.name)}
+                      <div className="absolute bottom-4 right-4 w-32 aspect-video bg-black border border-zinc-700 rounded-lg overflow-hidden shadow-lg flex items-center justify-center">
+                        {localStream && callState.type === 'video' && !isVideoMuted ? (
+                          <video
+                            ref={localVideoRef}
+                            autoPlay
+                            playsInline
+                            muted
+                            className="w-full h-full object-cover transform -scale-x-100"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex flex-col items-center justify-center bg-zinc-800 text-[9px] text-zinc-400 font-semibold p-1 text-center">
+                            <VideoOff className="w-3.5 h-3.5 mb-1 text-zinc-500" />
+                            Camera Off
+                          </div>
+                        )}
+                      </div>
+
                     </div>
-                  </div>
-                  <div className="text-center">
-                    <h3 className="text-xl font-bold text-white">{callState.friend.name}</h3>
-                    <p className="text-xs text-zinc-400 mt-1 uppercase tracking-widest font-semibold font-mono animate-pulse">
-                      {incomingCallOffer && callState.status === 'ringing'
-                        ? 'Incoming secure call...'
-                        : callState.status === 'dialing'
-                        ? 'Dialing secure connection...'
-                        : 'Connecting P2P...'}
-                    </p>
-                  </div>
+                  ) : (
+                    <div className="flex flex-col items-center gap-6">
+                      <div className="relative">
+                        <div className="absolute -inset-4 rounded-full bg-indigo-500/15 animate-ping duration-1000" />
+                        <div className="w-28 h-28 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-3xl font-bold text-white shadow-2xl relative z-10">
+                          {getInitials(callState.friend.name)}
+                        </div>
+                      </div>
+                      <div className="text-center">
+                        <h3 className="text-xl font-bold text-white">{callState.friend.name}</h3>
+                        <p className="text-xs text-zinc-400 mt-1 uppercase tracking-widest font-semibold font-mono animate-pulse">
+                          {incomingCallOffer && callState.status === 'ringing'
+                            ? 'Incoming secure call...'
+                            : callState.status === 'dialing'
+                            ? 'Dialing secure connection...'
+                            : 'Connecting P2P...'}
+                        </p>
+                      </div>
 
-                  {/* Accept / Decline actions for incoming calls */}
-                  {incomingCallOffer && callState.status === 'ringing' && (
-                    <div className="flex items-center gap-4 mt-2">
-                      <Button
-                        onClick={acceptIncomingCall}
-                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-6 py-2.5 rounded-full flex items-center gap-2 shadow-lg"
-                      >
-                        <Phone className="w-4 h-4 fill-current" />
-                        Accept
-                      </Button>
-                      <Button
-                        onClick={declineIncomingCall}
-                        className="bg-red-600 hover:bg-red-700 text-white font-semibold px-6 py-2.5 rounded-full flex items-center gap-2 shadow-lg"
-                      >
-                        <PhoneOff className="w-4 h-4" />
-                        Decline
-                      </Button>
+                      {/* Accept / Decline actions for incoming calls */}
+                      {incomingCallOffer && callState.status === 'ringing' && (
+                        <div className="flex items-center gap-4 mt-2">
+                          <Button
+                            onClick={acceptIncomingCall}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-6 py-2.5 rounded-full flex items-center gap-2 shadow-lg"
+                          >
+                            <Phone className="w-4 h-4 fill-current" />
+                            Accept
+                          </Button>
+                          <Button
+                            onClick={declineIncomingCall}
+                            className="bg-red-600 hover:bg-red-700 text-white font-semibold px-6 py-2.5 rounded-full flex items-center gap-2 shadow-lg"
+                          >
+                            <PhoneOff className="w-4 h-4" />
+                            Decline
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
-              )}
-            </div>
 
-            {!(incomingCallOffer && callState.status === 'ringing') && (
-              <div className="flex items-center gap-6 mb-8 shrink-0">
-                <Button
-                  type="button"
-                  onClick={toggleAudioMute}
-                  className={cn(
-                    "w-12 h-12 rounded-full flex items-center justify-center shadow-lg border border-zinc-800 transition-colors",
-                    isAudioMuted ? "bg-red-600 text-white hover:bg-red-700" : "bg-zinc-900 hover:bg-zinc-800 text-zinc-300"
-                  )}
-                >
-                  {isAudioMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
-                </Button>
+                {/* Footer Call Action buttons */}
+                {!(incomingCallOffer && callState.status === 'ringing') && (
+                  <div className="flex items-center gap-6 mb-2 shrink-0">
+                    <Button
+                      type="button"
+                      onClick={toggleAudioMute}
+                      className={cn(
+                        "w-12 h-12 rounded-full flex items-center justify-center shadow-lg border border-zinc-800 transition-colors",
+                        isAudioMuted ? "bg-red-600 text-white hover:bg-red-700" : "bg-zinc-900 hover:bg-zinc-800 text-zinc-300"
+                      )}
+                    >
+                      {isAudioMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+                    </Button>
 
-                {callState.type === 'video' && (
-                  <Button
-                    type="button"
-                    onClick={toggleVideoMute}
-                    className={cn(
-                      "w-12 h-12 rounded-full flex items-center justify-center shadow-lg border border-zinc-800 transition-colors",
-                      isVideoMuted ? "bg-red-600 text-white hover:bg-red-700" : "bg-zinc-900 hover:bg-zinc-800 text-zinc-300"
+                    {callState.type === 'video' && (
+                      <Button
+                        type="button"
+                        onClick={toggleVideoMute}
+                        className={cn(
+                          "w-12 h-12 rounded-full flex items-center justify-center shadow-lg border border-zinc-800 transition-colors",
+                          isVideoMuted ? "bg-red-600 text-white hover:bg-red-700" : "bg-zinc-900 hover:bg-zinc-800 text-zinc-300"
+                        )}
+                      >
+                        {isVideoMuted ? <VideoOff className="w-5 h-5" /> : <Video className="w-5 h-5" />}
+                      </Button>
                     )}
-                  >
-                    {isVideoMuted ? <VideoOff className="w-5 h-5" /> : <Video className="w-5 h-5" />}
-                  </Button>
+
+                    <Button
+                      type="button"
+                      onClick={endCall}
+                      className="w-12 h-12 rounded-full bg-red-600 hover:bg-red-700 text-white flex items-center justify-center shadow-lg border border-red-500/20 transition-colors"
+                    >
+                      <PhoneOff className="w-5 h-5" />
+                    </Button>
+                  </div>
                 )}
 
-                <Button
-                  type="button"
-                  onClick={endCall}
-                  className="w-12 h-12 rounded-full bg-red-600 hover:bg-red-700 text-white flex items-center justify-center shadow-lg border border-red-500/20 transition-colors"
-                >
-                  <PhoneOff className="w-5 h-5" />
-                </Button>
               </div>
-            )}
+
+              {/* Right Panel: Call Diagnostics HUD */}
+              {showDiagnostics && (
+                <CallDiagnostics
+                  localStream={localStream}
+                  remoteStream={remoteStream}
+                  callType={callState.type}
+                  callStatus={callState.status}
+                  onClose={() => setShowDiagnostics(false)}
+                  transcripts={transcripts}
+                  onSaveTranscript={downloadTranscript}
+                  enableSTT={enableSTT}
+                  setEnableSTT={setEnableSTT}
+                  autoSaveTranscripts={autoSaveTranscripts}
+                  setAutoSaveTranscripts={setAutoSaveTranscripts}
+                />
+              )}
+
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -2706,3 +3009,51 @@ export default function TeamChatPage() {
 const getInitials = (name: string) => {
   return name.split(' ').map(n => n.charAt(0)).join('').toUpperCase().substring(0, 2);
 };
+
+// Optimizes SDP description for Voice Calls (WhatsApp codec configurations)
+// Injects preferred bitrate (maxaveragebitrate), VAD/usedtx, and Opus inband FEC settings.
+function optimizeAudioSDP(
+  sdp: string,
+  bitrate: number = 24000,
+  useFec: boolean = true,
+  useDtx: boolean = true
+): string {
+  const lines = sdp.split('\r\n');
+  let opusPayloadType: string | null = null;
+
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].includes('opus/48000/2')) {
+      const match = lines[i].match(/a=rtpmap:(\d+)\s+opus/);
+      if (match) {
+        opusPayloadType = match[1];
+        break;
+      }
+    }
+  }
+
+  if (opusPayloadType) {
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].startsWith(`a=fmtp:${opusPayloadType}`)) {
+        let fmtp = lines[i];
+        if (!fmtp.includes('maxaveragebitrate=')) {
+          fmtp += `;maxaveragebitrate=${bitrate}`;
+        } else {
+          fmtp = fmtp.replace(/maxaveragebitrate=\d+/, `maxaveragebitrate=${bitrate}`);
+        }
+        if (!fmtp.includes('useinbandfec=')) {
+          fmtp += `;useinbandfec=${useFec ? '1' : '0'}`;
+        } else {
+          fmtp = fmtp.replace(/useinbandfec=[01]/, `useinbandfec=${useFec ? '1' : '0'}`);
+        }
+        if (!fmtp.includes('usedtx=')) {
+          fmtp += `;usedtx=${useDtx ? '1' : '0'}`;
+        } else {
+          fmtp = fmtp.replace(/usedtx=[01]/, `usedtx=${useDtx ? '1' : '0'}`);
+        }
+        lines[i] = fmtp;
+      }
+    }
+  }
+
+  return lines.join('\r\n');
+}

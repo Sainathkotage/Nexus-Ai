@@ -335,3 +335,26 @@ CREATE POLICY "Allow admins to remove team members" ON public.user_friends
         AND (lower(COALESCE(role, '')) LIKE '%admin%' OR lower(COALESCE(role, '')) LIKE '%owner%')
     )
   );
+
+-- Create login_activities table
+CREATE TABLE IF NOT EXISTS public.login_activities (
+  id TEXT PRIMARY KEY,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_name TEXT NOT NULL,
+  user_role TEXT,
+  timestamp TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+  ip_address TEXT,
+  device TEXT
+);
+
+-- Enable RLS on login_activities
+ALTER TABLE public.login_activities ENABLE ROW LEVEL SECURITY;
+
+-- Allow read access to login activities
+CREATE POLICY "Allow members to read login activities" ON public.login_activities
+  FOR SELECT USING (true);
+
+-- Allow inserting own login activity
+CREATE POLICY "Allow individual write access to login_activities" ON public.login_activities
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+

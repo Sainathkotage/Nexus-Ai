@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { useWorkspace } from '@/lib/store';
 import { motion } from 'motion/react';
-import { FileText, Search, Plus, Filter } from 'lucide-react';
+import { FileText, Search, Plus, Filter, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { DocumentCard } from '@/components/documents/document-card';
@@ -11,11 +11,112 @@ import { DocumentDetail } from '@/components/documents/document-detail';
 import { NotebookWorkspace } from '@/components/documents/notebook-workspace';
 import { UploadZone } from '@/components/documents/upload-zone';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 
 const typeFilters = ['all', 'pdf', 'txt', 'meeting', 'research'] as const;
 
 export default function DocumentsPage() {
-  const { setActivePage, documents, selectedDocumentId, setSelectedDocumentId, user } = useWorkspace();
+  const { 
+    setActivePage, documents, selectedDocumentId, setSelectedDocumentId, user,
+    addTask, addDocument 
+  } = useWorkspace();
+
+  // Find a document with extracted tasks or any document to convert notes
+  const notesDoc = documents.find(d => d.extractedTasks && d.extractedTasks.length > 0);
+  const targetNotesDoc = notesDoc || (documents.length > 0 ? documents[0] : null);
+
+  const handleConvertNotes = () => {
+    if (!targetNotesDoc) {
+      toast.info('No documents available to extract tasks. Upload a document first.');
+      return;
+    }
+
+    const tasksToCreate: string[] = targetNotesDoc.extractedTasks && targetNotesDoc.extractedTasks.length > 0
+      ? targetNotesDoc.extractedTasks.map(t => typeof t === 'string' ? t : (t as any).text || 'Unnamed task')
+      : [`Review ${targetNotesDoc.title}`, `Discuss ${targetNotesDoc.title} with stakeholders`, `Implement feedback from ${targetNotesDoc.title}`];
+
+    toast.promise(
+      new Promise((resolve, reject) => {
+        setTimeout(() => {
+          try {
+            tasksToCreate.forEach(tTitle => {
+              addTask({
+                title: tTitle,
+                description: `Extracted dynamically by Nexus AI from "${targetNotesDoc.title}"`,
+                status: 'todo',
+                priority: 'medium',
+                dueDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+                tags: ['ai-extracted', 'documents'],
+                subtasks: [],
+                assignee: user || { id: 'unknown', name: 'User', email: '', avatar: '', role: 'Member' }
+              });
+            });
+            resolve(true);
+          } catch (e) {
+            reject(e);
+          }
+        }, 1500);
+      }),
+      {
+        loading: `Scanning "${targetNotesDoc.title}" for tasks...`,
+        success: `Extracted and created ${tasksToCreate.length} tasks in the Tasks tab!`,
+        error: 'Task extraction error.'
+      }
+    );
+  };
+
+  const handleGeneratePlan = () => {
+    toast.promise(
+      new Promise((resolve, reject) => {
+        setTimeout(() => {
+          try {
+            addDocument({
+              title: 'Nexus AI Project Plan',
+              type: 'pdf',
+              size: '15 KB',
+              summary: 'Structured project deliverables plan generated dynamically by Nexus AI based on the current workspace context.',
+              keyPoints: ['Phase 1: Foundation setup & repository audit', 'Phase 2: Database schemas, models, and indexing', 'Phase 3: Final validation & automated testing'],
+              extractedTasks: [
+                {
+                  id: 'task-gen-1',
+                  text: 'Verify env variables',
+                  sourceDocumentId: 'nexus-ai-project-plan',
+                  sourceDocumentTitle: 'Nexus AI Project Plan'
+                },
+                {
+                  id: 'task-gen-2',
+                  text: 'Review database indexes',
+                  sourceDocumentId: 'nexus-ai-project-plan',
+                  sourceDocumentTitle: 'Nexus AI Project Plan'
+                },
+                {
+                  id: 'task-gen-3',
+                  text: 'Run typechecking script',
+                  sourceDocumentId: 'nexus-ai-project-plan',
+                  sourceDocumentTitle: 'Nexus AI Project Plan'
+                }
+              ],
+              extractedDeadlines: [],
+              extractedPeople: [],
+              extractedOrganizations: [],
+              tags: ['ai-generated', 'project-plan'],
+              content: 'Phase 1: Foundation setup & repository audit...\nPhase 2: Database schemas, models, and indexing...\nPhase 3: Final validation & automated testing...',
+              thumbnail: 'https://www.google.com/s2/favicons?domain=docs.google.com&sz=32',
+              processingStatus: 'completed'
+            });
+            resolve(true);
+          } catch (e) {
+            reject(e);
+          }
+        }, 1800);
+      }),
+      {
+        loading: 'Generating structured project plan...',
+        success: 'Project Plan document generated and saved in documents!',
+        error: 'Generation error.'
+      }
+    );
+  };
   const [uploadOpen, setUploadOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('all');
@@ -70,7 +171,7 @@ export default function DocumentsPage() {
   };
 
   return (
-    <div className="flex flex-col h-full w-full">
+    <div className="flex flex-col h-full w-full" data-tutorial="documents-container">
       {/* Header */}
       <div className="p-6 md:p-8 shrink-0 flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-border">
         <div className="flex flex-col gap-1">
@@ -91,6 +192,34 @@ export default function DocumentsPage() {
             View-only Guest Access
           </Badge>
         )}
+      </div>
+
+      {/* AI Suggestions Widget */}
+      <div className="mx-6 md:mx-8 mt-4 p-4 border border-indigo-500/20 bg-indigo-500/[0.01] rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-3 shrink-0">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-full bg-indigo-500/10 flex items-center justify-center border border-indigo-500/20 text-indigo-500 shrink-0">
+            <Sparkles className="w-4 h-4" />
+          </div>
+          <div>
+            <h4 className="text-xs font-bold text-foreground">AI Document Suggestions</h4>
+            <p className="text-[10px] text-muted-foreground mt-0.5">Nexus analyzed your documents and suggests these actions:</p>
+          </div>
+        </div>
+        
+        <div className="flex flex-wrap gap-2.5">
+          <button
+            onClick={handleConvertNotes}
+            className="bg-card border border-border hover:border-indigo-500/30 text-foreground text-[10.5px] font-bold px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
+          >
+            • {targetNotesDoc ? `Convert "${targetNotesDoc.title}" notes into tasks` : 'Convert notes into tasks'}
+          </button>
+          <button
+            onClick={handleGeneratePlan}
+            className="bg-card border border-border hover:border-indigo-500/30 text-foreground text-[10.5px] font-bold px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
+          >
+            • Generate project plan
+          </button>
+        </div>
       </div>
 
       {/* Toolbar */}

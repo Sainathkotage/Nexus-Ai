@@ -474,6 +474,7 @@ export default function ChatPage() {
               }}
               placeholder="Ask a question about your documents..."
               className="w-full bg-muted border-transparent rounded-full py-4 pl-14 pr-24 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring/20 transition-all"
+              data-tutorial="chat-input"
             />
             
             {/* Decorative Microphone & Send Action Buttons */}

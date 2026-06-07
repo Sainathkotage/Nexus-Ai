@@ -3,6 +3,7 @@ import { Inter, Fraunces } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { WorkspaceProvider } from "@/lib/store";
+import { TutorialProvider } from "@/lib/tutorial-context";
 import { PopupProvider } from "@/lib/popup-context";
 import { AppLayout } from "@/components/layout/app-layout";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -38,16 +39,18 @@ export default function RootLayout({
       <body className={`${inter.variable} ${fraunces.variable} min-h-screen flex flex-col font-sans`}>
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
           <WorkspaceProvider>
-            <PopupProvider>
-              <TooltipProvider>
-                <Suspense fallback={<div className="min-h-screen w-full bg-[#f7f6f3] dark:bg-[#121212]" />}>
-                  <AppLayout>
-                    {children}
-                  </AppLayout>
-                </Suspense>
-                <Toaster />
-              </TooltipProvider>
-            </PopupProvider>
+            <TutorialProvider>
+              <PopupProvider>
+                <TooltipProvider>
+                  <Suspense fallback={<div className="min-h-screen w-full bg-[#f7f6f3] dark:bg-[#121212]" />}>
+                    <AppLayout>
+                      {children}
+                    </AppLayout>
+                  </Suspense>
+                  <Toaster />
+                </TooltipProvider>
+              </PopupProvider>
+            </TutorialProvider>
           </WorkspaceProvider>
         </ThemeProvider>
       </body>

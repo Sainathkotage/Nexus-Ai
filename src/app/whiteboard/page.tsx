@@ -3,6 +3,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useWorkspace } from '@/lib/store';
 import { usePopup } from '@/lib/popup-context';
+import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { 
   Palette, Type, Square, Circle as CircleIcon, StickyNote, 
@@ -43,7 +44,7 @@ const COLOR_PALETTE = [
 ];
 
 export default function WhiteboardPage() {
-  const { setActivePage } = useWorkspace();
+  const { setActivePage, workspace, user } = useWorkspace();
   const { confirm, prompt } = usePopup();
   const [tool, setTool] = useState<Tool>('select');
   const [selectedColor, setSelectedColor] = useState(COLOR_PALETTE[5]); // Default to Slate Dark
@@ -70,12 +71,22 @@ export default function WhiteboardPage() {
   const [currentPath, setCurrentPath] = useState<{ x: number; y: number }[]>([]);
   const [drawingElementId, setDrawingElementId] = useState<string | null>(null);
   
-  // Dragging elements select state
   const [isDragging, setIsDragging] = useState(false);
   const [dragStartCoords, setDragStartCoords] = useState({ x: 0, y: 0 });
 
   const svgRef = useRef<SVGSVGElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Realtime Cursors and Syncing Refs
+  const [peerCursors, setPeerCursors] = useState<Record<string, { x: number; y: number; name: string; timestamp: number }>>({});
+  const channelRef = useRef<any>(null);
+  const elementsRef = useRef<BoardElement[]>([]);
+  const lastCursorBroadcastRef = useRef<number>(0);
+
+  // Sync elements ref for real-time listener access
+  useEffect(() => {
+    elementsRef.current = elements;
+  }, [elements]);
 
   // Initialize
   useEffect(() => {
@@ -93,6 +104,105 @@ export default function WhiteboardPage() {
     }
   }, [setActivePage]);
 
+  // Realtime Channel Sync
+  useEffect(() => {
+    if (!workspace) return;
+    
+    const channelName = `whiteboard-${workspace.id}`;
+    const channel = supabase.channel(channelName);
+    channelRef.current = channel;
+
+    channel
+      .on('broadcast', { event: 'whiteboard-update' }, ({ payload }) => {
+        if (payload && payload.senderId !== user?.id) {
+          if (payload.elements) {
+            setElements(payload.elements);
+            setHistory(prev => {
+              const nextHistory = prev.slice(0, historyIndex + 1);
+              nextHistory.push(payload.elements);
+              return nextHistory;
+            });
+            setHistoryIndex(prev => prev + 1);
+            localStorage.setItem('nexus_whiteboard_elements', JSON.stringify(payload.elements));
+          }
+        }
+      })
+      .on('broadcast', { event: 'whiteboard-request-state' }, ({ payload }) => {
+        if (payload && payload.senderId !== user?.id) {
+          channel.send({
+            type: 'broadcast',
+            event: 'whiteboard-update',
+            payload: {
+              elements: elementsRef.current,
+              senderId: user?.id
+            }
+          });
+        }
+      })
+      .on('broadcast', { event: 'whiteboard-cursor' }, ({ payload }) => {
+        if (payload && payload.senderId !== user?.id) {
+          setPeerCursors(prev => ({
+            ...prev,
+            [payload.senderId]: {
+              x: payload.x,
+              y: payload.y,
+              name: payload.name,
+              timestamp: Date.now()
+            }
+          }));
+        }
+      })
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log(`Subscribed to whiteboard channel: ${channelName}`);
+          channel.send({
+            type: 'broadcast',
+            event: 'whiteboard-request-state',
+            payload: {
+              senderId: user?.id
+            }
+          });
+        }
+      });
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [workspace, user?.id]);
+
+  // Peer cursors timeout cleanup
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const now = Date.now();
+      setPeerCursors(prev => {
+        const clean: typeof prev = {};
+        let changed = false;
+        for (const [id, cursor] of Object.entries(prev)) {
+          if (now - cursor.timestamp < 3000) {
+            clean[id] = cursor;
+          } else {
+            changed = true;
+          }
+        }
+        return changed ? clean : prev;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const broadcastElements = (elementsList: BoardElement[]) => {
+    if (channelRef.current && user) {
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'whiteboard-update',
+        payload: {
+          elements: elementsList,
+          senderId: user.id
+        }
+      });
+    }
+  };
+
   // History & Storage Sync
   const pushHistory = (newElements: BoardElement[]) => {
     const nextHistory = history.slice(0, historyIndex + 1);
@@ -101,6 +211,7 @@ export default function WhiteboardPage() {
     setHistoryIndex(nextHistory.length - 1);
     setElements(newElements);
     localStorage.setItem('nexus_whiteboard_elements', JSON.stringify(newElements));
+    broadcastElements(newElements);
   };
 
   const handleUndo = () => {
@@ -110,6 +221,7 @@ export default function WhiteboardPage() {
       setElements(history[prevIndex]);
       setSelectedElementId(null);
       localStorage.setItem('nexus_whiteboard_elements', JSON.stringify(history[prevIndex]));
+      broadcastElements(history[prevIndex]);
       toast.info('Undo change');
     }
   };
@@ -121,6 +233,7 @@ export default function WhiteboardPage() {
       setElements(history[nextIndex]);
       setSelectedElementId(null);
       localStorage.setItem('nexus_whiteboard_elements', JSON.stringify(history[nextIndex]));
+      broadcastElements(history[nextIndex]);
       toast.info('Redo change');
     }
   };
@@ -263,6 +376,24 @@ export default function WhiteboardPage() {
 
   const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
     const coords = getSvgCoords(e);
+
+    // Broadcast cursor position (throttle to ~50ms)
+    const now = Date.now();
+    if (now - lastCursorBroadcastRef.current > 50) {
+      lastCursorBroadcastRef.current = now;
+      if (channelRef.current && user) {
+        channelRef.current.send({
+          type: 'broadcast',
+          event: 'whiteboard-cursor',
+          payload: {
+            x: coords.x,
+            y: coords.y,
+            name: user.name,
+            senderId: user.id
+          }
+        });
+      }
+    }
 
     if (isPanning) {
       const dx = e.clientX - panStart.x;
@@ -1157,14 +1288,36 @@ export default function WhiteboardPage() {
               />
             )}
 
+            {/* Render Peer Cursors */}
+            {Object.entries(peerCursors).map(([id, cursor]) => (
+              <g key={id} transform={`translate(${cursor.x}, ${cursor.y})`} className="pointer-events-none transition-all duration-75">
+                <MousePointer className="w-4 h-4 text-indigo-500 fill-indigo-500 shrink-0" />
+                <g transform="translate(10, 10)">
+                  <rect 
+                    width={cursor.name.length * 6 + 12} 
+                    height="16" 
+                    rx="3" 
+                    className="fill-indigo-600 dark:fill-indigo-500 stroke-none" 
+                  />
+                  <text 
+                    x="6" 
+                    y="11" 
+                    className="fill-white text-[9px] font-bold font-sans select-none"
+                  >
+                    {cursor.name}
+                  </text>
+                </g>
+              </g>
+            ))}
+
           </g>
         </svg>
 
         {/* Small tooltips bar */}
         <div className="absolute bottom-6 right-6 bg-card border border-border px-3 py-1.5 shadow-md rounded-lg text-[10px] text-muted-foreground z-10 flex gap-4 font-sans font-bold">
-          <span>💡 Select layout tools & drag on canvas to draw</span>
-          <span>🖱️ Hold Space & drag to pan canvas around</span>
-          <span>⚡ Lock items to freeze position templates</span>
+          <span className="flex items-center gap-1.5"><img src="https://www.google.com/s2/favicons?domain=figma.com&sz=32" className="w-3.5 h-3.5 object-contain" alt="" /> Select layout tools & drag on canvas to draw</span>
+          <span className="flex items-center gap-1.5"><img src="https://www.google.com/s2/favicons?domain=figma.com&sz=32" className="w-3.5 h-3.5 object-contain" alt="" /> Hold Space & drag to pan canvas around</span>
+          <span className="flex items-center gap-1.5"><img src="https://www.google.com/s2/favicons?domain=figma.com&sz=32" className="w-3.5 h-3.5 object-contain" alt="" /> Lock items to freeze position templates</span>
         </div>
 
       </div>

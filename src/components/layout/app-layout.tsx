@@ -6,6 +6,10 @@ import { RightSidebar } from './right-sidebar';
 import { TopBar } from './top-bar';
 import { CommandPalette } from './command-palette';
 import { useWorkspace } from '@/lib/store';
+import { TutorialWelcome } from '@/components/ui/tutorial-welcome';
+import { TutorialSpotlight } from '@/components/ui/tutorial-spotlight';
+import { TutorialCelebration } from '@/components/ui/tutorial-celebration';
+import { HelpCenter } from '@/components/ui/help-center';
 import { LoginScreen } from './login-screen';
 import { GuestAutoJoin } from './guest-auto-join';
 import { NoWorkspaceScreen } from './no-workspace-screen';
@@ -168,6 +172,12 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       <CommandPalette open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen} />
       <CustomContextMenu />
 
+      {/* Onboarding Tutorial System Overlays */}
+      <TutorialWelcome />
+      <TutorialSpotlight />
+      <TutorialCelebration />
+      <HelpCenter />
+
       {/* Global Email Client Redirection Dialog */}
       <Dialog open={!!emailRedirect} onOpenChange={(open) => !open && setEmailRedirect(null)}>
         <DialogContent className="sm:max-w-md bg-background border border-border shadow-lg rounded-xl text-xs">
@@ -195,7 +205,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                   className="flex items-center justify-between p-2.5 border border-border hover:border-primary/20 hover:bg-muted/30 rounded-lg text-left font-medium transition-colors"
                 >
                   <div className="flex items-center gap-2">
-                    <span className="text-lg">📧</span>
+                    <img src="https://www.google.com/s2/favicons?domain=mail.google.com&sz=32" className="w-5 h-5 object-contain" alt="" />
                     <div className="flex flex-col">
                       <span className="text-xs text-foreground font-semibold">Compose in Gmail Web</span>
                       <span className="text-[10px] text-muted-foreground">Opens Gmail compose panel in a new tab</span>
@@ -210,7 +220,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                   className="flex items-center justify-between p-2.5 border border-border hover:border-primary/20 hover:bg-muted/30 rounded-lg text-left font-medium transition-colors"
                 >
                   <div className="flex items-center gap-2">
-                    <span className="text-lg">Ⓜ️</span>
+                    <img src="https://www.google.com/s2/favicons?domain=outlook.live.com&sz=32" className="w-5 h-5 object-contain" alt="" />
                     <div className="flex flex-col">
                       <span className="text-xs text-foreground font-semibold">Compose in Outlook Web</span>
                       <span className="text-[10px] text-muted-foreground">Opens Outlook compose tab prefilled</span>
@@ -225,7 +235,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                   className="flex items-center justify-between p-2.5 border border-border hover:border-primary/20 hover:bg-muted/30 rounded-lg text-left font-medium transition-colors"
                 >
                   <div className="flex items-center gap-2">
-                    <span className="text-lg">💻</span>
+                    <img src="https://www.google.com/s2/favicons?domain=thunderbird.net&sz=32" className="w-5 h-5 object-contain" alt="" />
                     <div className="flex flex-col">
                       <span className="text-xs text-foreground font-semibold">Native Desktop Client</span>
                       <span className="text-[10px] text-muted-foreground">Triggers client-side mailto protocol</span>
@@ -240,7 +250,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                   className="flex items-center justify-between p-2.5 border border-border hover:border-primary/20 hover:bg-muted/30 rounded-lg text-left font-medium transition-colors"
                 >
                   <div className="flex items-center gap-2">
-                    <span className="text-lg">📋</span>
+                    <img src="https://www.google.com/s2/favicons?domain=clipboardjs.com&sz=32" className="w-5 h-5 object-contain" alt="" />
                     <div className="flex flex-col">
                       <span className="text-xs text-foreground font-semibold">Copy to Clipboard</span>
                       <span className="text-[10px] text-muted-foreground">Copies headers and body details directly</span>

@@ -10,7 +10,7 @@ import {
   Lightbulb, Volume2, HelpCircle, FileText, Calendar, Layout, User, 
   Mic, Brain, Search, Award, RefreshCw, ChevronRight, ListCollapse,
   ChevronsUpDown, Info, CheckCircle2, AlertCircle, Eye, ArrowLeft,
-  Settings, Columns, Grid3X3, BookOpen
+  Settings, Columns, Grid3X3, BookOpen, Palette
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -799,8 +799,9 @@ function QuizView({ data }: { data: any }) {
         <div className="flex flex-col items-center border border-border rounded-xl p-4 bg-muted/10 w-full font-mono text-center mt-2">
           <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider mb-1">Your Score</span>
           <span className="text-3xl font-extrabold text-foreground">{score} / {questions.length}</span>
-          <span className={cn("text-[9px] uppercase font-bold mt-2", passed ? "text-emerald-600" : "text-red-500")}>
-            {passed ? 'Passed - Great Job! ✅' : 'Failed - Try Reviewing Again ❌'}
+          <span className={cn("text-[9px] uppercase font-bold mt-2 flex items-center gap-1", passed ? "text-emerald-600" : "text-red-500")}>
+            {passed ? 'Passed - Great Job!' : 'Failed - Try Reviewing Again'}
+            <img src="https://www.google.com/s2/favicons?domain=quizlet.com&sz=32" className="w-3.5 h-3.5 object-contain" alt="" />
           </span>
         </div>
 
@@ -876,7 +877,7 @@ function QuizView({ data }: { data: any }) {
 }
 
 // ── 6. INTERACTIVE MINDMAP VIEW ───────────────────────────────
-function MindmapView({ data }: { data: any }) {
+export function MindmapView({ data }: { data: any }) {
   // Collapsed node IDs state
   const [collapsedIds, setCollapsedIds] = useState<Record<string, boolean>>({});
 
@@ -890,16 +891,61 @@ function MindmapView({ data }: { data: any }) {
 
   // Flatten the tree into rendering nodes and paths
   const layoutedData = useMemo(() => {
+    if (!data || Object.keys(data).length === 0) {
+      return { nodes: [], paths: [], height: 300, width: 800 };
+    }
+
+    // Normalize tree root to support wrapped structures from Gemini
+    let rootNode = data;
+    if (data && typeof data === 'object') {
+      if (Array.isArray(data)) {
+        rootNode = {
+          id: 'root',
+          label: 'Main Topic',
+          children: data
+        };
+      } else {
+        const hasDirectChildren = (obj: any) => {
+          const childrenList = obj.children || obj.subtopics || obj.concepts || obj.nodes || obj.items;
+          return Array.isArray(childrenList) && childrenList.length > 0;
+        };
+
+        if (!hasDirectChildren(data)) {
+          // Look for a nested object/array that contains the actual tree
+          const keys = Object.keys(data);
+          for (const key of keys) {
+            const val = data[key];
+            if (val && typeof val === 'object') {
+              if (Array.isArray(val) && val.length > 0 && (val[0].label || val[0].name || val[0].topic || hasDirectChildren(val[0]))) {
+                rootNode = {
+                  id: 'root',
+                  label: key.charAt(0).toUpperCase() + key.slice(1),
+                  children: val
+                };
+                break;
+              } else if (!Array.isArray(val) && (hasDirectChildren(val) || val.label || val.name || val.topic)) {
+                rootNode = val;
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+
     let index = { count: 0 };
     
     function layout(node: any, depth = 0): any {
+      const labelText = node.label || node.name || node.title || node.topic || 'Subtopic';
+      const nodeId = node.id ? String(node.id) : `node-${depth}-${index.count}`;
       const currentY = index.count * 64 + 40;
-      const isCollapsed = !!collapsedIds[node.id];
-      const hasChildren = node.children && node.children.length > 0;
+      const isCollapsed = !!collapsedIds[nodeId];
+      const childrenList = node.children || node.subtopics || node.concepts || node.nodes || node.items;
+      const hasChildren = Array.isArray(childrenList) && childrenList.length > 0;
 
       const layoutedNode = {
-        id: node.id,
-        label: node.label,
+        id: nodeId,
+        label: labelText,
         x: depth * 200 + 40,
         y: currentY,
         collapsed: isCollapsed,
@@ -908,7 +954,7 @@ function MindmapView({ data }: { data: any }) {
       };
 
       if (hasChildren && !isCollapsed) {
-        node.children.forEach((child: any, i: number) => {
+        childrenList.forEach((child: any, i: number) => {
           if (i > 0) index.count++;
           layoutedNode.children.push(layout(child, depth + 1));
         });
@@ -917,12 +963,14 @@ function MindmapView({ data }: { data: any }) {
       return layoutedNode;
     }
 
-    const tree = layout(data);
+    const tree = layout(rootNode);
     const nodes: any[] = [];
     const paths: any[] = [];
+    let maxDepthX = 800;
 
     function traverse(node: any) {
       nodes.push({ id: node.id, label: node.label, x: node.x, y: node.y, collapsed: node.collapsed, hasChildren: node.hasChildren });
+      maxDepthX = Math.max(maxDepthX, node.x + 220);
       node.children.forEach((child: any) => {
         // Draw path connecting parent-child: horizontal cubic-bezier curves
         const pathData = `M ${node.x + 130} ${node.y + 15} C ${node.x + 175} ${node.y + 15}, ${child.x - 45} ${child.y + 15}, ${child.x} ${child.y + 15}`;
@@ -933,20 +981,107 @@ function MindmapView({ data }: { data: any }) {
 
     traverse(tree);
     const height = Math.max(index.count * 64 + 100, 300);
+    const width = maxDepthX;
 
-    return { nodes, paths, height };
+    return { nodes, paths, height, width };
   }, [data, collapsedIds]);
+
+  const handleExportToWhiteboard = () => {
+    let existingElements: any[] = [];
+    const saved = localStorage.getItem('nexus_whiteboard_elements');
+    if (saved) {
+      try {
+        existingElements = JSON.parse(saved);
+      } catch (e) {
+        console.error('Failed to parse existing whiteboard elements', e);
+      }
+    }
+
+    const newElements: any[] = [];
+    const idMap: Record<string, string> = {};
+    const offsetX = 100;
+    const offsetY = 100;
+
+    layoutedData.nodes.forEach(n => {
+      const whiteboardId = `el-mindmap-${n.id}-${Math.random().toString(36).substring(2, 6)}`;
+      idMap[n.id] = whiteboardId;
+
+      newElements.push({
+        id: whiteboardId,
+        type: 'sticky',
+        x: n.x + offsetX,
+        y: n.y + offsetY,
+        width: 140,
+        height: 60,
+        text: String(n.label || 'Subtopic'),
+        color: n.id === 'root' ? '#bfdbfe' : '#fef08a',
+        fillColor: n.id === 'root' ? '#bfdbfe' : '#fef08a',
+        isLocked: false
+      });
+    });
+
+    layoutedData.paths.forEach(p => {
+      const fromNode = layoutedData.nodes.find(n => n.id === p.from);
+      const toNode = layoutedData.nodes.find(n => n.id === p.to);
+      if (fromNode && toNode) {
+        newElements.push({
+          id: `el-mindmap-arrow-${p.from}-${p.to}-${Math.random().toString(36).substring(2, 6)}`,
+          type: 'arrow',
+          x: 0,
+          y: 0,
+          points: [
+            { x: fromNode.x + offsetX + 140, y: fromNode.y + offsetY + 30 },
+            { x: toNode.x + offsetX, y: toNode.y + offsetY + 30 }
+          ],
+          color: '#2563eb',
+          strokeWidth: 2,
+          strokeStyle: 'solid',
+          isLocked: false
+        });
+      }
+    });
+
+    const merged = [...existingElements, ...newElements];
+    localStorage.setItem('nexus_whiteboard_elements', JSON.stringify(merged));
+    
+    toast.success('Mindmap exported to whiteboard canvas!', {
+      action: {
+        label: 'View Board',
+        onClick: () => {
+          window.location.href = '/whiteboard';
+        }
+      }
+    });
+  };
+
+  if (!data || Object.keys(data).length === 0) {
+    return (
+      <div className="text-center p-8 text-muted-foreground text-xs font-semibold">
+        No mindmap data found. Try generating.
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-3 h-full max-w-4xl mx-auto">
       <div className="flex items-center justify-between text-[10px] text-muted-foreground border border-border bg-card rounded-lg px-3 py-1.5">
         <span className="font-semibold uppercase flex items-center gap-1.5"><Info className="w-3.5 h-3.5" /> Interactive mindmap</span>
-        <span>Click node badge triggers collapse toggles</span>
+        <div className="flex items-center gap-2.5">
+          <Button 
+            onClick={handleExportToWhiteboard} 
+            size="sm" 
+            variant="outline" 
+            className="h-6 text-[9px] gap-1 border-dashed font-semibold hover:bg-indigo-500/10 hover:text-indigo-600 transition-colors shrink-0"
+          >
+            <Palette className="w-3 h-3 text-indigo-500 shrink-0" /> Export to Whiteboard
+          </Button>
+          <span className="shrink-0">Click node badge triggers collapse toggles</span>
+        </div>
       </div>
 
       <div className="border border-border/80 rounded-xl bg-card overflow-auto max-h-[450px]">
         <svg 
-          width="800" 
+          width={layoutedData.width} 
           height={layoutedData.height} 
           className="bg-muted/5 dark:bg-zinc-950/20 font-sans select-none"
         >
@@ -963,68 +1098,73 @@ function MindmapView({ data }: { data: any }) {
           ))}
 
           {/* Map Node Badges */}
-          {layoutedData.nodes.map((n, idx) => (
-            <g 
-              key={idx} 
-              transform={`translate(${n.x}, ${n.y})`}
-              className="group cursor-pointer"
-            >
-              {/* Inner card border */}
-              <rect
-                x="0"
-                y="0"
-                width="140"
-                height="30"
-                rx="6"
-                className={cn(
-                  "fill-white dark:fill-zinc-900 stroke-border hover:stroke-indigo-500 transition-colors shadow-sm",
-                  n.id === 'root' && "stroke-indigo-500 bg-indigo-500/5",
-                  n.collapsed && "stroke-amber-400"
-                )}
-                strokeWidth="1.5"
-              />
-              
-              <text
-                x="12"
-                y="18"
-                fontSize="10"
-                fontWeight={n.id === 'root' ? 'bold' : 'normal'}
-                className="fill-foreground"
+          {layoutedData.nodes.map((n, idx) => {
+            const labelText = String(n.label || 'Subtopic');
+            const displayName = labelText.length > 20 ? labelText.slice(0, 18) + '...' : labelText;
+            return (
+              <g 
+                key={idx} 
+                transform={`translate(${n.x}, ${n.y})`}
+                className="group cursor-pointer"
               >
-                {n.label.length > 20 ? n.label.slice(0, 18) + '...' : n.label}
-              </text>
-
-              {/* Collapse state toggle triggers */}
-              {n.hasChildren && (
-                <g 
-                  transform="translate(130, 8)"
-                  onClick={(e) => toggleCollapse(n.id, e)}
-                  className="cursor-pointer"
+                {/* Inner card border */}
+                <rect
+                  x="0"
+                  y="0"
+                  width="140"
+                  height="30"
+                  rx="6"
+                  className={cn(
+                    "fill-white dark:fill-zinc-900 stroke-border hover:stroke-indigo-500 transition-colors shadow-sm",
+                    n.id === 'root' && "stroke-indigo-500 bg-indigo-500/5",
+                    n.collapsed && "stroke-amber-400"
+                  )}
+                  strokeWidth="1.5"
+                />
+                
+                <text
+                  x="12"
+                  y="18"
+                  fontSize="10"
+                  fontWeight={n.id === 'root' ? 'bold' : 'normal'}
+                  className="fill-foreground"
                 >
-                  <circle
-                    cx="5"
-                    cy="7"
-                    r="5"
-                    className={cn(
-                      "fill-muted hover:fill-indigo-500 hover:text-white stroke-border",
-                      n.collapsed ? "fill-amber-500 text-white" : "text-muted-foreground"
-                    )}
-                    strokeWidth="1"
-                  />
-                  <text
-                    x="2.5"
-                    y="10"
-                    fontSize="8.5"
-                    fontWeight="bold"
-                    className="fill-current pointer-events-none"
+                  {displayName}
+                </text>
+
+                {/* Collapse state toggle triggers */}
+                {n.hasChildren && (
+                  <g 
+                    transform="translate(130, 8)"
+                    onClick={(e) => toggleCollapse(n.id, e)}
+                    className="cursor-pointer"
                   >
-                    {n.collapsed ? '+' : '-'}
-                  </text>
-                </g>
-              )}
-            </g>
-          ))}
+                    <circle
+                      cx="5"
+                      cy="7"
+                      r="5"
+                      className={cn(
+                        "fill-muted hover:fill-indigo-500 hover:text-white stroke-border",
+                        n.collapsed ? "fill-amber-500 text-white" : "text-muted-foreground"
+                      )}
+                      strokeWidth="1"
+                    />
+                    <text
+                      x="2.5"
+                      y="10"
+                      fontSize="8.5"
+                      fontWeight="bold"
+                      className="fill-current pointer-events-none"
+                    >
+                      {n.collapsed ? '+' : '-'}
+                    </text>
+                  </g>
+                )}
+              </g>
+            );
+          })}
         </svg>
+
       </div>
     </div>
   );

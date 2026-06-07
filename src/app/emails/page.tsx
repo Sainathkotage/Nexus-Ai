@@ -256,7 +256,7 @@ export default function EmailsPage() {
               disabled={isSyncingEmails}
               className="text-[10px] text-muted-foreground hover:text-foreground text-left flex items-center gap-1 font-medium mt-1 bg-transparent border-0 cursor-pointer"
             >
-              <span className={cn("inline-block text-[9px]", isSyncingEmails && "animate-spin")}>🔄</span>
+              <img src="https://www.google.com/s2/favicons?domain=mail.tm&sz=32" className={cn("w-3.5 h-3.5 object-contain inline-block", isSyncingEmails && "animate-spin")} alt="" />
               {isSyncingEmails ? 'Syncing...' : 'Sync Emails'}
             </button>
           </div>
@@ -294,6 +294,45 @@ export default function EmailsPage() {
             Sent
           </Button>
         </nav>
+
+        {/* AI Suggestions widget */}
+        <div className="mt-auto p-4 border-t border-border bg-muted/10 flex flex-col gap-2.5">
+          <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-500">
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>AI suggests:</span>
+          </div>
+          <div className="flex flex-col gap-2">
+            <button
+              onClick={() => {
+                setActiveTab('inbox');
+                const unansweredCount = emails.filter(e => e.status === 'received').length;
+                toast.success(`Analyzing inbox: ${unansweredCount} unanswered email${unansweredCount !== 1 ? 's' : ''} require${unansweredCount === 1 ? 's' : ''} attention`);
+              }}
+              className="w-full text-left bg-card hover:bg-muted border border-border p-2 rounded-lg text-[10px] leading-normal font-semibold transition-colors cursor-pointer"
+            >
+              • Reply to {emails.filter(e => e.status === 'received').length} unanswered email{emails.filter(e => e.status === 'received').length !== 1 ? 's' : ''}
+            </button>
+            <button
+              onClick={() => {
+                const unanswered = emails.filter(e => e.status === 'received');
+                const summaryText = unanswered.length > 0 
+                  ? `Inbox summarized: ${unanswered.map(e => e.subject).slice(0, 2).map(s => `"${s}"`).join(' & ')} require replies.`
+                  : 'Inbox summarized: No unanswered emails pending.';
+                toast.promise(
+                  new Promise(resolve => setTimeout(resolve, 1500)),
+                  {
+                    loading: 'Summarizing inbox content...',
+                    success: summaryText,
+                    error: 'Error summarizing.'
+                  }
+                );
+              }}
+              className="w-full text-left bg-card hover:bg-muted border border-border p-2 rounded-lg text-[10px] leading-normal font-semibold transition-colors cursor-pointer"
+            >
+              • Summarize inbox
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Middle Column - Email List */}
@@ -311,7 +350,7 @@ export default function EmailsPage() {
               className="w-6 h-6 rounded hover:bg-muted text-muted-foreground"
               title="Refresh Mailbox"
             >
-              <span className={cn("text-xs inline-block", isSyncingEmails && "animate-spin")}>🔄</span>
+              <img src="https://www.google.com/s2/favicons?domain=mail.tm&sz=32" className={cn("w-4 h-4 object-contain inline-block", isSyncingEmails && "animate-spin")} alt="" />
             </Button>
           </div>
           

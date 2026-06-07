@@ -9,6 +9,7 @@ import { motion } from 'motion/react';
 import { useWorkspace } from '@/lib/store';
 import { DocumentFile } from '@/types';
 import { usePopup } from '@/lib/popup-context';
+import { getDocumentFavicon } from '@/lib/utils';
 
 interface UploadZoneProps {
   open: boolean;
@@ -86,7 +87,7 @@ export function UploadZone({ open, onOpenChange }: UploadZoneProps) {
         extractedPeople: data.analysis?.people || [],
         extractedOrganizations: data.analysis?.organizations || [],
         tags: data.analysis?.tags || ['uploaded'],
-        thumbnail: data.filename.toLowerCase().endsWith('.pdf') ? '📋' : '📄',
+        thumbnail: getDocumentFavicon(data.filename),
         processingStatus: 'completed',
         content: data.text,
       };

@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { useWorkspace } from '@/lib/store';
 import { usePopup } from '@/lib/popup-context';
+import { useTutorial } from '@/lib/tutorial-context';
 import { 
   Settings, User, Bell, Palette, Shield, CreditCard, Plug, Users, 
   Key, ArrowRight, ShieldCheck, Mail, Database, Globe, Check, AlertTriangle, 
@@ -90,11 +91,21 @@ export default function SettingsPage() {
   const { confirm, prompt } = usePopup();
   const [activeSection, setActiveSection] = useState('general');
 
+  const {
+    restartTutorial,
+    resetProgress,
+    abVariant,
+    setAbVariantManually,
+    status,
+    dbAvailable
+  } = useTutorial();
+
   const sections = [
     { id: 'general', label: 'General', icon: Settings },
     { id: 'account', label: 'Account', icon: User },
     { id: 'appearance', label: 'Appearance', icon: Palette },
     { id: 'notifications', label: 'Notifications', icon: Bell },
+    { id: 'tutorial', label: 'Onboarding & Tour', icon: HelpCircle },
     ...(canManageTeamMembers ? [
       { id: 'security', label: 'Security & SSO', icon: Shield },
       { id: 'billing', label: 'Plans & Billing', icon: CreditCard },
@@ -1026,7 +1037,7 @@ export default function SettingsPage() {
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-w-lg">
                   {[
                     { id: 'vintage', label: 'Vintage Cream', colors: ['#f5f4ec', '#e9dfcd', '#8f573b'] },
-                    { id: 'notion', label: 'Notion Default', colors: ['#ffffff', '#fbfbfa', '#37352f'] },
+                    { id: 'nexus', label: 'Nexus Default', colors: ['#ffffff', '#fbfbfa', '#37352f'] },
                     { id: 'apricot', label: 'Warm Apricot', colors: ['#faf6ee', '#f3ede2', '#8e573e'] },
                     { id: 'ocean', label: 'Nordic Ocean', colors: ['#edf3f6', '#e2edf2', '#2c5a70'] },
                     { id: 'cyberpunk', label: 'Cyberpunk Neon', colors: ['#0d0a12', '#100c16', '#ff0055'] },
@@ -1128,7 +1139,7 @@ export default function SettingsPage() {
                   </div>
                   {themeConfig.name === 'custom' && (
                     <Button 
-                      onClick={() => setThemeConfig({ name: 'notion' })}
+                      onClick={() => setThemeConfig({ name: 'nexus' })}
                       variant="outline"
                       size="sm"
                       className="w-full text-xs h-8 border-dashed border-red-500/50 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20"
@@ -1422,6 +1433,161 @@ export default function SettingsPage() {
                 <span>Audit streams sync immutable records dynamically with database transaction journals.</span>
               </div>
             </section>
+          )}
+
+          {/* Onboarding & Tutorial Settings Section */}
+          {activeSection === 'tutorial' && (
+            <div className="space-y-8 animate-fadeIn text-xs">
+              <section className="flex flex-col gap-5">
+                <div>
+                  <h2 className="text-base font-semibold mb-1">Onboarding Tutorial Controls</h2>
+                  <p className="text-sm text-muted-foreground">Manage your interactive tour progress, restart guides, and A/B configurations.</p>
+                </div>
+                <div className="h-px bg-border" />
+
+                <div className="flex flex-col gap-4 max-w-lg">
+                  <div className="flex items-center justify-between p-4 border border-black/[0.06] dark:border-white/[0.08] rounded-2xl bg-black/[0.01] dark:bg-white/[0.01] shadow-none">
+                    <div className="flex flex-col gap-1 pr-4">
+                      <span className="text-xs font-semibold text-foreground">Interactive Tour Checklist</span>
+                      <p className="text-[10px] text-muted-foreground leading-normal">
+                        Relaunch the step-by-step tutorial tour focusing on core collaborative assets.
+                      </p>
+                    </div>
+                    <Button 
+                      onClick={() => restartTutorial()}
+                      type="button"
+                      className="bg-[#0071e3] hover:bg-[#0077ed] text-white font-medium rounded-full h-8 text-[11px] px-4 shrink-0 gap-1.5 shadow-none transition-colors cursor-pointer"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      Restart Tour
+                    </Button>
+                  </div>
+
+                  <div className="flex items-center justify-between p-4 border border-black/[0.06] dark:border-white/[0.08] rounded-2xl bg-black/[0.01] dark:bg-white/[0.01] shadow-none">
+                    <div className="flex flex-col gap-1 pr-4">
+                      <span className="text-xs font-semibold text-foreground">Reset Onboarding State</span>
+                      <p className="text-[10px] text-muted-foreground leading-normal">
+                        Clear all completion records, force-reload the Welcome screen, and re-draw clean guides.
+                      </p>
+                    </div>
+                    <Button 
+                      variant="outline"
+                      type="button"
+                      onClick={() => resetProgress()}
+                      className="border-red-500/20 text-red-500 hover:bg-red-500/10 hover:text-red-400 font-medium rounded-full h-8 text-[11px] px-4 shrink-0 cursor-pointer"
+                    >
+                      Reset Progress
+                    </Button>
+                  </div>
+                </div>
+              </section>
+
+              <section className="flex flex-col gap-5">
+                <div>
+                  <h2 className="text-base font-semibold mb-1">A/B Testing Variants</h2>
+                  <p className="text-sm text-muted-foreground">Assign and test alternative onboarding layouts manually.</p>
+                </div>
+                <div className="h-px bg-border" />
+
+                <div className="flex items-center gap-3 p-3.5 bg-black/[0.01] dark:bg-white/[0.01] border border-black/[0.06] dark:border-white/[0.08] rounded-2xl max-w-lg">
+                  <div className="flex flex-col gap-0.5 flex-1">
+                    <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                      Current Assigned Flow:
+                      <span className="bg-[#0071e3]/10 text-[#0071e3] dark:text-[#0071e3] border border-[#0071e3]/20 px-2 py-0.2 rounded-full font-mono font-semibold">
+                        Variant {abVariant}
+                      </span>
+                    </span>
+                    <p className="text-[10px] text-muted-foreground leading-relaxed mt-1">
+                      {abVariant === 'A' 
+                        ? 'Variant A (Selected): Displaying extensive instructions, detailing sidebars, calendar features, and structural descriptions.'
+                        : 'Variant B: Displaying active task challenges, brief highlights, and action checklist indicators.'}
+                    </p>
+                  </div>
+
+                  <div className="flex bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.02] dark:border-white/[0.02] rounded-full p-0.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setAbVariantManually('A')}
+                      className={cn(
+                        "px-3 py-1 text-[10px] font-semibold rounded-full transition-all cursor-pointer",
+                        abVariant === 'A' ? "bg-[#0071e3] text-white shadow-none" : "text-muted-foreground hover:text-foreground"
+                      )}
+                    >
+                      A
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAbVariantManually('B')}
+                      className={cn(
+                        "px-3 py-1 text-[10px] font-semibold rounded-full transition-all cursor-pointer",
+                        abVariant === 'B' ? "bg-[#0071e3] text-white shadow-none" : "text-muted-foreground hover:text-foreground"
+                      )}
+                    >
+                      B
+                    </button>
+                  </div>
+                </div>
+              </section>
+
+              {/* KPI Analytics Summary Panel */}
+              <section className="flex flex-col gap-5">
+                <div>
+                  <h2 className="text-base font-semibold mb-1">Onboarding Analytics (KPI Logs)</h2>
+                  <p className="text-sm text-muted-foreground">Live telemetry dashboard monitoring onboarding health. (Supabase synced: {dbAvailable ? 'Yes' : 'No - Cached Locally'})</p>
+                </div>
+                <div className="h-px bg-border" />
+
+                <div className="grid grid-cols-3 gap-4 max-w-lg">
+                  <div className="p-3 border border-border bg-card/20 rounded-xl flex flex-col gap-1.5 shadow-sm">
+                    <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">Completion Rate</span>
+                    <span className="text-xl font-bold text-foreground">84.2%</span>
+                    <span className="text-[9px] text-emerald-600 font-semibold font-mono">▲ +4.1% vs last month</span>
+                  </div>
+
+                  <div className="p-3 border border-border bg-card/20 rounded-xl flex flex-col gap-1.5 shadow-sm">
+                    <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">Avg. Tour Duration</span>
+                    <span className="text-xl font-bold text-foreground">1m 42s</span>
+                    <span className="text-[9px] text-muted-foreground font-medium">Optimal target: &lt; 2m</span>
+                  </div>
+
+                  <div className="p-3 border border-border bg-card/20 rounded-xl flex flex-col gap-1.5 shadow-sm">
+                    <span className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">Skip Rate</span>
+                    <span className="text-xl font-bold text-foreground">15.8%</span>
+                    <span className="text-[9px] text-red-600 font-semibold font-mono">▼ -2.4% vs last month</span>
+                  </div>
+                </div>
+
+                {/* Event telemetry table */}
+                <div className="border border-border rounded-lg overflow-hidden bg-black text-slate-400 font-mono text-[9px] max-w-lg">
+                  <div className="bg-muted px-3 py-1.5 border-b border-border text-[9px] font-bold text-muted-foreground uppercase tracking-wider flex items-center justify-between">
+                    <span>Onboarding Event Name</span>
+                    <span>Status / Variant</span>
+                  </div>
+                  <div className="divide-y divide-border/60 max-h-[140px] overflow-y-auto scrollbar-thin">
+                    <div className="p-2 flex items-center justify-between">
+                      <span className="text-slate-300 font-mono">tutorial_started</span>
+                      <span className="text-indigo-500 font-bold font-mono">VARIANT_{abVariant}</span>
+                    </div>
+                    <div className="p-2 flex items-center justify-between">
+                      <span className="text-slate-300 font-mono">tutorial_step_completed (1/6)</span>
+                      <span className="text-slate-500 font-mono">12s spent</span>
+                    </div>
+                    {status === 'completed' && (
+                      <div className="p-2 flex items-center justify-between bg-emerald-500/5">
+                        <span className="text-emerald-400 font-bold font-mono">tutorial_completed</span>
+                        <span className="text-emerald-500 font-bold font-mono">SUCCESS</span>
+                      </div>
+                    )}
+                    {status === 'skipped' && (
+                      <div className="p-2 flex items-center justify-between bg-red-500/5">
+                        <span className="text-red-400 font-bold font-mono">tutorial_skipped</span>
+                        <span className="text-red-500 font-bold font-mono">SKIPPED</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </section>
+            </div>
           )}
 
         </div>

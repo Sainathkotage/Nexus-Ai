@@ -32,7 +32,7 @@ export function PopupProvider({ children }: { children: ReactNode }) {
     inputValue: '',
   });
 
-  const resolveRef = useRef<((val: any) => void) | null>(null);
+  const resolveRef = useRef<((val?: any) => void) | null>(null);
 
   const showAlert = (message: string, title = 'Notification') => {
     return new Promise<void>((resolve) => {

@@ -5,7 +5,7 @@ import {
   PageId, DocumentFile, Task, TaskStatus, CalendarEvent,
   Email, EmailStatus, ChatMessage, Conversation, AIInsight,
   Person, GoalOKR, Channel, Deal, ChannelMessage, LoginActivity,
-  NotificationItem, ThemeConfig, ChannelMessageReply, MessageReaction, MessageRead
+  NotificationItem, ThemeConfig, ChannelMessageReply, MessageReaction, MessageRead, AiInboxItem
 } from '@/types';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
@@ -176,7 +176,7 @@ const mapDbDoc = (dbDoc: any): DocumentFile => ({
   extractedPeople: dbDoc.extracted_people || [],
   extractedOrganizations: dbDoc.extracted_organizations || [],
   tags: dbDoc.tags || [],
-  thumbnail: dbDoc.thumbnail || '📄',
+  thumbnail: dbDoc.thumbnail || 'https://www.google.com/s2/favicons?domain=docs.google.com&sz=32',
   processingStatus: dbDoc.processing_status || 'completed',
   content: dbDoc.content || ''
 });
@@ -288,34 +288,64 @@ const getOrCreateMailbox = async () => {
       }
     }
 
-    const domainsRes = await fetch('https://api.mail.tm/domains');
-    if (!domainsRes.ok) throw new Error('Failed to fetch Mail.tm domains');
+    let domainsRes;
+    try {
+      domainsRes = await fetch('https://api.mail.tm/domains');
+    } catch (e) {
+      console.warn('Network error fetching Mail.tm domains:', e);
+      return null;
+    }
+
+    if (!domainsRes.ok) {
+      console.warn('Failed to fetch Mail.tm domains: status', domainsRes.status);
+      return null;
+    }
     const domainsData = await domainsRes.json();
     const domainList = domainsData['hydra:member'] || [];
-    if (domainList.length === 0) throw new Error('No domains available from Mail.tm');
+    if (domainList.length === 0) {
+      console.warn('No domains available from Mail.tm');
+      return null;
+    }
     const domain = domainList[0].domain;
 
     const randomId = Math.floor(10000 + Math.random() * 90000);
     const address = `nexus.inbox.${randomId}@${domain}`;
     const password = `pass_${Math.random().toString(36).substring(2, 10)}`;
 
-    const createRes = await fetch('https://api.mail.tm/accounts', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ address, password })
-    });
+    let createRes;
+    try {
+      createRes = await fetch('https://api.mail.tm/accounts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address, password })
+      });
+    } catch (e) {
+      console.warn('Network error creating Mail.tm account:', e);
+      return null;
+    }
 
     if (!createRes.ok) {
       const errData = await createRes.text();
-      throw new Error(`Failed to create Mail.tm account: ${errData}`);
+      console.warn(`Failed to create Mail.tm account: status ${createRes.status}`, errData);
+      return null;
     }
 
-    const tokenRes = await fetch('https://api.mail.tm/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ address, password })
-    });
-    if (!tokenRes.ok) throw new Error('Failed to acquire Mail.tm token');
+    let tokenRes;
+    try {
+      tokenRes = await fetch('https://api.mail.tm/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address, password })
+      });
+    } catch (e) {
+      console.warn('Network error acquiring Mail.tm token:', e);
+      return null;
+    }
+
+    if (!tokenRes.ok) {
+      console.warn('Failed to acquire Mail.tm token: status', tokenRes.status);
+      return null;
+    }
     const tokenData = await tokenRes.json();
 
     const account = {
@@ -328,7 +358,7 @@ const getOrCreateMailbox = async () => {
     localStorage.setItem('nexus_inbound_account', JSON.stringify(account));
     return account;
   } catch (e) {
-    console.error('Mailbox creation exception:', e);
+    console.warn('Mailbox creation exception:', e);
     return null;
   }
 };
@@ -419,6 +449,8 @@ interface WorkspaceState {
   setUserStatus: (status: 'online' | 'offline' | 'idle' | 'dnd') => Promise<void>;
   addFriendByTag: (nameTag: string) => Promise<{ ok: boolean; message: string; friend?: Person }>;
   sendTeamMessage: (friendId: string, content: string, media?: { url: string; name: string; type: string }) => Promise<void>;
+  editTeamMessage: (receiverId: string, messageId: string, content: string) => Promise<void>;
+  deleteTeamMessage: (receiverId: string, messageId: string) => Promise<void>;
   createWorkspace: (name: string) => Promise<boolean>;
   joinWorkspaceByCode: (code: string) => Promise<{ ok: boolean; message: string }>;
   createJoinRequest: (code: string) => Promise<{ ok: boolean; message: string; request?: WorkspaceJoinRequestRecord }>;
@@ -466,6 +498,7 @@ interface WorkspaceState {
   deleteDeal: (dealId: string) => Promise<void>;
   selectedDealId: string | null;
   setSelectedDealId: (id: string | null) => void;
+  syncDeals: (deals: Deal[]) => void;
 
   // Time Tracker State & Actions
   activeTimerTask: string;
@@ -536,9 +569,16 @@ interface WorkspaceState {
   togglePinMessage: (channelId: string, messageId: string, isPinned: boolean) => Promise<void>;
   markMessageAsRead: (messageId: string) => Promise<void>;
   createChannel: (name: string, category: string, isGroup?: boolean) => Promise<string>;
+  aiInbox: AiInboxItem[];
+  addAiInboxItem: (item: Omit<AiInboxItem, 'id' | 'createdAt' | 'status'>) => void;
+  completeAiInboxItem: (id: string) => void;
 }
 
 const WorkspaceContext = createContext<WorkspaceState | undefined>(undefined);
+
+export const SEED_DEALS: Deal[] = [];
+
+export const SEED_AI_INBOX: AiInboxItem[] = [];
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // Navigation
@@ -586,7 +626,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [insights, setInsights] = useState<AIInsight[]>([]);
 
   // Theme
-  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  const [theme, setTheme] = useState<'light' | 'dark'>('dark');
 
   // Search
   const [searchQuery, setSearchQuery] = useState('');
@@ -637,8 +677,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [mentionBadgeCount, setMentionBadgeCount] = useState(0);
 
+  // AI Inbox State
+  const [aiInbox, setAiInbox] = useState<AiInboxItem[]>([]);
+
   // Themes Config State
-  const [themeConfig, setThemeConfigState] = useState<ThemeConfig>({ name: 'vintage' });
+  const [themeConfig, setThemeConfigState] = useState<ThemeConfig>({ name: 'nexus' });
 
   // Chat presence & typing states
   const [typingUsers, setTypingUsers] = useState<Record<string, { userId: string; username: string; timestamp: number }[]>>({});
@@ -808,7 +851,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
 
     // 2. Sync Custom Themes CSS Variables
-    if (themeConfig.name === 'notion') {
+    if (themeConfig.name === 'nexus') {
       root.style.removeProperty('--background');
       root.style.removeProperty('--foreground');
       root.style.removeProperty('--card');
@@ -1047,7 +1090,16 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         if (storedDeals) {
           setDeals(JSON.parse(storedDeals));
         } else {
-          setDeals([]);
+          setDeals(SEED_DEALS);
+          localStorage.setItem('nexus_deals', JSON.stringify(SEED_DEALS));
+        }
+
+        const storedAiInbox = localStorage.getItem('nexus_ai_inbox');
+        if (storedAiInbox) {
+          setAiInbox(JSON.parse(storedAiInbox));
+        } else {
+          setAiInbox(SEED_AI_INBOX);
+          localStorage.setItem('nexus_ai_inbox', JSON.stringify(SEED_AI_INBOX));
         }
 
         const storedDmReactions = localStorage.getItem('nexus_dm_reactions');
@@ -1215,7 +1267,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                 type: n.type,
                 read: n.read,
                 requestId: n.request_id || undefined,
-                timestamp: n.created_at
+                timestamp: n.created_at,
+                senderName: n.sender_name || 'System'
               })));
             }
           }
@@ -1333,6 +1386,127 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     fetchData();
   }, [hydrateTeamAccess]);
 
+  // Proactive Dynamic AI Inbox Items Generator (integrated with actual workspace items)
+  useEffect(() => {
+    if (isAppLoading) return;
+
+    setAiInbox(prev => {
+      let updated = false;
+      const currentInbox = [...prev];
+
+      const hasItem = (type: string, checkFn: (item: AiInboxItem) => boolean) => {
+        return currentInbox.some(item => item.type === type && checkFn(item));
+      };
+
+      // 1. CRM deals -> Stage Shift suggestions
+      deals.forEach(deal => {
+        if (deal.stage === 'won' || deal.stage === 'lost') return;
+
+        const nextStages: Record<string, string> = {
+          lead: 'contacted',
+          contacted: 'proposal',
+          proposal: 'negotiation',
+          negotiation: 'won'
+        };
+        const nextStage = nextStages[deal.stage] || 'proposal';
+
+        const crmExists = hasItem('crm', item => item.actionData?.dealId === deal.id);
+        if (!crmExists) {
+          currentInbox.push({
+            id: `ai-crm-${deal.id}`,
+            title: 'Confirm new CRM deal stage',
+            description: `Nexus noticed ${deal.company} is ready for ${nextStage.toUpperCase()}. Shift from ${deal.stage.toUpperCase()} to ${nextStage.toUpperCase()}?`,
+            type: 'crm',
+            status: 'pending',
+            createdAt: new Date().toISOString(),
+            actionData: {
+              dealId: deal.id,
+              targetStage: nextStage
+            }
+          });
+          updated = true;
+        }
+
+        // 2. CRM deals -> follow-up drafts
+        const emailExists = hasItem('email', item => item.actionData?.dealId === deal.id);
+        if (!emailExists && deal.primaryContactEmail) {
+          currentInbox.push({
+            id: `ai-email-followup-${deal.id}`,
+            title: 'Review follow-up email draft',
+            description: `${deal.company} is waiting for follow-up details from our meeting yesterday. Draft is ready.`,
+            type: 'email',
+            status: 'pending',
+            createdAt: new Date().toISOString(),
+            actionData: {
+              dealId: deal.id,
+              to: deal.primaryContactEmail,
+              toName: deal.primaryContactName || deal.company,
+              subject: `Follow-up: ${deal.title}`,
+              body: `Hi ${deal.primaryContactName || 'there'},\n\nIt was great speaking with you. I wanted to follow up on our discussion regarding ${deal.title}.\n\nLet me know if you have any questions or if we can finalize the next steps.\n\nBest regards,\nRaj`
+            }
+          });
+          updated = true;
+        }
+      });
+
+      // 3. Unreplied incoming emails
+      emails.forEach(email => {
+        if (email.status !== 'received') return;
+        const emailExists = hasItem('email', item => item.actionData?.emailId === email.id);
+        if (!emailExists) {
+          currentInbox.push({
+            id: `ai-email-reply-${email.id}`,
+            title: 'Review email reply draft',
+            description: `Draft reply to ${email.fromName || email.from} regarding "${email.subject}".`,
+            type: 'email',
+            status: 'pending',
+            createdAt: new Date().toISOString(),
+            actionData: {
+              emailId: email.id,
+              to: email.from || 'client@example.com',
+              toName: email.fromName || email.from || 'Client',
+              subject: `Re: ${email.subject}`,
+              body: `Hi ${email.fromName || 'there'},\n\nThank you for reaching out. I have received your email regarding "${email.subject}" and am reviewing it.\n\nBest regards,\nRaj`
+            }
+          });
+          updated = true;
+        }
+      });
+
+      // 4. Calendar events -> meeting task extractions
+      calendarEvents.forEach(event => {
+        if (event.category !== 'meeting') return;
+        const meetingExists = hasItem('meeting', item => item.actionData?.eventId === event.id);
+        if (!meetingExists) {
+          currentInbox.push({
+            id: `ai-meeting-${event.id}`,
+            title: 'Approve meeting summary',
+            description: `Meeting "${event.title}" summarized. Nexus extracted tasks.`,
+            type: 'meeting',
+            status: 'pending',
+            createdAt: new Date().toISOString(),
+            actionData: {
+              eventId: event.id,
+              summary: `Discussed milestones, project schedules, and feedback templates for ${event.title}. Attendees requested next steps.`,
+              extractedTasks: [
+                `Follow up with attendees of ${event.title}`,
+                `Review action items from ${event.title}`,
+                `Update project tracker regarding ${event.title}`
+              ]
+            }
+          });
+          updated = true;
+        }
+      });
+
+      if (updated) {
+        localStorage.setItem('nexus_ai_inbox', JSON.stringify(currentInbox));
+        return currentInbox;
+      }
+      return prev;
+    });
+  }, [deals, emails, calendarEvents, isAppLoading]);
+
   // Realtime subscription for direct messages
   useEffect(() => {
     if (!user) return;
@@ -1435,7 +1609,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                 type: n.type,
                 read: n.read,
                 requestId: n.request_id || undefined,
-                timestamp: n.created_at
+                timestamp: n.created_at,
+                senderName: n.sender_name || 'System'
               }, ...prev];
             });
           } else if (eventType === 'UPDATE') {
@@ -2040,7 +2215,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       extractedPeople: doc.extractedPeople || [],
       extractedOrganizations: doc.extractedOrganizations || [],
       tags: doc.tags || ['uploaded'],
-      thumbnail: doc.thumbnail || '📄',
+      thumbnail: doc.thumbnail || 'https://www.google.com/s2/favicons?domain=docs.google.com&sz=32',
       processingStatus: doc.processingStatus || 'completed',
       content: doc.content || '',
     };
@@ -3630,7 +3805,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
       setWorkspaceMembers(prev => prev.map(m => m.userId === targetUserId ? { ...m, status: 'active' as any } : m));
       
-      const { data: profile } = await supabase.from('profiles').eq('id', targetUserId).maybeSingle();
+      const { data: profile } = await supabase.from('profiles').select().eq('id', targetUserId).maybeSingle();
       if (profile) {
         const personRecord: Person = {
           id: profile.id,
@@ -3772,6 +3947,39 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const editTeamMessage = useCallback(async (receiverId: string, messageId: string, content: string) => {
+    const encryptedContent = encryptMessage(content);
+    const now = new Date().toISOString();
+    setTeamMessages(prev => {
+      const current = prev[receiverId] || [];
+      const updatedList = current.map(m => {
+        if (m.id === messageId) {
+          return { ...m, content: encryptedContent, editedAt: now };
+        }
+        return m;
+      });
+      return { ...prev, [receiverId]: updatedList };
+    });
+    try {
+      await supabase.from('direct_messages').update({ content: encryptedContent, edited_at: now }).eq('id', messageId);
+    } catch (e) {
+      console.warn("Sync edit DM failed:", e);
+    }
+  }, []);
+
+  const deleteTeamMessage = useCallback(async (receiverId: string, messageId: string) => {
+    setTeamMessages(prev => {
+      const current = prev[receiverId] || [];
+      const updatedList = current.filter(m => m.id !== messageId);
+      return { ...prev, [receiverId]: updatedList };
+    });
+    try {
+      await supabase.from('direct_messages').delete().eq('id', messageId);
+    } catch (e) {
+      console.warn("Sync delete DM failed:", e);
+    }
+  }, []);
+
   const addReaction = useCallback(async (channelId: string, messageId: string, emoji: string) => {
     if (!user) return;
     const reactId = `react-${Date.now()}`;
@@ -3892,6 +4100,33 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       const updated = prev.filter(d => d.id !== dealId);
       localStorage.setItem('nexus_deals', JSON.stringify(updated));
       return updated;
+    });
+  }, []);
+
+  const syncDeals = useCallback((newDeals: Deal[]) => {
+    setDeals(newDeals);
+    localStorage.setItem('nexus_deals', JSON.stringify(newDeals));
+  }, []);
+
+  const addAiInboxItem = useCallback((item: Omit<AiInboxItem, 'id' | 'createdAt' | 'status'>) => {
+    const newItem: AiInboxItem = {
+      ...item,
+      id: `ai-item-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      status: 'pending',
+      createdAt: new Date().toISOString()
+    };
+    setAiInbox(prev => {
+      const next = [newItem, ...prev];
+      localStorage.setItem('nexus_ai_inbox', JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const completeAiInboxItem = useCallback((id: string) => {
+    setAiInbox(prev => {
+      const next = prev.map(item => item.id === id ? { ...item, status: 'completed' as const } : item);
+      localStorage.setItem('nexus_ai_inbox', JSON.stringify(next));
+      return next;
     });
   }, []);
 
@@ -4278,12 +4513,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     workspace, setWorkspace, myWorkspaces, workspaceMembers, workspaceInvites, joinRequests, auditLogs, feedbackItems, aiUsage,
     createInviteLink, submitFeedback, trackAiUsage,
     teamMessages, login, sendOtp, verifyOtp, register, logout, setUserStatus, addFriendByTag, sendTeamMessage,
+    editTeamMessage, deleteTeamMessage,
     customStatus, dnd, setCustomStatus, setDnd,
     channels, channelMessages, sendChannelMessage, sendChannelReply, activeChannelId, setActiveChannelId, activeDmUserId, setActiveDmUserId,
     goals, addGoal, updateGoal, deleteGoal,
     roles, addRole,
     loginActivities,
-    deals, updateDealStage, addDeal, deleteDeal, selectedDealId, setSelectedDealId,
+    deals, updateDealStage, addDeal, deleteDeal, selectedDealId, setSelectedDealId, syncDeals,
     activeTimerTask, isTimerRunning, timerElapsed, startTimer, pauseTimer, resetTimer, logTimer,
     emails, addEmail, editEmail, deleteEmail, updateEmailStatus,
     inboundEmailAddress, isSyncingEmails, syncInboundEmails,
@@ -4294,6 +4530,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     themeConfig, setThemeConfig,
     notifications, markNotificationsAsRead, addNotification,
     mentionBadgeCount, clearMentionBadge,
+    aiInbox, addAiInboxItem, completeAiInboxItem,
     searchQuery, setSearchQuery,
     commandPaletteOpen, setCommandPaletteOpen,
     typingUsers, onlinePresence, broadcastTyping, dmReactions, setDmReactions,

@@ -145,6 +145,7 @@ export default function TeamChatPage() {
   const [transcripts, setTranscripts] = useState<Array<{ senderName: string; text: string; timestamp: string; isFinal?: boolean }>>([]);
   const [sttStatus, setSttStatus] = useState<'idle' | 'listening' | 'error' | 'unsupported'>('idle');
   const [sttModelProgress, setSttModelProgress] = useState<number>(0);
+  const sttModelProgressRef = useRef<number>(0);
 
   // Refs for local Wav2Vec2 transcription
   const wav2vec2WorkerRef = useRef<Worker | null>(null);
@@ -187,6 +188,11 @@ export default function TeamChatPage() {
     localStorage.setItem('nexus_auto_save_transcripts', autoSaveTranscripts.toString());
   }, [autoSaveTranscripts]);
 
+  // Keep model progress ref in sync
+  useEffect(() => {
+    sttModelProgressRef.current = sttModelProgress;
+  }, [sttModelProgress]);
+
   // Clean up audio streams and web worker on unmount
   useEffect(() => {
     return () => {
@@ -200,42 +206,50 @@ export default function TeamChatPage() {
 
   const handleWav2Vec2ResultRef = useRef<any>(null);
 
-  // Pre-initialize Whisper Web Worker on mount to download and cache model in background
+  // Initialize Whisper Web Worker eagerly on mount — only created once
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    
-    if (!wav2vec2WorkerRef.current) {
-      console.log("Pre-loading Whisper Web Worker...");
-      const worker = new Worker('/whisper-worker.js');
-      
-      worker.onmessage = (e) => {
-        const { status, message, progress, text } = e.data;
-        
-        if (status === 'loading') {
-          console.log("Whisper worker loading...", message);
-        } else if (status === 'progress') {
-          setSttModelProgress(Math.round(progress));
-        } else if (status === 'ready') {
-          setSttModelProgress(100);
-          console.log("Whisper worker ready!");
-          
-          // If the call is already connected, transition to listening
-          if (callStateRef.current && callStateRef.current.status === 'connected' && enableSTTRef.current) {
-            setSttStatus('listening');
-            toast.success("Whisper live transcription ready!");
-          }
-        } else if (status === 'error') {
-          setSttStatus('error');
-          console.error("Whisper worker error:", message);
-        } else if (status === 'result') {
-          handleWav2Vec2ResultRef.current?.(text, false);
-        } else if (status === 'final-result') {
-          handleWav2Vec2ResultRef.current?.(text, true);
+    if (wav2vec2WorkerRef.current) return; // already initialized
+
+    console.log('[Whisper] Initializing worker...');
+    const worker = new Worker('/whisper-worker.js');
+
+    worker.onmessage = (e) => {
+      const { status, message, progress, text } = e.data;
+
+      if (status === 'loading') {
+        console.log('[Whisper] Loading model...', message);
+        setSttModelProgress(1); // show loading bar started
+      } else if (status === 'progress') {
+        const p = Math.round(progress ?? 0);
+        setSttModelProgress(p);
+        sttModelProgressRef.current = p;
+      } else if (status === 'ready') {
+        setSttModelProgress(100);
+        sttModelProgressRef.current = 100;
+        console.log('[Whisper] Model ready!');
+        // If the call is already active, switch status to listening
+        if (callStateRef.current?.status === 'connected' && enableSTTRef.current) {
+          setSttStatus('listening');
+          toast.success('Whisper live transcription ready!');
         }
-      };
-      
-      wav2vec2WorkerRef.current = worker;
-    }
+      } else if (status === 'error') {
+        setSttStatus('error');
+        console.error('[Whisper] Worker error:', message);
+      } else if (status === 'result') {
+        handleWav2Vec2ResultRef.current?.(text, false);
+      } else if (status === 'final-result') {
+        handleWav2Vec2ResultRef.current?.(text, true);
+      }
+    };
+
+    worker.onerror = (err) => {
+      console.error('[Whisper] Worker crashed:', err);
+      setSttStatus('error');
+      toast.error('Whisper worker failed to start. Live captions unavailable.');
+    };
+
+    wav2vec2WorkerRef.current = worker;
   }, []);
 
   // Handle call transcription initialization and toggle responses
@@ -321,58 +335,29 @@ export default function TeamChatPage() {
   const startTranscription = async () => {
     if (typeof window === 'undefined') return;
     if (!enableSTTRef.current) return;
-    
-    // 1. Initialize Web Worker if not already pre-loaded
-    if (!wav2vec2WorkerRef.current) {
-      console.log("Whisper worker not loaded. Initializing worker now...");
-      setSttStatus('idle');
-      const worker = new Worker('/whisper-worker.js');
-      
-      worker.onmessage = (e) => {
-        const { status, message, progress, text } = e.data;
-        
-        if (status === 'loading') {
-          console.log("Whisper: Loading...", message);
-        } else if (status === 'progress') {
-          setSttModelProgress(Math.round(progress));
-        } else if (status === 'ready') {
-          setSttModelProgress(100);
-          if (callStateRef.current && callStateRef.current.status === 'connected' && enableSTTRef.current) {
-            setSttStatus('listening');
-            toast.success("Whisper live transcription model ready!");
-          }
-        } else if (status === 'error') {
-          setSttStatus('error');
-          toast.error("Whisper error: " + message);
-        } else if (status === 'result') {
-          handleWav2Vec2ResultRef.current?.(text, false);
-        } else if (status === 'final-result') {
-          handleWav2Vec2ResultRef.current?.(text, true);
-        }
-      };
-      
-      wav2vec2WorkerRef.current = worker;
-    }
+    // Don't start if audio is already streaming
+    if (audioProcessorRef.current) return;
 
-    // Set initial active state based on model readiness
-    if (sttModelProgress === 100) {
+    // Mark status based on whether the model is already loaded
+    if (sttModelProgressRef.current >= 100) {
       setSttStatus('listening');
     } else {
-      setSttStatus('idle');
+      setSttStatus('idle'); // model still loading; will switch to listening when ready
     }
 
-    // 2. Start audio recording
+    // Start audio capture
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       audioStreamRef.current = stream;
 
+      // 16 kHz AudioContext — Whisper's required sample rate
       const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
       audioContextRef.current = audioContext;
 
       const source = audioContext.createMediaStreamSource(stream);
       audioInputSourceRef.current = source;
 
-      // ScriptProcessor with buffer size 4096, 1 input channel, 1 output channel
+      // Buffer size 4096 gives ~256ms per chunk at 16kHz — good granularity
       const processor = audioContext.createScriptProcessor(4096, 1, 1);
       audioProcessorRef.current = processor;
 
@@ -381,55 +366,64 @@ export default function TeamChatPage() {
 
       let audioBufferList: Float32Array[] = [];
       let lastActiveTime = Date.now();
-      let lastSilenceProcessed = true;
-      let lastTranscriptionTime = Date.now();
+      // Start as false: any audio detected immediately flags speech
+      let speechDetected = false;
+      let lastSendTime = Date.now();
+
+      // Voice Activity Detection constants
+      const VAD_THRESHOLD = 0.012;        // RMS threshold for speech
+      const SILENCE_FINALIZE_MS = 1200;   // finalize after 1.2s of silence
+      const INTERIM_SEND_MS = 2000;       // send interim every 2s while speaking
 
       processor.onaudioprocess = (e) => {
         const inputData = e.inputBuffer.getChannelData(0);
-        
-        // Copy audio data
+
+        // Copy frame into rolling buffer
         const chunk = new Float32Array(inputData.length);
         chunk.set(inputData);
         audioBufferList.push(chunk);
 
-        // Calculate RMS (volume level) for voice activity detection
+        // RMS energy for VAD
         let sum = 0;
-        for (let i = 0; i < inputData.length; i++) {
-          sum += inputData[i] * inputData[i];
-        }
+        for (let i = 0; i < inputData.length; i++) sum += inputData[i] * inputData[i];
         const rms = Math.sqrt(sum / inputData.length);
 
         const now = Date.now();
-        
-        // Voice Activity Detection threshold
-        if (rms > 0.015) {
+
+        if (rms > VAD_THRESHOLD) {
+          // Active speech detected
           lastActiveTime = now;
-          lastSilenceProcessed = false;
+          speechDetected = true;
         }
 
-        // Send interim results every 1.5 seconds if speaking
-        if (!lastSilenceProcessed && now - lastTranscriptionTime > 1500) {
-          sendAudioToWorker(audioBufferList, false);
-          lastTranscriptionTime = now;
-        }
+        if (speechDetected) {
+          const silenceDuration = now - lastActiveTime;
+          const timeSinceSend = now - lastSendTime;
 
-        // If user is silent for 1.5 seconds, finalize the transcription
-        if (!lastSilenceProcessed && now - lastActiveTime > 1500) {
-          sendAudioToWorker(audioBufferList, true);
-          audioBufferList = []; // clear buffer list for next sentence
-          lastSilenceProcessed = true;
-          lastTranscriptionTime = now;
+          if (silenceDuration > SILENCE_FINALIZE_MS) {
+            // Silence long enough — commit final segment
+            sendAudioToWorker(audioBufferList, true);
+            audioBufferList = [];
+            speechDetected = false;
+            lastSendTime = now;
+          } else if (timeSinceSend > INTERIM_SEND_MS) {
+            // Still speaking — send interim preview
+            sendAudioToWorker([...audioBufferList], false);
+            lastSendTime = now;
+          }
+        } else {
+          // No speech yet — keep buffer bounded (max ~10s of silence)
+          const maxSilenceFrames = Math.ceil(16000 * 10 / 4096);
+          if (audioBufferList.length > maxSilenceFrames) {
+            audioBufferList = audioBufferList.slice(-Math.ceil(maxSilenceFrames / 2));
+          }
         }
       };
 
-      if (sttStatus !== 'idle') {
-        setSttStatus('listening');
-      }
-
     } catch (err) {
-      console.error("Failed to start audio recording for Whisper:", err);
+      console.error('[Whisper] Failed to start audio capture:', err);
       setSttStatus('error');
-      toast.error("Microphone access is required for live captions.");
+      toast.error('Microphone access is required for live captions.');
       setEnableSTT(false);
     }
   };
@@ -3086,8 +3080,8 @@ export default function TeamChatPage() {
                                 </p>
                               </>
                             ) : (
-                              <div className="flex items-center justify-center gap-2 py-1">
-                                <span className="relative flex h-2 w-2">
+                              <div className="flex items-center gap-2 py-0.5">
+                                <span className="relative flex h-2 w-2 shrink-0">
                                   {sttStatus === 'listening' ? (
                                     <>
                                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
@@ -3098,19 +3092,30 @@ export default function TeamChatPage() {
                                   ) : sttStatus === 'unsupported' ? (
                                     <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
                                   ) : (
-                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-zinc-500 animate-pulse"></span>
+                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-400 animate-pulse"></span>
                                   )}
                                 </span>
-                                <span className="text-[9px] text-zinc-300 font-medium font-mono uppercase tracking-wider">
-                                  {sttStatus === 'listening' && "Captions Active: Speak now..."}
-                                  {sttStatus === 'error' && "Captions Error: Check microphone"}
-                                  {sttStatus === 'unsupported' && "Captions Unsupported in this Browser"}
-                                  {sttStatus === 'idle' && (
-                                    sttModelProgress > 0 && sttModelProgress < 100 
-                                      ? `Loading Whisper Model: ${sttModelProgress}%`
-                                      : "Initializing Whisper..."
+                                <div className="flex flex-col items-start gap-1 flex-1 min-w-0">
+                                  <span className="text-[9px] text-zinc-300 font-medium font-mono uppercase tracking-wider whitespace-nowrap">
+                                    {sttStatus === 'listening' && "Captions Active — Speak now"}
+                                    {sttStatus === 'error' && "Caption Error: Check microphone"}
+                                    {sttStatus === 'unsupported' && "Captions unsupported in this browser"}
+                                    {sttStatus === 'idle' && (
+                                      sttModelProgress > 0 && sttModelProgress < 100
+                                        ? `Loading Whisper model: ${sttModelProgress}%`
+                                        : 'Initializing Whisper AI...'
+                                    )}
+                                  </span>
+                                  {/* Progress bar — shown while model is downloading */}
+                                  {sttStatus === 'idle' && sttModelProgress > 0 && sttModelProgress < 100 && (
+                                    <div className="w-full h-[3px] bg-zinc-700 rounded-full overflow-hidden">
+                                      <div
+                                        className="h-full bg-gradient-to-r from-indigo-500 to-violet-500 rounded-full transition-all duration-300 ease-out"
+                                        style={{ width: `${sttModelProgress}%` }}
+                                      />
+                                    </div>
                                   )}
-                                </span>
+                                </div>
                               </div>
                             )}
                           </div>

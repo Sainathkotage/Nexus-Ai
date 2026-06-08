@@ -50,19 +50,26 @@ export async function POST(req: Request) {
     }
 
     const apiKey = process.env.GEMINI_API_KEY;
-    let analysis = {
-      summary: 'Newly uploaded document.',
-      keyPoints: ['No key points extracted yet.'],
-      tasks: [],
-      deadlines: [],
-      people: [],
-      organizations: [],
-      tags: ['uploaded']
-    };
+    const supabaseAdmin = getSupabaseServiceRole();
+    const fileName = `${Date.now()}-${file.name}`;
 
-    if (apiKey && text.trim().length > 0) {
-      try {
-        const prompt = `Analyze the following document content. Extract standard metadata and content analysis. 
+    // Perform Gemini API metadata extraction and Supabase Storage upload in parallel
+    const [analysis, publicUrl] = await Promise.all([
+      // Task 1: Gemini Analysis
+      (async () => {
+        let extractedAnalysis = {
+          summary: 'Newly uploaded document.',
+          keyPoints: ['No key points extracted yet.'],
+          tasks: [],
+          deadlines: [],
+          people: [],
+          organizations: [],
+          tags: ['uploaded']
+        };
+
+        if (apiKey && text.trim().length > 0) {
+          try {
+            const prompt = `Analyze the following document content. Extract standard metadata and content analysis. 
 The output MUST be a JSON object with exactly the following fields (do not wrap in markdown code blocks, return raw json string):
 {
   "summary": "A concise 3-sentence executive summary of the document",
@@ -84,58 +91,55 @@ If no tasks, deadlines, people, or organizations are found, return empty arrays.
 Document Content:
 ${text.substring(0, 15000)}`;
 
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: {
-              responseMimeType: "application/json",
-              temperature: 0.2
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+            const response = await fetch(url, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: {
+                  responseMimeType: "application/json",
+                  temperature: 0.2
+                }
+              })
+            });
+
+            if (response.ok) {
+              const data = await response.json();
+              const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+              const cleanText = rawText.trim().replace(/^```json/i, '').replace(/^```/, '').trim();
+              extractedAnalysis = JSON.parse(cleanText);
+            } else {
+              console.warn('Gemini extraction endpoint returned error:', response.status);
             }
-          })
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-          const cleanText = rawText.trim().replace(/^```json/i, '').replace(/^```/, '').trim();
-          analysis = JSON.parse(cleanText);
-        } else {
-          console.warn('Gemini extraction endpoint returned error:', response.status);
+          } catch (err) {
+            console.error('Gemini extraction failed, using defaults:', err);
+          }
         }
-      } catch (err) {
-        console.error('Gemini extraction failed, using defaults:', err);
-      }
-    }
+        return extractedAnalysis;
+      })(),
 
-    // ── Supabase Integration ────────────────────────────────
-    const supabaseAdmin = getSupabaseServiceRole();
-    const fileName = `${Date.now()}-${file.name}`;
-    
-    // Create bucket if it doesn't exist
-    try {
-      await supabaseAdmin.storage.createBucket('documents', { public: true });
-    } catch (_) {}
+      // Task 2: Supabase Storage Upload
+      (async () => {
+        const { error: storageErr } = await supabaseAdmin.storage
+          .from('documents')
+          .upload(fileName, nodeBuffer, {
+            contentType: file.type,
+            upsert: true
+          });
 
-    // Upload file buffer to Supabase storage bucket
-    const { error: storageErr } = await supabaseAdmin.storage
-      .from('documents')
-      .upload(fileName, nodeBuffer, {
-        contentType: file.type,
-        upsert: true
-      });
+        if (storageErr) {
+          console.error('Supabase Storage Error:', storageErr);
+          throw new Error(`Failed to store file in Supabase: ${storageErr.message}`);
+        }
 
-    if (storageErr) {
-      console.error('Supabase Storage Error:', storageErr);
-      throw new Error(`Failed to store file in Supabase: ${storageErr.message}`);
-    }
+        const { data: { publicUrl } } = supabaseAdmin.storage
+          .from('documents')
+          .getPublicUrl(fileName);
 
-    // Get public URL
-    const { data: { publicUrl } } = supabaseAdmin.storage
-      .from('documents')
-      .getPublicUrl(fileName);
+        return publicUrl;
+      })()
+    ]);
 
     const supabaseAuth = await createSupabaseServerClient();
     const { data: { user: authUser } } = await supabaseAuth.auth.getUser();

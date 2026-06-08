@@ -4,6 +4,12 @@ import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers
 // Disable local model loading, fetch from Hugging Face hub
 env.allowLocalModels = false;
 
+// Force browser caching of model files
+env.useBrowserCache = true;
+
+// Enable multi-threaded WebAssembly execution
+env.backends.onnx.wasm.numThreads = self.navigator.hardwareConcurrency || 4;
+
 let transcriber = null;
 
 // Load the model

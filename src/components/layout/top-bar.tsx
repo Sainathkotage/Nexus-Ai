@@ -9,7 +9,8 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { format } from 'date-fns';
-import { cn } from '@/lib/utils';
+import { cn, getAvatarStyle } from '@/lib/utils';
+import { MobileUserSheet } from './mobile-user-sheet';
 
 export function TopBar() {
   const { 
@@ -22,6 +23,8 @@ export function TopBar() {
     isOnline,
     userStatus,
     setUserStatus,
+    user,
+    dnd,
     activeTimerTask,
     isTimerRunning,
     timerElapsed,
@@ -34,11 +37,13 @@ export function TopBar() {
     reviewJoinRequest
   } = useWorkspace();
 
+
   const { trackInteractiveAction } = useTutorial();
 
   const [time, setTime] = useState('');
   const [localTaskName, setLocalTaskName] = useState('');
   const [showNotifications, setShowNotifications] = useState(false);
+  const [mobileUserSheetOpen, setMobileUserSheetOpen] = useState(false);
 
   const hasUnread = (notifications || []).some(n => !n.read);
  
@@ -77,8 +82,197 @@ export function TopBar() {
     'ai-handover': 'AI Handover',
   };
 
+  const getInitials = (name: string) =>
+    name.split(' ').map((n) => n.charAt(0)).join('').toUpperCase().substring(0, 2);
+
   return (
-    <header className="h-11 border-b border-border bg-background/80 backdrop-blur-sm flex items-center justify-between px-3 sticky top-0 z-20 shrink-0">
+    <>
+    {/* ══════════════════════════════════════════════════════
+        MOBILE TOP BAR  (hidden on md+)
+       ══════════════════════════════════════════════════════ */}
+    <header className="mob-top-bar md:hidden">
+      {/* Avatar / User Menu trigger */}
+      <button
+        className="mob-avatar"
+        onClick={() => setMobileUserSheetOpen(true)}
+        aria-label="Open user menu"
+      >
+        {getAvatarStyle(user?.avatar ?? '') ? (
+          <div
+            style={{
+              width: '100%',
+              height: '100%',
+              borderRadius: '50%',
+              ...(getAvatarStyle(user?.avatar ?? '') as React.CSSProperties),
+            }}
+          />
+        ) : (
+          <span>{user ? getInitials(user.name) : '?'}</span>
+        )}
+        <span
+          className={cn(
+            'mob-status-dot',
+            dnd ? 'dnd' : userStatus === 'online' ? 'online' : 'offline',
+          )}
+        />
+      </button>
+
+      {/* Page title */}
+      <div style={{ flex: 1, overflow: 'hidden', textAlign: 'center' }}>
+        <p
+          style={{
+            margin: 0,
+            fontSize: 15,
+            fontWeight: 700,
+            color: 'var(--mob-foreground)',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {pageNames[activePage] || activePage}
+        </p>
+        {!isOnline && (
+          <span
+            style={{
+              fontSize: 10,
+              color: '#F59E0B',
+              fontWeight: 600,
+            }}
+          >
+            ● Offline
+          </span>
+        )}
+      </div>
+
+      {/* Right: Search + Notifications */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="w-8 h-8"
+          style={{ color: 'var(--mob-muted)' }}
+          onClick={() => {}}
+          aria-label="Search"
+        >
+          <Search size={18} />
+        </Button>
+
+        <div style={{ position: 'relative' }}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="w-8 h-8"
+            style={{ color: 'var(--mob-muted)', position: 'relative' }}
+            onClick={() => {
+              setShowNotifications(!showNotifications);
+              if (!showNotifications) markNotificationsAsRead();
+            }}
+            aria-label="Notifications"
+          >
+            <Bell size={18} />
+            {hasUnread && (
+              <span
+                style={{
+                  position: 'absolute',
+                  top: 6,
+                  right: 6,
+                  width: 7,
+                  height: 7,
+                  borderRadius: '50%',
+                  background: '#EF4444',
+                  border: '1.5px solid var(--mob-bg)',
+                  animation: 'pulse-soft 2s ease-in-out infinite',
+                }}
+              />
+            )}
+          </Button>
+
+          {showNotifications && (
+            <div
+              style={{
+                position: 'fixed',
+                top: 56,
+                left: 12,
+                right: 12,
+                background: 'var(--mob-bg-elevated)',
+                border: '1px solid var(--mob-border)',
+                borderRadius: 14,
+                zIndex: 55,
+                boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+                overflow: 'hidden',
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '12px 16px',
+                  borderBottom: '1px solid var(--mob-border)',
+                }}
+              >
+                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--mob-foreground)' }}>Updates &amp; Mentions</span>
+                <button
+                  onClick={() => setShowNotifications(false)}
+                  style={{
+                    fontSize: 11,
+                    color: 'var(--mob-muted)',
+                    fontWeight: 600,
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+              <div style={{ maxHeight: 300, overflowY: 'auto', padding: '8px 12px 12px' }}>
+                {(notifications || []).length === 0 ? (
+                  <p style={{ textAlign: 'center', fontSize: 12, color: 'var(--mob-muted)', padding: '16px 0' }}>No new updates</p>
+                ) : (
+                  (notifications || []).map((notif) => (
+                    <div
+                      key={notif.id}
+                      style={{
+                        padding: '10px 12px',
+                        borderRadius: 10,
+                        border: '1px solid var(--mob-border)',
+                        marginBottom: 8,
+                        background: notif.read ? 'transparent' : 'var(--mob-accent-subtle)',
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--mob-foreground)' }}>
+                          {notif.title || notif.senderName || 'Notification'}
+                        </span>
+                        <span style={{ fontSize: 10, color: 'var(--mob-muted)' }}>
+                          {format(new Date(notif.timestamp), 'MMM d, h:mm a')}
+                        </span>
+                      </div>
+                      <p style={{ margin: 0, fontSize: 11, color: 'var(--mob-muted)', lineHeight: 1.4 }}>{notif.message}</p>
+                      {notif.type === 'join_request' && notif.requestId && !notif.read && (
+                        <div style={{ display: 'flex', gap: 8, marginTop: 8, justifyContent: 'flex-end' }}>
+                          <NotificationActionButtons notif={notif} reviewJoinRequest={reviewJoinRequest} />
+                        </div>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </header>
+
+    {/* Mobile user sheet */}
+    <MobileUserSheet open={mobileUserSheetOpen} onClose={() => setMobileUserSheetOpen(false)} />
+
+    {/* ══════════════════════════════════════════════════════
+        DESKTOP TOP BAR  (hidden below md)
+       ══════════════════════════════════════════════════════ */}
+    <header className="h-11 border-b border-border bg-background/80 backdrop-blur-sm hidden md:flex items-center justify-between px-3 sticky top-0 z-20 shrink-0">
       
       {/* Left side */}
       <div className="flex items-center gap-1.5">
@@ -247,6 +441,7 @@ export function TopBar() {
         </Button>
       </div>
     </header>
+    </>
   );
 }
 

@@ -20,6 +20,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { Mail, Copy, ExternalLink, AlertTriangle } from 'lucide-react';
+import { MobileBottomNav } from './mobile-bottom-nav';
 
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 
@@ -149,28 +150,40 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background text-foreground selection:bg-primary/10 relative">
-      <LeftSidebar onOpenSearch={() => setCommandPaletteOpen(true)} />
-      {leftSidebarOpen && (
-        <div 
-          className="fixed inset-0 bg-black/30 backdrop-blur-xs z-20 lg:hidden" 
-          onClick={toggleLeftSidebar} 
-        />
-      )}
+      {/* Desktop sidebars — hidden on mobile */}
+      <div className="hidden md:contents">
+        <LeftSidebar onOpenSearch={() => setCommandPaletteOpen(true)} />
+        {leftSidebarOpen && (
+          <div 
+            className="fixed inset-0 bg-black/30 backdrop-blur-xs z-20 lg:hidden" 
+            onClick={toggleLeftSidebar} 
+          />
+        )}
+      </div>
+
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
         <TopBar />
-        <main className="flex-1 overflow-auto relative z-0 flex flex-col">
+        {/* On mobile, add bottom padding so content doesn't hide behind nav */}
+        <main className="flex-1 overflow-auto relative z-0 flex flex-col pb-16 md:pb-0">
           {children}
         </main>
       </div>
-      {rightSidebarOpen && (
-        <div 
-          className="fixed inset-0 bg-black/30 backdrop-blur-xs z-20 lg:hidden" 
-          onClick={toggleRightSidebar} 
-        />
-      )}
-      <RightSidebar />
+
+      <div className="hidden md:contents">
+        {rightSidebarOpen && (
+          <div 
+            className="fixed inset-0 bg-black/30 backdrop-blur-xs z-20 lg:hidden" 
+            onClick={toggleRightSidebar} 
+          />
+        )}
+        <RightSidebar />
+      </div>
+
       <CommandPalette open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen} />
       <CustomContextMenu />
+
+      {/* Mobile bottom navigation */}
+      <MobileBottomNav />
 
       {/* Onboarding Tutorial System Overlays */}
       <TutorialWelcome />

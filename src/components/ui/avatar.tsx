@@ -25,7 +25,24 @@ function Avatar({
   )
 }
 
-function AvatarImage({ className, ...props }: AvatarPrimitive.Image.Props) {
+import { getAvatarStyle } from "@/lib/utils"
+
+function AvatarImage({ className, src, ...props }: AvatarPrimitive.Image.Props) {
+  const avatarStyle = src ? getAvatarStyle(src) : null;
+
+  if (avatarStyle) {
+    return (
+      <div
+        data-slot="avatar-image"
+        className={cn(
+          "aspect-square size-full rounded-full",
+          className
+        )}
+        style={avatarStyle}
+      />
+    );
+  }
+
   return (
     <AvatarPrimitive.Image
       data-slot="avatar-image"
@@ -33,6 +50,7 @@ function AvatarImage({ className, ...props }: AvatarPrimitive.Image.Props) {
         "aspect-square size-full rounded-full object-cover",
         className
       )}
+      src={src}
       {...props}
     />
   )

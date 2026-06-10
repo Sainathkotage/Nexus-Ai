@@ -74,6 +74,7 @@ export function TopBar() {
     calendar: 'Calendar',
     emails: 'Emails',
     settings: 'Settings',
+    'ai-handover': 'AI Handover',
   };
 
   return (

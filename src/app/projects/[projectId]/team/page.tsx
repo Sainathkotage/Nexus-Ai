@@ -11,6 +11,7 @@ import { toast } from 'sonner';
 import { InviteTeammateModal } from '@/components/projects/InviteTeammateModal';
 import { supabase } from '@/lib/supabase';
 import { useWorkspace } from '@/lib/store';
+import { getAvatarStyle } from '@/lib/utils';
 
 interface ProjectMember {
   id: string;
@@ -307,7 +308,12 @@ export default function TeamManagementPage() {
                 >
                   <div className="flex items-center gap-3">
                     {/* User Avatar */}
-                    {member.user.avatar ? (
+                    {member.user.avatar && getAvatarStyle(member.user.avatar) ? (
+                      <div 
+                        className="w-8 h-8 rounded-full border border-zinc-800 shrink-0" 
+                        style={getAvatarStyle(member.user.avatar) || undefined}
+                      />
+                    ) : member.user.avatar ? (
                       <img 
                         src={member.user.avatar} 
                         className="w-8 h-8 rounded-full object-cover shrink-0 border border-zinc-800" 

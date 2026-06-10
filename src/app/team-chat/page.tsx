@@ -17,7 +17,7 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { motion, AnimatePresence } from 'motion/react';
 import { formatDistanceToNow, format } from 'date-fns';
-import { cn } from '@/lib/utils';
+import { cn, getAvatarStyle } from '@/lib/utils';
 import { toast } from 'sonner';
 import CallDiagnostics from '@/components/chat/call-diagnostics';
 
@@ -552,6 +552,10 @@ export default function TeamChatPage() {
 
   const messageEndRef = useRef<HTMLDivElement>(null);
   const threadEndRef = useRef<HTMLDivElement>(null);
+  const lastMessageCountRef = useRef<number>(0);
+  const lastActiveChatRef = useRef<string>('');
+  const lastThreadMessageCountRef = useRef<number>(0);
+  const lastActiveThreadIdRef = useRef<string | null>(null);
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const typingTimerRef = useRef<any>(null);
 
@@ -595,14 +599,38 @@ export default function TeamChatPage() {
 
   // Scroll to bottom on message/thread updates
   useEffect(() => {
-    messageEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const activeId = activeChat.id;
+    const messages = activeChat.type === 'dm'
+      ? (teamMessages[activeId] || [])
+      : (channelMessages[activeId] || []);
+    const messageCount = messages.length;
+
+    if (activeId !== lastActiveChatRef.current || messageCount > lastMessageCountRef.current) {
+      messageEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    lastActiveChatRef.current = activeId;
+    lastMessageCountRef.current = messageCount;
   }, [teamMessages, channelMessages, activeChat]);
 
   useEffect(() => {
     if (activeThreadMessageId) {
-      threadEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      const activeChannel = activeChat.type === 'channel' ? channels.find(c => c.id === activeChat.id) : null;
+      const activeChannelMessages = activeChannel ? (channelMessages[activeChannel.id] || []) : [];
+      const activeThreadMessage = activeChannelMessages.find(m => m.id === activeThreadMessageId);
+      const repliesCount = activeThreadMessage?.replies?.length || 0;
+
+      if (activeThreadMessageId !== lastActiveThreadIdRef.current || repliesCount > lastThreadMessageCountRef.current) {
+        threadEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }
+
+      lastActiveThreadIdRef.current = activeThreadMessageId;
+      lastThreadMessageCountRef.current = repliesCount;
+    } else {
+      lastActiveThreadIdRef.current = null;
+      lastThreadMessageCountRef.current = 0;
     }
-  }, [channelMessages, activeThreadMessageId]);
+  }, [channelMessages, activeThreadMessageId, activeChat, channels]);
 
   // Sync read status when active channel/message changes
   useEffect(() => {
@@ -1615,7 +1643,7 @@ export default function TeamChatPage() {
         </div>
 
         {/* Categories Directory */}
-        <ScrollArea className="flex-1 py-2 text-xs">
+        <ScrollArea className="flex-1 min-h-0 py-2 text-xs">
           <div className="px-2 flex flex-col gap-4">
             
             {/* STARRED CHANNELS */}
@@ -1803,9 +1831,16 @@ export default function TeamChatPage() {
                   )}
                 >
                   <div className="relative shrink-0 mt-0.5">
-                    <div className="w-7 h-7 rounded-full bg-gradient-to-br from-indigo-400 to-violet-500 flex items-center justify-center">
-                      <span className="text-[9px] font-bold text-white">{getInitials(friend.name)}</span>
-                    </div>
+                    {getAvatarStyle(friend.avatar) ? (
+                      <div 
+                        className="w-7 h-7 rounded-full border border-border/80" 
+                        style={getAvatarStyle(friend.avatar) || undefined}
+                      />
+                    ) : (
+                      <div className="w-7 h-7 rounded-full bg-gradient-to-br from-indigo-400 to-violet-500 flex items-center justify-center">
+                        <span className="text-[9px] font-bold text-white">{getInitials(friend.name)}</span>
+                      </div>
+                    )}
                     <span className={cn(
                       "absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-background",
                       getTeammateStatus(friend.id) === 'dnd' ? "bg-red-500" :
@@ -1840,9 +1875,16 @@ export default function TeamChatPage() {
                   )}
                 >
                   <div className="relative shrink-0 mt-0.5">
-                    <div className="w-7 h-7 rounded-full bg-zinc-200 dark:bg-zinc-800 flex items-center justify-center">
-                      <span className="text-[9px] font-bold text-muted-foreground">{getInitials(friend.name)}</span>
-                    </div>
+                    {getAvatarStyle(friend.avatar) ? (
+                      <div 
+                        className="w-7 h-7 rounded-full border border-border/80" 
+                        style={getAvatarStyle(friend.avatar) || undefined}
+                      />
+                    ) : (
+                      <div className="w-7 h-7 rounded-full bg-zinc-200 dark:bg-zinc-800 flex items-center justify-center">
+                        <span className="text-[9px] font-bold text-muted-foreground">{getInitials(friend.name)}</span>
+                      </div>
+                    )}
                     <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-zinc-400 border border-background" />
                   </div>
                   <div className="flex-1 min-w-0 flex flex-col gap-0.5">
@@ -1862,7 +1904,7 @@ export default function TeamChatPage() {
         <div onContextMenu={(e) => e.preventDefault()} className="flex-1 flex flex-col h-full bg-[#fafafa] dark:bg-[#161616] overflow-hidden">
           
           {/* Header */}
-          <div className="h-14 border-b border-border/50 bg-background/50 px-4 md:px-6 flex items-center shrink-0 gap-2 w-full">
+          <div className="h-14 border-b border-border/50 bg-background/95 backdrop-blur-xs px-4 md:px-6 flex items-center shrink-0 gap-2 w-full sticky top-0 z-20">
             <Button 
               variant="ghost" 
               size="icon" 
@@ -1875,12 +1917,19 @@ export default function TeamChatPage() {
               <div className="flex items-center justify-between w-full">
                 <div className="flex items-center gap-3">
                   <div className="relative shrink-0">
-                    <div className={cn(
-                      "w-8.5 h-8.5 rounded-full flex items-center justify-center",
-                      getTeammateStatus(activeFriend.id) !== 'offline' ? 'bg-gradient-to-br from-indigo-400 to-violet-500' : 'bg-zinc-200 dark:bg-zinc-800'
-                    )}>
-                      <span className={`text-[10px] font-bold ${getTeammateStatus(activeFriend.id) !== 'offline' ? 'text-white' : 'text-muted-foreground'}`}>{getInitials(activeFriend.name)}</span>
-                    </div>
+                    {getAvatarStyle(activeFriend.avatar) ? (
+                      <div 
+                        className="w-8.5 h-8.5 rounded-full border border-border/80" 
+                        style={getAvatarStyle(activeFriend.avatar) || undefined}
+                      />
+                    ) : (
+                      <div className={cn(
+                        "w-8.5 h-8.5 rounded-full flex items-center justify-center",
+                        getTeammateStatus(activeFriend.id) !== 'offline' ? 'bg-gradient-to-br from-indigo-400 to-violet-500' : 'bg-zinc-200 dark:bg-zinc-800'
+                      )}>
+                        <span className={`text-[10px] font-bold ${getTeammateStatus(activeFriend.id) !== 'offline' ? 'text-white' : 'text-muted-foreground'}`}>{getInitials(activeFriend.name)}</span>
+                      </div>
+                    )}
                     <span className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-background ${
                       getTeammateStatus(activeFriend.id) === 'dnd' ? 'bg-red-500' :
                       getTeammateStatus(activeFriend.id) === 'idle' ? 'bg-amber-500' :
@@ -1966,7 +2015,7 @@ export default function TeamChatPage() {
           </div>
 
           {/* Messages scroll area */}
-          <ScrollArea className="flex-1 p-6 relative">
+          <ScrollArea className="flex-1 min-h-0 p-6 relative">
             <div className="flex flex-col gap-4">
               
               {/* Introduction Banner */}
@@ -1990,9 +2039,16 @@ export default function TeamChatPage() {
                 return (
                   <div key={msg.id} className={cn("flex gap-3 max-w-[75%] group items-end relative", isMe ? "ml-auto flex-row-reverse" : "mr-auto")}>
                     {!isMe && activeFriend && (
-                      <div className="w-7 h-7 rounded-full bg-zinc-200 dark:bg-zinc-800 flex items-center justify-center text-[10px] font-bold text-muted-foreground shrink-0 mt-0.5">
-                        {getInitials(activeFriend.name)}
-                      </div>
+                      getAvatarStyle(activeFriend.avatar) ? (
+                        <div 
+                          className="w-7 h-7 rounded-full border border-border/80 shrink-0 mt-0.5" 
+                          style={getAvatarStyle(activeFriend.avatar) || undefined}
+                        />
+                      ) : (
+                        <div className="w-7 h-7 rounded-full bg-zinc-200 dark:bg-zinc-800 flex items-center justify-center text-[10px] font-bold text-muted-foreground shrink-0 mt-0.5">
+                          {getInitials(activeFriend.name)}
+                        </div>
+                      )
                     )}
                     
                     {/* Cipher Lock Toggle */}
@@ -2152,9 +2208,16 @@ export default function TeamChatPage() {
                       });
                     }}
                   >
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-orange-400 to-pink-500 flex items-center justify-center text-[10px] font-bold text-white shrink-0 mt-0.5">
-                      {getInitials(msg.sender.name)}
-                    </div>
+                    {getAvatarStyle(msg.sender.avatar) ? (
+                      <div 
+                        className="w-8 h-8 rounded-full border border-border/80 shrink-0 mt-0.5" 
+                        style={getAvatarStyle(msg.sender.avatar) || undefined}
+                      />
+                    ) : (
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-orange-400 to-pink-500 flex items-center justify-center text-[10px] font-bold text-white shrink-0 mt-0.5">
+                        {getInitials(msg.sender.name)}
+                      </div>
+                    )}
                     
                     <div className="flex-1 min-w-0 flex flex-col gap-1">
                       <div className="flex items-baseline gap-2">
@@ -2510,14 +2573,21 @@ export default function TeamChatPage() {
               </div>
 
               {/* Thread Chat Content */}
-              <ScrollArea className="flex-1 p-4">
+              <ScrollArea className="flex-1 min-h-0 p-4">
                 <div className="flex flex-col gap-4">
                   
                   {/* Root Message Box */}
                   <div className="p-3 bg-background border border-border/60 rounded-xl flex gap-3 items-start group">
-                    <div className="w-7 h-7 rounded-full bg-gradient-to-br from-orange-400 to-pink-500 flex items-center justify-center text-[10px] font-bold text-white shrink-0 mt-0.5">
-                      {getInitials(activeThreadMessage.sender.name)}
-                    </div>
+                    {getAvatarStyle(activeThreadMessage.sender.avatar) ? (
+                      <div 
+                        className="w-7 h-7 rounded-full border border-border/80 shrink-0 mt-0.5" 
+                        style={getAvatarStyle(activeThreadMessage.sender.avatar) || undefined}
+                      />
+                    ) : (
+                      <div className="w-7 h-7 rounded-full bg-gradient-to-br from-orange-400 to-pink-500 flex items-center justify-center text-[10px] font-bold text-white shrink-0 mt-0.5">
+                        {getInitials(activeThreadMessage.sender.name)}
+                      </div>
+                    )}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-baseline justify-between gap-1.5">
                         <span className="text-xs font-semibold text-foreground">{activeThreadMessage.sender.name}</span>
@@ -2552,9 +2622,16 @@ export default function TeamChatPage() {
                         
                         return (
                           <div key={reply.id} className="flex gap-2.5 items-start pl-2 group">
-                            <div className="w-6.5 h-6.5 rounded-full bg-gradient-to-br from-indigo-400 to-violet-500 flex items-center justify-center text-[9px] font-bold text-white shrink-0 mt-0.5">
-                              {getInitials(reply.sender.name)}
-                            </div>
+                            {getAvatarStyle(reply.sender.avatar) ? (
+                              <div 
+                                className="w-6.5 h-6.5 rounded-full border border-border/80 shrink-0 mt-0.5" 
+                                style={getAvatarStyle(reply.sender.avatar) || undefined}
+                              />
+                            ) : (
+                              <div className="w-6.5 h-6.5 rounded-full bg-gradient-to-br from-indigo-400 to-violet-500 flex items-center justify-center text-[9px] font-bold text-white shrink-0 mt-0.5">
+                                {getInitials(reply.sender.name)}
+                              </div>
+                            )}
                             <div className="flex-1 min-w-0 flex flex-col gap-0.5">
                               <div className="flex items-baseline gap-2">
                                 <span className="text-[11px] font-semibold text-foreground">{reply.sender.name}</span>
@@ -2645,9 +2722,16 @@ export default function TeamChatPage() {
                     activePinnedMessages.map(msg => (
                       <div key={msg.id} className="p-3 bg-background border border-border/60 rounded-xl flex flex-col gap-2">
                         <div className="flex items-center gap-2">
-                          <div className="w-5 h-5 rounded-full bg-gradient-to-br from-indigo-400 to-violet-500 flex items-center justify-center text-[8px] font-bold text-white">
-                            {getInitials(msg.sender.name)}
-                          </div>
+                          {getAvatarStyle(msg.sender.avatar) ? (
+                            <div 
+                              className="w-5 h-5 rounded-full border border-border/80 shrink-0" 
+                              style={getAvatarStyle(msg.sender.avatar) || undefined}
+                            />
+                          ) : (
+                            <div className="w-5 h-5 rounded-full bg-gradient-to-br from-indigo-400 to-violet-500 flex items-center justify-center text-[8px] font-bold text-white">
+                              {getInitials(msg.sender.name)}
+                            </div>
+                          )}
                           <span className="text-[10px] font-semibold text-foreground truncate">{msg.sender.name}</span>
                           <span className="text-[8px] text-muted-foreground ml-auto font-mono">
                             {new Date(msg.timestamp).toLocaleDateString()}
@@ -3057,12 +3141,23 @@ export default function TeamChatPage() {
                           />
                         ) : (
                           <>
-                            <div className="w-20 h-20 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-2xl font-bold mb-3 shadow-lg relative">
-                              {getInitials(callState.friend.name)}
-                              <span className="absolute bottom-0 right-1 w-4 h-4 bg-emerald-500 border border-zinc-900 rounded-full flex items-center justify-center">
-                                <span className="w-2 h-2 bg-white rounded-full animate-ping" />
-                              </span>
-                            </div>
+                            {getAvatarStyle(callState.friend.avatar) ? (
+                              <div 
+                                className="w-20 h-20 rounded-full border border-zinc-850 shadow-lg relative mb-3" 
+                                style={getAvatarStyle(callState.friend.avatar) || undefined}
+                              >
+                                <span className="absolute bottom-0 right-1 w-4 h-4 bg-emerald-500 border border-zinc-900 rounded-full flex items-center justify-center">
+                                  <span className="w-2 h-2 bg-white rounded-full animate-ping" />
+                                </span>
+                              </div>
+                            ) : (
+                              <div className="w-20 h-20 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-2xl font-bold mb-3 shadow-lg relative">
+                                {getInitials(callState.friend.name)}
+                                <span className="absolute bottom-0 right-1 w-4 h-4 bg-emerald-500 border border-zinc-900 rounded-full flex items-center justify-center">
+                                  <span className="w-2 h-2 bg-white rounded-full animate-ping" />
+                                </span>
+                              </div>
+                            )}
                             <span className="text-sm font-semibold">{callState.friend.name}</span>
                           </>
                         )}
@@ -3170,9 +3265,16 @@ export default function TeamChatPage() {
                     <div className="flex flex-col items-center gap-6">
                       <div className="relative">
                         <div className="absolute -inset-4 rounded-full bg-indigo-500/15 animate-ping duration-1000" />
-                        <div className="w-28 h-28 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-3xl font-bold text-white shadow-2xl relative z-10">
-                          {getInitials(callState.friend.name)}
-                        </div>
+                        {getAvatarStyle(callState.friend.avatar) ? (
+                          <div 
+                            className="w-28 h-28 rounded-full border border-zinc-700 shadow-2xl relative z-10" 
+                            style={getAvatarStyle(callState.friend.avatar) || undefined}
+                          />
+                        ) : (
+                          <div className="w-28 h-28 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-3xl font-bold text-white shadow-2xl relative z-10">
+                            {getInitials(callState.friend.name)}
+                          </div>
+                        )}
                       </div>
                       <div className="text-center">
                         <h3 className="text-xl font-bold text-white">{callState.friend.name}</h3>

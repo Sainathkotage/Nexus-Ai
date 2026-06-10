@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import { getSupabaseServiceRole } from '@/lib/supabase';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { getDocumentFavicon } from '@/lib/utils';
@@ -53,93 +53,22 @@ export async function POST(req: Request) {
     const supabaseAdmin = getSupabaseServiceRole();
     const fileName = `${Date.now()}-${file.name}`;
 
-    // Perform Gemini API metadata extraction and Supabase Storage upload in parallel
-    const [analysis, publicUrl] = await Promise.all([
-      // Task 1: Gemini Analysis
-      (async () => {
-        let extractedAnalysis = {
-          summary: 'Newly uploaded document.',
-          keyPoints: ['No key points extracted yet.'],
-          tasks: [],
-          deadlines: [],
-          people: [],
-          organizations: [],
-          tags: ['uploaded']
-        };
+    // Upload file to Supabase Storage
+    const { error: storageErr } = await supabaseAdmin.storage
+      .from('documents')
+      .upload(fileName, nodeBuffer, {
+        contentType: file.type,
+        upsert: true
+      });
 
-        if (apiKey && text.trim().length > 0) {
-          try {
-            const prompt = `Analyze the following document content. Extract standard metadata and content analysis. 
-The output MUST be a JSON object with exactly the following fields (do not wrap in markdown code blocks, return raw json string):
-{
-  "summary": "A concise 3-sentence executive summary of the document",
-  "keyPoints": ["Key point 1", "Key point 2", "Key point 3", "Key point 4"],
-  "tasks": [
-    {"text": "Task description 1", "deadline": "YYYY-MM-DD or null", "assignee": "assignee name or null"},
-    {"text": "Task description 2", "deadline": "YYYY-MM-DD or null", "assignee": "assignee name or null"}
-  ],
-  "deadlines": [
-    {"text": "Deadline name 1", "date": "YYYY-MM-DD"},
-    {"text": "Deadline name 2", "date": "YYYY-MM-DD"}
-  ],
-  "people": ["Name 1", "Name 2"],
-  "organizations": ["Org 1", "Org 2"],
-  "tags": ["tag1", "tag2", "tag3"]
-}
+    if (storageErr) {
+      console.error('Supabase Storage Error:', storageErr);
+      throw new Error(`Failed to store file in Supabase: ${storageErr.message}`);
+    }
 
-If no tasks, deadlines, people, or organizations are found, return empty arrays.
-Document Content:
-${text.substring(0, 15000)}`;
-
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
-            const response = await fetch(url, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: {
-                  responseMimeType: "application/json",
-                  temperature: 0.2
-                }
-              })
-            });
-
-            if (response.ok) {
-              const data = await response.json();
-              const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-              const cleanText = rawText.trim().replace(/^```json/i, '').replace(/^```/, '').trim();
-              extractedAnalysis = JSON.parse(cleanText);
-            } else {
-              console.warn('Gemini extraction endpoint returned error:', response.status);
-            }
-          } catch (err) {
-            console.error('Gemini extraction failed, using defaults:', err);
-          }
-        }
-        return extractedAnalysis;
-      })(),
-
-      // Task 2: Supabase Storage Upload
-      (async () => {
-        const { error: storageErr } = await supabaseAdmin.storage
-          .from('documents')
-          .upload(fileName, nodeBuffer, {
-            contentType: file.type,
-            upsert: true
-          });
-
-        if (storageErr) {
-          console.error('Supabase Storage Error:', storageErr);
-          throw new Error(`Failed to store file in Supabase: ${storageErr.message}`);
-        }
-
-        const { data: { publicUrl } } = supabaseAdmin.storage
-          .from('documents')
-          .getPublicUrl(fileName);
-
-        return publicUrl;
-      })()
-    ]);
+    const { data: { publicUrl } } = supabaseAdmin.storage
+      .from('documents')
+      .getPublicUrl(fileName);
 
     const supabaseAuth = await createSupabaseServerClient();
     const { data: { user: authUser } } = await supabaseAuth.auth.getUser();
@@ -169,15 +98,15 @@ ${text.substring(0, 15000)}`;
       size: `${(file.size / 1024 / 1024).toFixed(2)} MB`,
       uploaded_at: new Date().toISOString(),
       uploaded_by: uploadedBy,
-      summary: analysis.summary,
-      key_points: analysis.keyPoints,
-      extracted_tasks: analysis.tasks,
-      extracted_deadlines: analysis.deadlines,
-      extracted_people: analysis.people,
-      extracted_organizations: analysis.organizations,
-      tags: analysis.tags,
+      summary: 'Processing document...',
+      key_points: ['No key points extracted yet.'],
+      extracted_tasks: [],
+      extracted_deadlines: [],
+      extracted_people: [],
+      extracted_organizations: [],
+      tags: ['processing'],
       thumbnail: getDocumentFavicon(file.name),
-      processing_status: 'completed',
+      processing_status: 'processing',
       content: text
     };
 
@@ -193,11 +122,152 @@ ${text.substring(0, 15000)}`;
       throw new Error(`Failed to save document metadata: ${dbErr.message}`);
     }
 
+    // Defer Gemini API processing to run in the background after the response is sent
+    after(async () => {
+      if (apiKey && text.trim().length > 0) {
+        try {
+          const prompt = `Analyze the following document content. Extract standard metadata and content analysis. 
+The output MUST be a JSON object with exactly the following fields (do not wrap in markdown code blocks, return raw json string):
+{
+  "summary": "A concise 3-sentence executive summary of the document",
+  "keyPoints": ["Key point 1", "Key point 2", "Key point 3", "Key point 4"],
+  "tasks": [
+    {"text": "Task description 1", "deadline": "YYYY-MM-DD or null", "assignee": "assignee name or null"},
+    {"text": "Task description 2", "deadline": "YYYY-MM-DD or null", "assignee": "assignee name or null"}
+  ],
+  "deadlines": [
+    {"text": "Deadline name 1", "date": "YYYY-MM-DD"},
+    {"text": "Deadline name 2", "date": "YYYY-MM-DD"}
+  ],
+  "people": ["Name 1", "Name 2"],
+  "organizations": ["Org 1", "Org 2"],
+  "tags": ["tag1", "tag2", "tag3"]
+}
+
+If no tasks, deadlines, people, or organizations are found, return empty arrays.
+Document Content:
+${text.substring(0, 15000)}`;
+
+          const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`;
+          const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: prompt }] }],
+              generationConfig: {
+                responseMimeType: "application/json",
+                temperature: 0.2
+              }
+            })
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+            const cleanText = rawText.trim().replace(/^```json/i, '').replace(/^```/, '').trim();
+            const analysis = JSON.parse(cleanText);
+
+            // Update document with analysis details
+            const { error: updateErr } = await supabaseAdmin
+              .from('documents')
+              .update({
+                summary: analysis.summary || 'Uploaded document.',
+                key_points: analysis.keyPoints || [],
+                extracted_tasks: analysis.tasks || [],
+                extracted_deadlines: analysis.deadlines || [],
+                extracted_people: analysis.people || [],
+                extracted_organizations: analysis.organizations || [],
+                tags: analysis.tags || ['uploaded'],
+                processing_status: 'completed'
+              })
+              .eq('id', docId);
+
+            if (updateErr) {
+              console.error('Failed to update document analysis:', updateErr);
+            }
+
+            // Extract and insert tasks into database
+            if (analysis.tasks && analysis.tasks.length > 0) {
+              const tasksPayload = analysis.tasks.map((t: any) => {
+                const taskId = `task-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                return {
+                  id: taskId,
+                  title: t.text,
+                  description: `Extracted from document: ${file.name}`,
+                  status: 'todo',
+                  priority: 'medium',
+                  assignee: uploadedBy,
+                  due_date: t.deadline || null,
+                  tags: ['extracted'],
+                  source_document: { id: docId, title: file.name },
+                  subtasks: [],
+                  created_at: new Date().toISOString(),
+                  updated_at: new Date().toISOString()
+                };
+              });
+
+              const { error: tasksErr } = await supabaseAdmin
+                .from('tasks')
+                .insert(tasksPayload);
+
+              if (tasksErr) {
+                console.error('Failed to insert extracted tasks:', tasksErr);
+              }
+            }
+
+            // Extract and insert calendar deadlines into database
+            if (analysis.deadlines && analysis.deadlines.length > 0) {
+              const eventsPayload = analysis.deadlines.map((d: any) => {
+                const eventId = `ev-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                return {
+                  id: eventId,
+                  title: d.text,
+                  description: `Extracted deadline from: ${file.name}`,
+                  date: d.date,
+                  start_time: '09:00',
+                  end_time: '10:00',
+                  category: 'deadline',
+                  attendees: [],
+                  color: 'indigo',
+                  added_to_calendar: true
+                };
+              });
+
+              const { error: eventsErr } = await supabaseAdmin
+                .from('calendar_events')
+                .insert(eventsPayload);
+
+              if (eventsErr) {
+                console.error('Failed to insert extracted calendar events:', eventsErr);
+              }
+            }
+
+          } else {
+            console.warn('Gemini extraction endpoint returned error:', response.status);
+            await supabaseAdmin
+              .from('documents')
+              .update({ processing_status: 'failed' })
+              .eq('id', docId);
+          }
+        } catch (err) {
+          console.error('Gemini extraction failed:', err);
+          await supabaseAdmin
+            .from('documents')
+            .update({ processing_status: 'failed' })
+            .eq('id', docId);
+        }
+      } else {
+        await supabaseAdmin
+          .from('documents')
+          .update({ processing_status: 'completed' })
+          .eq('id', docId);
+      }
+    });
+
     return NextResponse.json({
       text,
       filename: file.name,
       size: file.size,
-      analysis,
       dbRecord: dbData
     });
 

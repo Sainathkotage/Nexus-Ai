@@ -572,6 +572,7 @@ interface WorkspaceState {
   aiInbox: AiInboxItem[];
   addAiInboxItem: (item: Omit<AiInboxItem, 'id' | 'createdAt' | 'status'>) => void;
   completeAiInboxItem: (id: string) => void;
+  updateProfile: (name: string, email: string, avatar: string) => Promise<void>;
 }
 
 const WorkspaceContext = createContext<WorkspaceState | undefined>(undefined);
@@ -3286,6 +3287,23 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
   }, [user]);
 
+  const updateProfile = useCallback(async (name: string, email: string, avatar: string) => {
+    if (user) {
+      const updated = { ...user, name, email, avatar };
+      setUser(updated);
+      setAllUsers(prev => prev.map(u => u.id === user.id ? updated : u));
+      try {
+        await supabase.from('profiles').update({
+          username: name,
+          email: email,
+          avatar: avatar
+        }).eq('id', user.id);
+      } catch (err) {
+        console.warn('Failed to sync profile updates to database:', err);
+      }
+    }
+  }, [user]);
+
   const sendChannelMessage = useCallback(async (channelId: string, content: string, media?: { url: string; name: string; type: string }) => {
     if (!user) return;
     const encryptedContent = encryptMessage(content);
@@ -4538,6 +4556,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     addReaction, removeReaction, togglePinMessage, markMessageAsRead, createChannel,
     createWorkspace, joinWorkspaceByCode, createJoinRequest, reviewJoinRequest, regenerateWorkspaceInviteCode, updateMemberRole, switchWorkspace,
     removeWorkspaceMember, banWorkspaceMember, unbanWorkspaceMember, deleteWorkspace,
+    updateProfile,
   };
 
   return (

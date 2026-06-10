@@ -6,7 +6,7 @@ import { motion } from 'motion/react';
 import { 
   X, MessageSquare
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, getAvatarStyle } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Person } from '@/types';
 import { useRouter } from 'next/navigation';
@@ -81,9 +81,16 @@ export function RightSidebar() {
       >
         {/* Avatar */}
         <div className="relative shrink-0">
-          <div className="w-8.5 h-8.5 rounded-full bg-gradient-to-br from-indigo-400 to-violet-500 flex items-center justify-center text-[10px] font-bold text-white shadow-sm">
-            {getInitials(member.name)}
-          </div>
+          {getAvatarStyle(member.avatar) ? (
+            <div 
+              className="w-8.5 h-8.5 rounded-full border border-border/80" 
+              style={getAvatarStyle(member.avatar) || undefined}
+            />
+          ) : (
+            <div className="w-8.5 h-8.5 rounded-full bg-gradient-to-br from-indigo-400 to-violet-500 flex items-center justify-center text-[10px] font-bold text-white shadow-sm">
+              {getInitials(member.name)}
+            </div>
+          )}
           <span className={cn(
             "absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-background flex items-center justify-center shrink-0",
             details.color

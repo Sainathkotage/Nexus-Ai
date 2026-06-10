@@ -8,10 +8,10 @@ import {
   Settings, User, Bell, Palette, Shield, CreditCard, Plug, Users, 
   Key, ArrowRight, ShieldCheck, Mail, Database, Globe, Check, AlertTriangle, 
   Trash2, Plus, Info, RefreshCw, Terminal, ArrowUpRight, HelpCircle, X, ExternalLink,
-  Copy
+  Copy, Heart, Sparkles
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+import { cn, getAvatarStyle } from '@/lib/utils';
 import { toast } from 'sonner';
 import {
   startRazorpayCheckout,
@@ -68,6 +68,7 @@ export default function SettingsPage() {
     themeConfig,
     setThemeConfig,
     user,
+    updateProfile,
     loginActivities,
     workspace,
     workspaceMembers: realWorkspaceMembers,
@@ -137,6 +138,7 @@ export default function SettingsPage() {
     name: '',
     email: '',
     role: 'Member',
+    avatar: '',
   });
 
   const [workspaceMembers, setWorkspaceMembers] = useState<
@@ -189,6 +191,7 @@ export default function SettingsPage() {
       name: user.name,
       email: user.email,
       role: user.role,
+      avatar: user.avatar || '',
     });
     setCheckoutCard((c) => ({ ...c, name: user.name }));
     setWorkspaceUrl((prev) => prev || user.email.split('@')[1]?.replace(/\./g, '-') || 'my-workspace');
@@ -429,38 +432,26 @@ export default function SettingsPage() {
       toast.info(`Your workspace is already on the ${plan} plan.`);
       return;
     }
-    const planId = planLabelToId(plan);
-    try {
-      toast.loading('Opening Razorpay checkout…', { id: 'checkout' });
-      await startRazorpayCheckout({
-        planId,
-        cycle: billingCycle,
-        seatCount: workspaceMembers.length,
-        organizationId: ORG_ID || undefined,
-        customerName: userProfile.name,
-        customerEmail: userProfile.email,
-      });
-      toast.success('Subscription updated', { id: 'checkout' });
-    } catch {
-      setTargetPlan(plan);
-      setShowCheckoutModal(true);
-      toast.dismiss('checkout');
-    }
+    toast.loading('Activating plan in Beta Mode...', { id: 'checkout' });
+    setTimeout(() => {
+      setCurrentPlan(plan);
+      toast.success(`Plan updated to ${plan} for free during public Beta!`, { id: 'checkout' });
+      
+      // Add transaction audit log
+      const newAudit = {
+        id: `log-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        actor: userProfile.name || 'You',
+        action: 'Upgrade Plan Subscription (Beta)',
+        target: `${plan} (Beta Mode)`,
+        ip: '192.168.1.42',
+      };
+      setAuditLogs(prev => [newAudit, ...prev]);
+    }, 1000);
   };
 
   const handleOpenBillingPortal = async () => {
-    if (!ORG_ID) {
-      setActiveSection('billing');
-      toast.info('Configure NEXT_PUBLIC_ORGANIZATION_ID for subscription management.');
-      return;
-    }
-    try {
-      toast.loading('Opening billing management…', { id: 'portal' });
-      const url = await openBillingManage(ORG_ID);
-      window.location.href = url;
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Billing management unavailable', { id: 'portal' });
-    }
+    toast.info('Billing management is disabled during the free public Beta phase.');
   };
 
   // Simulated checkout when Razorpay env vars are not configured
@@ -675,42 +666,99 @@ export default function SettingsPage() {
             <div className="space-y-8">
               <section className="flex flex-col gap-5">
                 <div>
-                  <h2 className="text-base font-semibold mb-1">My Administrator Account</h2>
-                  <p className="text-sm text-muted-foreground">Manage your workspace identity and active administrator role.</p>
+                  <h2 className="text-base font-semibold mb-1">My Account Settings</h2>
+                  <p className="text-sm text-muted-foreground">Manage your workspace identity, select a profile avatar, and set email coordinates.</p>
                 </div>
                 <div className="h-px bg-border" />
                 
-                <div className="grid gap-4 max-w-md">
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-xs font-semibold text-foreground">Profile Full Name</label>
-                    <input 
-                      type="text" 
-                      value={userProfile.name}
-                      onChange={(e) => setUserProfile(prev => ({ ...prev, name: e.target.value }))}
-                      className="px-3 py-1.5 border border-border rounded-md bg-background text-sm focus:ring-1 focus:ring-ring focus:outline-none"
-                    />
+                <div className="grid gap-5">
+                  {/* Profile Avatar Selection */}
+                  <div className="flex flex-col gap-2.5">
+                    <label className="text-xs font-semibold text-foreground">Choose Profile Avatar</label>
+                    <div className="flex items-center gap-4 mb-2">
+                      {getAvatarStyle(userProfile.avatar) ? (
+                        <div 
+                          className="w-16 h-16 rounded-full border-2 border-indigo-500 shadow-sm shrink-0" 
+                          style={getAvatarStyle(userProfile.avatar) || undefined}
+                        />
+                      ) : (
+                        <div className="w-16 h-16 rounded-full bg-gradient-to-br from-orange-400 to-pink-500 flex items-center justify-center border-2 border-border shadow-sm text-white font-bold text-lg shrink-0">
+                          {userProfile.name ? userProfile.name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2) : 'A'}
+                        </div>
+                      )}
+                      <div className="flex flex-col">
+                        <span className="text-xs font-bold text-foreground">Current Avatar</span>
+                        <span className="text-[10px] text-muted-foreground mt-0.5">Pick one of the 25 hand-drawn avatars below.</span>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-5 sm:grid-cols-7 gap-2 bg-muted/20 p-3.5 border border-border/85 rounded-lg max-w-md">
+                      {Array.from({ length: 25 }).map((_, idx) => {
+                        const avatarVal = `avatar-${idx}`;
+                        const isSelected = userProfile.avatar === avatarVal;
+                        
+                        const col = idx % 5;
+                        const row = Math.floor(idx / 5);
+                        const x = col * 25;
+                        const y = row * 25;
+                        
+                        return (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => setUserProfile(prev => ({ ...prev, avatar: avatarVal }))}
+                            className={cn(
+                              "w-10 h-10 rounded-full border transition-all cursor-pointer hover:scale-105 active:scale-95 focus:outline-none shrink-0",
+                              isSelected 
+                                ? "border-indigo-600 ring-2 ring-indigo-500/20 scale-105" 
+                                : "border-border hover:border-indigo-500/50"
+                            )}
+                            style={{
+                              backgroundImage: "url('/avatars-sheet.jpg')",
+                              backgroundSize: '500% 500%',
+                              backgroundPosition: `${x}% ${y}%`,
+                              backgroundRepeat: 'no-repeat'
+                            }}
+                            title={`Avatar Option ${idx + 1}`}
+                          />
+                        );
+                      })}
+                    </div>
                   </div>
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-xs font-semibold text-foreground">Owner Business Email</label>
-                    <input 
-                      type="email" 
-                      value={userProfile.email}
-                      onChange={(e) => setUserProfile(prev => ({ ...prev, email: e.target.value }))}
-                      className="px-3 py-1.5 border border-border rounded-md bg-background text-sm focus:ring-1 focus:ring-ring focus:outline-none"
-                    />
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-xs font-semibold text-slate-500">Security Access Role</label>
-                    <input 
-                      type="text" 
-                      value={userProfile.role}
-                      disabled
-                      className="px-3 py-1.5 border border-border rounded-md bg-muted text-sm text-slate-500 cursor-not-allowed"
-                    />
+
+                  <div className="grid gap-4 max-w-md">
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs font-semibold text-foreground">Profile Full Name</label>
+                      <input 
+                        type="text" 
+                        value={userProfile.name}
+                        onChange={(e) => setUserProfile(prev => ({ ...prev, name: e.target.value }))}
+                        className="px-3 py-1.5 border border-border rounded-md bg-background text-sm focus:ring-1 focus:ring-ring focus:outline-none"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs font-semibold text-foreground">Owner Business Email</label>
+                      <input 
+                        type="email" 
+                        value={userProfile.email}
+                        onChange={(e) => setUserProfile(prev => ({ ...prev, email: e.target.value }))}
+                        className="px-3 py-1.5 border border-border rounded-md bg-background text-sm focus:ring-1 focus:ring-ring focus:outline-none"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs font-semibold text-slate-500">Security Access Role</label>
+                      <input 
+                        type="text" 
+                        value={userProfile.role}
+                        disabled
+                        className="px-3 py-1.5 border border-border rounded-md bg-muted text-sm text-slate-500 cursor-not-allowed"
+                      />
+                    </div>
                   </div>
                 </div>
                 <Button 
-                  onClick={() => {
+                  onClick={async () => {
+                    await updateProfile(userProfile.name, userProfile.email, userProfile.avatar);
                     toast.success('Profile credentials updated!');
                   }}
                   className="w-fit bg-foreground text-background hover:opacity-90 h-8 text-xs font-bold"
@@ -1281,59 +1329,49 @@ export default function SettingsPage() {
             </div>
           )}
 
-          {/* Pricing & Billing Section (Stripe Simulator) */}
+          {/* Pricing & Billing Section (Beta Mode & Donation Hub) */}
           {activeSection === 'billing' && (
-            <div className="space-y-8">
+            <div className="space-y-8 animate-in fade-in duration-200">
               <section className="flex flex-col gap-5">
                 <div>
                   <div className="flex items-center justify-between">
-                    <h2 className="text-base font-semibold">Workspace Subscription Plan</h2>
-                    <span className="text-xs font-bold bg-foreground text-background px-3 py-1 rounded-full border">
-                      Active: {currentPlan} Plan
+                    <h2 className="text-base font-semibold flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-indigo-500" />
+                      Workspace Subscription Plan
+                    </h2>
+                    <span className="text-xs font-bold bg-[#818cf8]/10 text-[#818cf8] border border-[#818cf8]/20 px-3 py-1 rounded-full">
+                      Active: {currentPlan} Plan (Beta Pass)
                     </span>
                   </div>
                   <p className="text-sm text-muted-foreground mt-1">
-                    Per-seat billing via Razorpay subscriptions. Seats: {workspaceMembers.length}
-                    {BILLING_PLANS[planLabelToId(currentPlan)].seatLimit
-                      ? ` / ${BILLING_PLANS[planLabelToId(currentPlan)].seatLimit}`
-                      : ''}
+                    Nexus AI Beta is completely free for all team sizes. Active seats in workspace: {workspaceMembers.length}
                   </p>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-8 text-xs"
-                    onClick={() => setBillingCycle(c => (c === 'monthly' ? 'yearly' : 'monthly'))}
-                  >
-                    Billing: {billingCycle === 'monthly' ? 'Monthly' : 'Yearly'}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-8 text-xs gap-1"
-                    onClick={() => void handleOpenBillingPortal()}
-                  >
-                    Manage billing
-                    <ExternalLink className="w-3 h-3" />
-                  </Button>
+
+                <div className="p-4 border border-indigo-500/20 bg-indigo-500/5 rounded-xl max-w-lg flex items-start gap-3">
+                  <Info className="w-5 h-5 text-indigo-400 shrink-0 mt-0.5" />
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-xs font-bold text-indigo-400">Beta Mode Active (Zero Cost)</span>
+                    <p className="text-[10px] text-muted-foreground leading-relaxed mt-1">
+                      No payment or seat license fees are charged during the public beta. You can scale your team up to the seat limits of each tier at no cost.
+                    </p>
+                  </div>
                 </div>
+
                 <div className="h-px bg-border" />
 
                 {/* Subscriptions Grid */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-2xl">
                   {[
-                    { id: 'Starter', price: '$10', seats: '1 seat', icon: User },
-                    { id: 'Team Pro', price: '$19', seats: 'Up to 15 seats', icon: Users, featured: true },
-                    { id: 'Enterprise', price: '$49', seats: 'Unlimited seats', icon: Database }
+                    { id: 'Starter', price: 'Free', seats: '1 seat', icon: User },
+                    { id: 'Team Pro', price: 'Free', seats: 'Up to 15 seats', icon: Users, featured: true },
+                    { id: 'Enterprise', price: 'Free', seats: 'Unlimited seats', icon: Database }
                   ].map((plan) => (
                     <div 
                       key={plan.id}
                       className={cn(
                         "p-4 rounded-xl border flex flex-col justify-between transition-all bg-card/20",
-                        currentPlan === plan.id ? "border-primary ring-1 ring-primary" : "border-border/60"
+                        currentPlan === plan.id ? "border-[#818cf8] ring-1 ring-[#818cf8]" : "border-border/60 hover:border-[#818cf8]/40"
                       )}
                     >
                       <div className="space-y-2">
@@ -1345,7 +1383,7 @@ export default function SettingsPage() {
                         </div>
                         <div className="flex items-baseline">
                           <span className="text-2xl font-extrabold text-foreground">{plan.price}</span>
-                          <span className="text-[10px] text-muted-foreground ml-1">/ user / mo</span>
+                          <span className="text-[9px] text-muted-foreground ml-1">during Beta</span>
                         </div>
                         <p className="text-[10px] text-slate-500 font-semibold leading-none">{plan.seats}</p>
                       </div>
@@ -1355,13 +1393,13 @@ export default function SettingsPage() {
                         variant={plan.id === currentPlan ? 'outline' : 'default'}
                         type="button"
                         className={cn(
-                          "w-full mt-4 h-7 text-[10px] font-bold rounded-lg cursor-pointer",
+                          "w-full mt-4 h-7 text-[10px] font-bold rounded-lg cursor-pointer transition-all",
                           plan.id === currentPlan 
                             ? 'border-border text-slate-400 cursor-not-allowed hover:bg-transparent' 
-                            : 'bg-foreground text-background hover:opacity-90'
+                            : 'bg-foreground text-background hover:opacity-90 active:scale-95'
                         )}
                       >
-                        {plan.id === currentPlan ? 'Active Plan' : 'Select Plan'}
+                        {plan.id === currentPlan ? 'Active Plan' : 'Upgrade Plan'}
                       </Button>
                     </div>
                   ))}
@@ -1376,28 +1414,74 @@ export default function SettingsPage() {
                 </div>
                 <div className="h-px bg-border" />
                 
-                <div className="p-4 border border-border rounded-lg max-w-lg bg-card/20 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <span className="text-2xl font-bold bg-white/5 border border-white/10 px-2 py-0.5 rounded text-foreground font-mono">VISA</span>
-                    <div className="flex flex-col">
-                      <span className="text-xs font-bold text-foreground">Visa ending in 4444</span>
-                      <span className="text-[10px] text-slate-500 mt-0.5">
-                        {checkoutCard.expiry
-                          ? `Expires ${checkoutCard.expiry} • Billing name: ${checkoutCard.name || userProfile.name || '—'}`
-                          : 'Add a payment method in Razorpay to manage billing'}
-                      </span>
+                <div className="p-4 border border-border rounded-lg max-w-lg bg-card/25 flex items-center gap-3">
+                  <ShieldCheck className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
+                  <div className="flex flex-col">
+                    <span className="text-xs font-bold text-foreground font-sans">Public Beta Pass Active</span>
+                    <span className="text-[10px] text-slate-500 mt-1 leading-relaxed">
+                      Your workspace is registered under the Nexus AI Public Beta program. Credit cards and Razorpay payment sync are currently inactive.
+                    </span>
+                  </div>
+                </div>
+              </section>
+
+              {/* Support & Donations Section */}
+              <section className="flex flex-col gap-5 max-w-2xl">
+                <div>
+                  <h2 className="text-base font-semibold text-rose-500 mb-1 flex items-center gap-2">
+                    <Heart className="w-5 h-5 text-rose-500 fill-rose-500 animate-pulse" />
+                    Support Our Development
+                  </h2>
+                  <p className="text-sm text-muted-foreground">Nexus AI Beta is built with passion. If you love using it, consider donating to keep our GPU compute servers fast and sustainable.</p>
+                </div>
+                <div className="h-px bg-border" />
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-lg">
+                  {/* Patreon Card */}
+                  <div className="p-4 border border-border bg-card/20 hover:border-[#818cf8]/45 transition-colors rounded-xl flex flex-col justify-between gap-3">
+                    <div className="flex flex-col gap-1">
+                      <span className="text-xs font-bold text-foreground">Patreon Community</span>
+                      <span className="text-[10px] text-muted-foreground leading-relaxed">Get exclusive development updates, early access to new generative model configurations, and direct feedback channels with the developer team.</span>
+                    </div>
+                    <a 
+                      href="https://www.patreon.com/c/sainathkotage/membership" 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="w-full h-8 flex items-center justify-center gap-1.5 bg-[#FF424D] hover:bg-[#FF424D]/90 text-white rounded-lg text-xs font-bold transition-all hover:scale-[1.01] active:scale-95"
+                    >
+                      Support on Patreon
+                      <ArrowUpRight className="w-3.5 h-3.5" />
+                    </a>
+                  </div>
+
+                  {/* UPI Donation Card */}
+                  <div className="p-4 border border-border bg-card/20 hover:border-[#818cf8]/45 transition-colors rounded-xl flex flex-col justify-between gap-3">
+                    <div className="flex flex-col gap-1">
+                      <span className="text-xs font-bold text-foreground">UPI Transfer (India)</span>
+                      <span className="text-[10px] text-muted-foreground leading-relaxed">Direct support via UPI. Fast, secure, and zero-fee donations to keep server nodes active.</span>
+                      
+                      <div className="mt-2.5 flex items-center justify-between bg-muted/60 border border-border/80 px-2.5 py-1.5 rounded-lg">
+                        <span className="text-[10px] font-mono font-bold text-foreground selection:bg-indigo-500/20">nexusai@upi</span>
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          type="button"
+                          className="w-6 h-6 text-muted-foreground hover:text-foreground hover:bg-accent/40 rounded-md shrink-0"
+                          onClick={() => {
+                            navigator.clipboard.writeText("nexusai@upi");
+                            toast.success("UPI Address copied to clipboard!");
+                          }}
+                          title="Copy UPI ID"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                    
+                    <div className="w-full text-center py-2 border border-dashed border-indigo-500/20 rounded-lg text-[9.5px] font-bold text-indigo-400 bg-indigo-500/5 select-all">
+                      UPI ID: nexusai@upi
                     </div>
                   </div>
-                  <Button 
-                    onClick={() => void handleOpenBillingPortal()}
-                    variant="outline" 
-                    size="sm" 
-                    type="button"
-                    className="h-7 text-[10px] font-bold border-border gap-1"
-                  >
-                    Update payment & seats
-                    <ExternalLink className="w-3 h-3" />
-                  </Button>
                 </div>
               </section>
             </div>

@@ -128,7 +128,7 @@ export function AIChief() {
                   </div>
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-2">
-                      <span className="text-xs font-semibold text-ink-900 font-sans">Nexus</span>
+                      <span className="text-xs font-semibold text-ink-900 font-sans">NexusAi Beta</span>
                       <span className="text-[10px] text-ink-400 font-sans italic">just now</span>
                     </div>
                     <p className="text-sm text-ink-700 leading-relaxed font-sans">{active.response}</p>
@@ -150,7 +150,7 @@ export function AIChief() {
                   <div className="flex items-center gap-2 px-3.5 py-2.5 border border-ink-900/15 rounded-sm bg-cream-100">
                     <Sparkles className="w-4 h-4 text-ink-500" />
                     <span className="text-sm text-ink-400 flex-1 italic font-serif">
-                      Ask Nexus anything…
+                      Ask NexusAi Beta anything…
                     </span>
                     <kbd className="px-1.5 py-0.5 text-[10px] bg-cream-50 border border-ink-900/15 rounded-sm text-ink-500 font-mono">
                       ⌘K

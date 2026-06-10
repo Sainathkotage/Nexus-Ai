@@ -58,38 +58,38 @@ export function UploadZone({ open, onOpenChange }: UploadZoneProps) {
       if (!res.ok) throw new Error('Upload failed');
       
       const data = await res.json();
+      const dbRecord = data.dbRecord;
       
-      const newDocId = `doc-${Date.now()}`;
       const newDoc: DocumentFile = {
-        id: newDocId,
-        title: data.filename,
-        type: data.filename.toLowerCase().endsWith('.pdf') ? 'pdf' : 'txt',
-        size: `${(data.size / 1024 / 1024).toFixed(2)} MB`,
-        uploadedAt: new Date().toISOString(),
-        uploadedBy: user ?? { id: 'unknown', name: 'User', email: '', avatar: '', role: 'Member' },
-        summary: data.analysis?.summary || 'Newly uploaded document.',
-        keyPoints: data.analysis?.keyPoints || ['Document uploaded successfully.'],
-        extractedTasks: (data.analysis?.tasks || []).map((t: any, i: number) => ({
-          id: `et-${Date.now()}-${i}`,
+        id: dbRecord.id,
+        title: dbRecord.title,
+        type: dbRecord.type,
+        size: dbRecord.size,
+        uploadedAt: dbRecord.uploaded_at,
+        uploadedBy: dbRecord.uploaded_by,
+        summary: dbRecord.summary || 'Processing document...',
+        keyPoints: dbRecord.key_points || ['No key points extracted yet.'],
+        extractedTasks: (dbRecord.extracted_tasks || []).map((t: any, i: number) => ({
+          id: `et-${dbRecord.id}-${i}`,
           text: t.text,
           deadline: t.deadline || undefined,
           assignee: t.assignee || undefined,
-          sourceDocumentId: newDocId,
-          sourceDocumentTitle: data.filename,
+          sourceDocumentId: dbRecord.id,
+          sourceDocumentTitle: dbRecord.title,
         })),
-        extractedDeadlines: (data.analysis?.deadlines || []).map((d: any, i: number) => ({
-          id: `ed-${Date.now()}-${i}`,
+        extractedDeadlines: (dbRecord.extracted_deadlines || []).map((d: any, i: number) => ({
+          id: `ed-${dbRecord.id}-${i}`,
           text: d.text,
           date: d.date,
-          sourceDocumentId: newDocId,
-          sourceDocumentTitle: data.filename,
+          sourceDocumentId: dbRecord.id,
+          sourceDocumentTitle: dbRecord.title,
         })),
-        extractedPeople: data.analysis?.people || [],
-        extractedOrganizations: data.analysis?.organizations || [],
-        tags: data.analysis?.tags || ['uploaded'],
-        thumbnail: getDocumentFavicon(data.filename),
-        processingStatus: 'completed',
-        content: data.text,
+        extractedPeople: dbRecord.extracted_people || [],
+        extractedOrganizations: dbRecord.extracted_organizations || [],
+        tags: dbRecord.tags || ['processing'],
+        thumbnail: dbRecord.thumbnail || getDocumentFavicon(dbRecord.title),
+        processingStatus: dbRecord.processing_status || 'processing',
+        content: dbRecord.content || data.text,
       };
       
       addDocument(newDoc);

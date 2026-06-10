@@ -233,7 +233,7 @@ export interface ActivityItem {
 }
 
 // --- Navigation ---
-export type PageId = 'dashboard' | 'documents' | 'chat' | 'tasks' | 'calendar' | 'emails' | 'settings' | 'team-chat' | 'whiteboard' | 'crm' | 'ai-inbox';
+export type PageId = 'dashboard' | 'documents' | 'chat' | 'tasks' | 'calendar' | 'emails' | 'settings' | 'team-chat' | 'whiteboard' | 'crm' | 'ai-inbox' | 'ai-handover';
 
 // --- Enterprise Channels ---
 export interface Channel {
@@ -352,4 +352,73 @@ export interface AiInboxItem {
   status: 'pending' | 'completed';
   createdAt: string;
   actionData?: any;
+}
+
+// --- AI Handover ---
+export interface HandoverProject {
+  name: string;
+  progress: number;
+  status: string;
+  blockers: string[];
+  keyStakeholders: string[];
+  nextActions: string[];
+}
+
+export interface HandoverGraphNode {
+  id: string;
+  label: string;
+  role: string;
+  interactionLevel: 'high' | 'medium' | 'low';
+}
+
+export interface HandoverGraphLink {
+  source: string;
+  target: string;
+  label: string;
+}
+
+export interface HandoverDecision {
+  id: string;
+  date: string;
+  title: string;
+  details: string;
+  rationale: string;
+  category: string;
+}
+
+export interface HandoverCommitment {
+  id: string;
+  text: string;
+  dueDate: string;
+  status: 'pending' | 'completed';
+  source: string;
+}
+
+export interface SuccessorBrief {
+  timeToRead: string;
+  projectsCount: number;
+  relationshipsCount: number;
+  deadlinesCount: number;
+  commitmentsCount: number;
+  risksCount: number;
+  textBriefing: string;
+}
+
+export interface HandoverRecord {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  employeeRole: string;
+  projects: HandoverProject[];
+  relationshipGraph: {
+    nodes: HandoverGraphNode[];
+    links: HandoverGraphLink[];
+  };
+  decisionHistory: HandoverDecision[];
+  commitments: HandoverCommitment[];
+  successorBriefing: SuccessorBrief;
+  risks: string[];
+  createdBy: string;
+  createdAt: string;
+  status: 'active' | 'transitioning' | 'completed';
 }

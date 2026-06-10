@@ -66,3 +66,20 @@ export function getWorkspaceFavicon(name: string): string {
   
   return '/logo.png';
 }
+
+export function getAvatarStyle(avatar: string) {
+  if (avatar && avatar.startsWith('avatar-')) {
+    const index = parseInt(avatar.replace('avatar-', ''), 10);
+    if (!isNaN(index) && index >= 0 && index < 25) {
+      const x = (index % 5) * 25;
+      const y = Math.floor(index / 5) * 25;
+      return {
+        backgroundImage: "url('/avatars-sheet.jpg')",
+        backgroundSize: '500% 500%',
+        backgroundPosition: `${x}% ${y}%`,
+        backgroundRepeat: 'no-repeat'
+      };
+    }
+  }
+  return null;
+}

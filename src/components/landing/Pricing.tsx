@@ -3,53 +3,21 @@ import { Check } from 'lucide-react';
 export function Pricing({ onStart, onBookDemo }: { onStart?: (e: React.MouseEvent) => void; onBookDemo?: (e: React.MouseEvent) => void }) {
   const plans = [
     {
-      name: 'Free',
+      name: 'Public Beta Access',
       price: '$0',
-      period: 'forever',
-      desc: 'For individuals getting started.',
+      period: 'free during beta',
+      desc: 'Access all premium AI workspaces, employee handover generators, and commitments tracking features.',
       features: [
-        'Up to 3 workspaces',
-        '100 AI actions per month',
-        'Docs, tasks, calendar',
-        'Email integration, 1 account',
-        'Community support',
+        'Unlimited workspaces & documents',
+        'Proactive AI Chief of Staff & Handover Generators',
+        'Automatic commitments & unfulfilled tasks extractions',
+        'Interactive SVG relationship graphs & collaboration weights',
+        'Decision logs tracking & semantic Q&A indexers',
+        'Direct feedback channels with core engineering',
+        'No credit card required to sign up',
       ],
-      cta: 'Start free',
-      featured: false,
-    },
-    {
-      name: 'Pro',
-      price: '$12',
-      period: '/ user / month',
-      desc: 'For power users and small teams.',
-      features: [
-        'Unlimited workspaces',
-        '2,000 AI actions per month',
-        'AI Chief of Staff, full access',
-        'Unlimited email accounts',
-        '200+ integrations',
-        'Version history, 90 days',
-        'Priority support',
-      ],
-      cta: 'Start 14-day trial',
+      cta: 'Get Started for Free',
       featured: true,
-    },
-    {
-      name: 'Enterprise',
-      price: 'Custom',
-      period: 'contact sales',
-      desc: 'For organizations with advanced needs.',
-      features: [
-        'Everything in Pro',
-        'Unlimited AI actions',
-        'SSO, SAML, SCIM',
-        'Audit logs and DLP',
-        'Custom AI training on your data',
-        'Dedicated success manager',
-        '99.99% uptime SLA',
-      ],
-      cta: 'Talk to sales',
-      featured: false,
     },
   ];
 
@@ -65,29 +33,23 @@ export function Pricing({ onStart, onBookDemo }: { onStart?: (e: React.MouseEven
           <h2 className="font-serif text-5xl md:text-6xl font-medium text-ink-900 leading-[1.05]">
             Simple pricing.
             <br />
-            <span className="italic text-ink-500 font-normal">Serious power.</span>
+            <span className="italic text-ink-500 font-normal">Free till Beta.</span>
           </h2>
-          <p className="mt-6 text-lg text-ink-500">
-            Start free. Upgrade when you are ready. Cancel anytime.
+          <p className="mt-6 text-lg text-ink-500 font-serif italic">
+            Get full access to all premium NexusAi Beta features, completely free of charge during our public Beta release.
           </p>
         </div>
 
-        <div className="grid md:grid-cols-3 gap-5 max-w-5xl mx-auto">
+        <div className="flex justify-center max-w-lg mx-auto">
           {plans.map((p) => (
             <div
               key={p.name}
-              className={`relative rounded-sm p-6 transition-all ${
-                p.featured
-                  ? 'bg-ink-900 text-cream-100 shadow-2xl shadow-ink-900/30 md:-translate-y-2'
-                  : 'vintage-card'
-              }`}
-              style={p.featured ? { border: '1px solid rgba(194, 65, 12, 0.4)' } : undefined}
+              className="relative rounded-sm p-8 transition-all bg-ink-900 text-cream-100 shadow-2xl shadow-ink-900/30 w-full"
+              style={{ border: '1px solid rgba(194, 65, 12, 0.4)' }}
             >
-              {p.featured && (
-                <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 bg-accent-500 text-cream-100 text-[10px] font-semibold uppercase tracking-[0.2em] rounded-sm">
-                  Most Popular
-                </div>
-              )}
+              <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 bg-accent-500 text-cream-100 text-[10px] font-semibold uppercase tracking-[0.2em] rounded-sm">
+                Beta Release Offer
+              </div>
               <div className="text-xs font-semibold uppercase tracking-[0.2em] opacity-70 mb-3 font-sans">
                 {p.name}
               </div>
@@ -95,37 +57,24 @@ export function Pricing({ onStart, onBookDemo }: { onStart?: (e: React.MouseEven
                 <span className="font-serif text-5xl font-medium">{p.price}</span>
                 <span className="text-sm opacity-60 font-sans">{p.period}</span>
               </div>
-              <p className={`text-sm mb-6 font-sans ${p.featured ? 'text-cream-200' : 'text-ink-500'}`}>
+              <p className="text-sm mb-6 font-sans text-cream-200">
                 {p.desc}
               </p>
 
               <button
-                onClick={p.name === 'Enterprise' ? onBookDemo : onStart}
-                className={`w-full py-2.5 rounded-sm text-sm font-medium transition-all font-sans cursor-pointer border-0 ${
-                  p.featured
-                    ? 'bg-cream-100 text-ink-900 hover:bg-white'
-                    : 'bg-ink-900 text-cream-100 hover:bg-ink-700'
-                }`}
+                onClick={onStart}
+                className="w-full py-2.5 rounded-sm text-sm font-medium transition-all font-sans cursor-pointer border-0 bg-cream-100 text-ink-900 hover:bg-white"
               >
                 {p.cta}
               </button>
 
-              <div className={`mt-6 pt-6 border-t space-y-3 ${p.featured ? 'border-cream-100/20' : 'border-ink-900/10'}`}>
+              <div className="mt-6 pt-6 border-t border-cream-100/20 space-y-3">
                 {p.features.map((f) => (
                   <div key={f} className="flex items-start gap-2.5 font-sans">
-                    <div
-                      className={`mt-0.5 w-4 h-4 rounded-full flex items-center justify-center shrink-0 ${
-                        p.featured ? 'bg-accent-500/30' : 'bg-accent-500/15'
-                      }`}
-                    >
-                      <Check
-                        className={`w-2.5 h-2.5 ${
-                          p.featured ? 'text-accent-500' : 'text-accent-600'
-                        }`}
-                        strokeWidth={3}
-                      />
+                    <div className="mt-0.5 w-4 h-4 rounded-full flex items-center justify-center shrink-0 bg-accent-500/30">
+                      <Check className="w-2.5 h-2.5 text-accent-500" strokeWidth={3} />
                     </div>
-                    <span className="text-sm">{f}</span>
+                    <span className="text-sm text-cream-100">{f}</span>
                   </div>
                 ))}
               </div>

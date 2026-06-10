@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useWorkspace } from '@/lib/store';
 import { Task, TaskStatus } from '@/types';
 import { ArrowUpDown, ArrowUp, ArrowDown, Calendar, FileText } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, getAvatarStyle } from '@/lib/utils';
 
 // ── Status config ───────────────────────────────────────────
 const STATUS_CONFIG: Record<TaskStatus, { label: string; className: string }> = {
@@ -210,9 +210,16 @@ function TaskRow({
 
       {/* Assignee */}
       <div className="w-[160px] flex items-center gap-2">
-        <div className="flex items-center justify-center h-6 w-6 rounded-full bg-muted text-foreground border border-border text-[10px] font-semibold shrink-0">
-          {getInitials(task.assignee.name)}
-        </div>
+        {getAvatarStyle(task.assignee.avatar) ? (
+          <div 
+            className="h-6 w-6 rounded-full border border-border shrink-0"
+            style={getAvatarStyle(task.assignee.avatar) || undefined}
+          />
+        ) : (
+          <div className="flex items-center justify-center h-6 w-6 rounded-full bg-muted text-foreground border border-border text-[10px] font-semibold shrink-0">
+            {getInitials(task.assignee.name)}
+          </div>
+        )}
         <span className="text-sm text-foreground truncate">{task.assignee.name}</span>
       </div>
 

@@ -35,7 +35,9 @@ export function Navbar({ onStart, onSignIn }: { onStart?: (e: React.MouseEvent) 
             <div className="absolute inset-0 bg-gradient-to-br from-accent-500/30 to-transparent" />
             <Sparkles className="w-4 h-4 text-cream-100 relative z-10" strokeWidth={2.5} />
           </div>
-          <span className="font-serif font-medium text-ink-900 text-xl">Nexus</span>
+          <span className="font-serif font-medium text-ink-900 text-xl flex items-center gap-1.5">
+            NexusAi <span className="text-[10px] bg-accent-500/10 text-accent-600 px-1.5 py-0.5 rounded-full font-sans uppercase tracking-wider font-bold">Beta</span>
+          </span>
         </a>
 
         <nav className="hidden md:flex items-center gap-1">

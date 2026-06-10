@@ -206,7 +206,9 @@ export function Hero({ onStart }: { onStart?: (e: React.MouseEvent) => void }) {
                 <div className="w-6 h-6 rounded-sm bg-gradient-to-br from-accent-500 to-amber-700 flex items-center justify-center">
                   <Sparkles className="w-3 h-3 text-cream-100" />
                 </div>
-                <span className="text-xs font-semibold text-ink-900 font-sans">Nexus AI</span>
+                <span className="text-xs font-semibold text-ink-900 font-sans flex items-center gap-1">
+                  NexusAi <span className="text-[8px] bg-accent-500/10 text-accent-600 px-1 py-0.2 rounded font-sans uppercase tracking-wider font-bold">Beta</span>
+                </span>
               </div>
               <p className="text-[11px] text-ink-600 leading-snug font-sans">
                 Drafted a recap of yesterday's standup and shared it with the team.

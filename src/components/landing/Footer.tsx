@@ -29,8 +29,8 @@ export function Footer() {
               <div className="w-8 h-8 rounded-sm bg-gradient-to-br from-ink-900 to-ink-700 flex items-center justify-center border border-accent-600/30">
                 <Sparkles className="w-4 h-4 text-cream-100" strokeWidth={2.5} />
               </div>
-              <span className="font-serif font-medium text-ink-900 text-xl">
-                Nexus
+              <span className="font-serif font-medium text-ink-900 text-xl flex items-center gap-1.5">
+                NexusAi <span className="text-[10px] bg-accent-500/10 text-accent-600 px-1.5 py-0.5 rounded-full font-sans uppercase tracking-wider font-bold">Beta</span>
               </span>
             </a>
             <p className="text-sm text-ink-500 max-w-xs leading-relaxed font-serif italic">
@@ -66,7 +66,7 @@ export function Footer() {
 
         <div className="pt-8 border-t border-ink-900/10 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
           <p className="text-xs text-ink-500 font-sans">
-            © 2026 Nexus AI, Inc. Crafted with care in Nagpur, India.
+            © 2026 Nexus AI Beta, Inc. Crafted with care in Nagpur, India.
           </p>
           <div className="flex items-center gap-4 text-xs text-ink-500 font-sans">
             <a href="#" className="hover:text-accent-600 transition-colors">Twitter</a>

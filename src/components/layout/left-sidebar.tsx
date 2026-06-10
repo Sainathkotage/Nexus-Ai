@@ -9,7 +9,7 @@ import {
   CheckSquare, Calendar, Mail, Settings, Plus, Search,
   ChevronDown, Users, Check, LogOut, Palette, BarChart3, Smile, Inbox, Briefcase
 } from 'lucide-react';
-import { cn, getWorkspaceFavicon } from '@/lib/utils';
+import { cn, getWorkspaceFavicon, getAvatarStyle } from '@/lib/utils';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { useRouter } from 'next/navigation';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -300,9 +300,16 @@ export function LeftSidebar({ onOpenSearch }: LeftSidebarProps) {
             className="flex items-center gap-2.5 px-2 py-1.5 overflow-hidden hover:bg-accent/60 rounded-md transition-colors w-full text-left"
           >
             <div className="relative shrink-0">
-              <div className="w-6 h-6 rounded-full bg-gradient-to-br from-orange-400 to-pink-500 flex items-center justify-center">
-                <span className="text-[9px] font-bold text-white">{getInitials(user.name)}</span>
-              </div>
+              {getAvatarStyle(user.avatar) ? (
+                <div 
+                  className="w-6 h-6 rounded-full border border-border/80" 
+                  style={getAvatarStyle(user.avatar) || undefined}
+                />
+              ) : (
+                <div className="w-6 h-6 rounded-full bg-gradient-to-br from-orange-400 to-pink-500 flex items-center justify-center">
+                  <span className="text-[9px] font-bold text-white">{getInitials(user.name)}</span>
+                </div>
+              )}
               <span className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-background ${
                 dnd ? 'bg-red-500' : userStatus === 'online' ? 'bg-emerald-500' : 'bg-zinc-400'
               }`} />

@@ -588,7 +588,9 @@ ${activeHandover.risks.map((r: string) => `- [ ] ${r}`).join('\n')}
                       <div className="flex items-center justify-between gap-1.5">
                         <span className="text-xs font-bold truncate text-foreground leading-none">{user.name}</span>
                         {hasReport && (
-                          <Sparkles className="w-3.5 h-3.5 text-indigo-500 shrink-0" title="Handover Generated" />
+                          <span title="Handover Generated">
+                            <Sparkles className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                          </span>
                         )}
                       </div>
                       <span className="text-[9px] text-muted-foreground truncate block mt-0.5">{user.role}</span>

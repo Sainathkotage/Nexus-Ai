@@ -770,9 +770,15 @@ export default function CallDiagnostics({
                 ) : (
                   <div className="space-y-2.5">
                     {transcripts.map((entry, idx) => (
-                      <div key={idx} className="flex flex-col gap-0.5 border-l-2 border-indigo-500 pl-2 py-0.5">
+                      <div key={idx} className={cn(
+                        "flex flex-col gap-0.5 border-l-2 pl-2 py-0.5",
+                        entry.senderName === 'Nexus AI' ? 'border-purple-500' : 'border-indigo-500'
+                      )}>
                         <div className="flex items-center justify-between text-[8px] font-mono font-bold text-zinc-500 select-none">
-                          <span className={cn(entry.senderName === 'You' ? 'text-indigo-400' : 'text-emerald-400')}>{entry.senderName.toUpperCase()}</span>
+                          <span className={cn(
+                            entry.senderName === 'Nexus AI' ? 'text-purple-400 font-extrabold' :
+                            entry.senderName === 'You' ? 'text-indigo-400' : 'text-emerald-400'
+                          )}>{entry.senderName.toUpperCase()}</span>
                           <span>{entry.timestamp}</span>
                         </div>
                         <p className="text-[10.5px] text-zinc-300 leading-relaxed break-words font-medium">

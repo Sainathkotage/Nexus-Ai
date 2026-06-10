@@ -28,7 +28,7 @@ function Avatar({
 import { getAvatarStyle } from "@/lib/utils"
 
 function AvatarImage({ className, src, ...props }: AvatarPrimitive.Image.Props) {
-  const avatarStyle = src ? getAvatarStyle(src) : null;
+  const avatarStyle = typeof src === 'string' ? getAvatarStyle(src) : null;
 
   if (avatarStyle) {
     return (

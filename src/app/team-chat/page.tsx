@@ -11,7 +11,7 @@ import {
   Paperclip, Phone, Video, Lock, Unlock, Mic, MicOff,
   VideoOff, Shield, PhoneOff, Star, Pin, Smile, Trash2, Edit3,
   Sparkles, FileText, ArrowRight, ArrowLeft, Bell, Volume2, AlertCircle, Plus, Folder, UserPlus,
-  Activity, Subtitles
+  Activity, Subtitles, RefreshCw, Calendar, User, Mail, Keyboard
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -58,7 +58,10 @@ export default function TeamChatPage() {
     setActiveChannelId,
     activeDmUserId,
     setActiveDmUserId,
-    clearMentionBadge
+    clearMentionBadge,
+    createCalendarEvent,
+    addTask,
+    addEmail
   } = useWorkspace();
   const { confirm } = usePopup();
 
@@ -146,6 +149,13 @@ export default function TeamChatPage() {
   const [sttStatus, setSttStatus] = useState<'idle' | 'listening' | 'error' | 'unsupported'>('idle');
   const [sttModelProgress, setSttModelProgress] = useState<number>(0);
   const sttModelProgressRef = useRef<number>(0);
+  const [showAiPopup, setShowAiPopup] = useState(false);
+  const [aiSpeechText, setAiSpeechText] = useState("Hello! I am Nexus AI, your virtual chief of staff. What do you need help with during this call?");
+  const [aiCommandWaiting, setAiCommandWaiting] = useState(false);
+  const [isProcessingCommand, setIsProcessingCommand] = useState(false);
+  const [executedActions, setExecutedActions] = useState<Array<{ type: string; title: string; details?: any }>>([]);
+  const [nexusInputText, setNexusInputText] = useState('');
+  const aiPopupTimerRef = useRef<any>(null);
 
   // Refs for local Wav2Vec2 transcription
   const wav2vec2WorkerRef = useRef<Worker | null>(null);
@@ -153,6 +163,17 @@ export default function TeamChatPage() {
   const audioInputSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const audioProcessorRef = useRef<ScriptProcessorNode | null>(null);
   const audioStreamRef = useRef<MediaStream | null>(null);
+  const deepgramSocketRef = useRef<WebSocket | null>(null);
+
+  const convertFloat32ToInt16 = (buffer: Float32Array) => {
+    const l = buffer.length;
+    const buf = new Int16Array(l);
+    for (let i = 0; i < l; i++) {
+      let s = Math.max(-1, Math.min(1, buffer[i]));
+      buf[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+    }
+    return buf.buffer;
+  };
   
   const [enableSTT, setEnableSTT] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
@@ -193,64 +214,25 @@ export default function TeamChatPage() {
     sttModelProgressRef.current = sttModelProgress;
   }, [sttModelProgress]);
 
-  // Clean up audio streams and web worker on unmount
+  // Clean up audio streams and WebSocket on unmount
   useEffect(() => {
     return () => {
       stopTranscription();
-      if (wav2vec2WorkerRef.current) {
-        wav2vec2WorkerRef.current.terminate();
-        wav2vec2WorkerRef.current = null;
-      }
     };
   }, []);
 
-  const handleWav2Vec2ResultRef = useRef<any>(null);
-
-  // Initialize Whisper Web Worker eagerly on mount — only created once
+  // Auto-dismiss the AI popup banner after 8 seconds of inactivity
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (wav2vec2WorkerRef.current) return; // already initialized
-
-    console.log('[Whisper] Initializing worker...');
-    const worker = new Worker('/whisper-worker.js');
-
-    worker.onmessage = (e) => {
-      const { status, message, progress, text } = e.data;
-
-      if (status === 'loading') {
-        console.log('[Whisper] Loading model...', message);
-        setSttModelProgress(1); // show loading bar started
-      } else if (status === 'progress') {
-        const p = Math.round(progress ?? 0);
-        setSttModelProgress(p);
-        sttModelProgressRef.current = p;
-      } else if (status === 'ready') {
-        setSttModelProgress(100);
-        sttModelProgressRef.current = 100;
-        console.log('[Whisper] Model ready!');
-        // If the call is already active, switch status to listening
-        if (callStateRef.current?.status === 'connected' && enableSTTRef.current) {
-          setSttStatus('listening');
-          toast.success('Whisper live transcription ready!');
-        }
-      } else if (status === 'error') {
-        setSttStatus('error');
-        console.error('[Whisper] Worker error:', message);
-      } else if (status === 'result') {
-        handleWav2Vec2ResultRef.current?.(text, false);
-      } else if (status === 'final-result') {
-        handleWav2Vec2ResultRef.current?.(text, true);
-      }
+    if (showAiPopup) {
+      if (aiPopupTimerRef.current) clearTimeout(aiPopupTimerRef.current);
+      aiPopupTimerRef.current = setTimeout(() => {
+        setShowAiPopup(false);
+      }, 8000);
+    }
+    return () => {
+      if (aiPopupTimerRef.current) clearTimeout(aiPopupTimerRef.current);
     };
-
-    worker.onerror = (err) => {
-      console.error('[Whisper] Worker crashed:', err);
-      setSttStatus('error');
-      toast.error('Whisper worker failed to start. Live captions unavailable.');
-    };
-
-    wav2vec2WorkerRef.current = worker;
-  }, []);
+  }, [showAiPopup]);
 
   // Handle call transcription initialization and toggle responses
   useEffect(() => {
@@ -266,25 +248,284 @@ export default function TeamChatPage() {
     }
   }, [callState?.status, enableSTT]);
 
-  const sendAudioToWorker = (bufferList: Float32Array[], isFinal: boolean) => {
-    if (!wav2vec2WorkerRef.current || bufferList.length === 0) return;
-
-    let totalLength = 0;
-    for (const buf of bufferList) {
-      totalLength += buf.length;
+  const speakText = (text: string) => {
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      const voices = window.speechSynthesis.getVoices();
+      const premiumVoice = voices.find(v => v.name.includes('Google') || v.name.includes('Natural') || v.name.includes('Samantha'));
+      if (premiumVoice) utterance.voice = premiumVoice;
+      window.speechSynthesis.speak(utterance);
     }
+  };
 
-    const mergedBuffer = new Float32Array(totalLength);
-    let offset = 0;
-    for (const buf of bufferList) {
-      mergedBuffer.set(buf, offset);
-      offset += buf.length;
+  const executeWorkspaceCommand = async (commandText: string) => {
+    if (!commandText.trim()) return;
+
+    setIsProcessingCommand(true);
+    setExecutedActions([]); // Reset previous actions
+    setNexusInputText('');  // Clear typing input if used
+    toast.info("Analyzing workspace command...");
+
+    try {
+      const res = await fetch('/api/call-assistant', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          command: commandText,
+          currentDate: new Date().toISOString(),
+          users: allUsers,
+          currentCallPartner: callState?.friend ? {
+            id: callState.friend.id,
+            name: callState.friend.name,
+            email: callState.friend.email
+          } : null,
+          currentUser: user ? {
+            id: user.id,
+            name: user.name,
+            email: user.email
+          } : null
+        })
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to process command with Gemini");
+      }
+
+      const responseData = await res.json();
+      
+      // Robust key mapping for actions array and speech response
+      let actions = responseData.actions || responseData.Actions || responseData.action || responseData.events || responseData.tasks || responseData.emails || [];
+      const speechResponse = responseData.speechResponse || responseData.speech_response || responseData.speech || responseData.response || "Workspace updated successfully.";
+
+      // Normalize single object response into an array
+      if (actions && !Array.isArray(actions)) {
+        actions = [actions];
+      }
+
+      const completedActionsList: Array<{ type: string; title: string; details?: any }> = [];
+
+      if (actions && Array.isArray(actions)) {
+        for (const action of actions) {
+          if (!action || typeof action !== 'object') continue;
+
+          switch (action.type) {
+            case 'create_calendar_event': {
+              const ev = action.event || action;
+              const attendeeIdsOrNames = ev.attendeeIds || ev.attendee_ids || ev.attendees || [];
+              const eventAttendees = allUsers.filter(u => 
+                attendeeIdsOrNames.includes(u.id) ||
+                attendeeIdsOrNames.includes(u.email) ||
+                attendeeIdsOrNames.includes(u.name) ||
+                (typeof attendeeIdsOrNames === 'object' && 
+                  (attendeeIdsOrNames.some?.((att: any) => 
+                    att === u.id || att === u.email || att === u.name || 
+                    (typeof att === 'object' && (att?.id === u.id || att?.email === u.email || att?.name === u.name))
+                  ))
+                )
+              );
+              
+              if (eventAttendees.length === 0 && callState?.friend) {
+                eventAttendees.push(callState.friend);
+              }
+              
+              const eventTitle = ev.title || 'Meeting';
+              const eventDate = ev.date || new Date().toISOString().split('T')[0];
+              const eventStart = ev.startTime || ev.start_time || '10:00';
+              const eventEnd = ev.endTime || ev.end_time || '11:00';
+              const eventCategory = ev.category || 'meeting';
+              const eventDesc = ev.description || ev.desc || '';
+              const eventColor = ev.color || 'indigo';
+
+              createCalendarEvent({
+                title: eventTitle,
+                date: eventDate,
+                startTime: eventStart,
+                endTime: eventEnd,
+                category: eventCategory,
+                description: eventDesc,
+                attendees: eventAttendees,
+                isAiExtracted: true,
+                addedToCalendar: true,
+                color: eventColor
+              });
+
+              completedActionsList.push({ 
+                type: 'create_calendar_event', 
+                title: eventTitle,
+                details: {
+                  title: eventTitle,
+                  date: eventDate,
+                  startTime: eventStart,
+                  endTime: eventEnd,
+                  attendees: eventAttendees
+                }
+              });
+              toast.success(`Calendar event created: ${eventTitle}`);
+              break;
+            }
+
+            case 'create_task': {
+              const t = action.task || action;
+              const assigneeVal = t.assigneeId || t.assignee_id || t.assignee;
+              const taskAssignee = allUsers.find(u => 
+                u.id === assigneeVal || 
+                u.email === assigneeVal || 
+                u.name === assigneeVal ||
+                (typeof assigneeVal === 'object' && (assigneeVal?.id === u.id || assigneeVal?.email === u.email || assigneeVal?.name === u.name))
+              ) || user;
+              
+              const taskTitle = t.title || t.name || 'New Task';
+              const taskDesc = t.description || t.desc || '';
+              const taskPriority = t.priority || 'medium';
+              const taskDueDate = t.dueDate || t.due_date || new Date().toISOString().split('T')[0];
+              const taskTags = t.tags || [];
+
+              if (taskAssignee) {
+                addTask({
+                  title: taskTitle,
+                  description: taskDesc,
+                  status: 'todo',
+                  priority: taskPriority,
+                  assignee: taskAssignee as Person,
+                  dueDate: taskDueDate,
+                  tags: taskTags,
+                  subtasks: []
+                });
+                
+                completedActionsList.push({ 
+                  type: 'create_task', 
+                  title: taskTitle,
+                  details: {
+                    title: taskTitle,
+                    priority: taskPriority,
+                    assignee: taskAssignee,
+                    dueDate: taskDueDate
+                  }
+                });
+                toast.success(`Workspace task created: ${taskTitle}`);
+              }
+              break;
+            }
+
+            case 'send_email': {
+              const em = action.email || action;
+              let to = em.to || em.email || em.recipient || '';
+              let toName = em.toName || em.to_name || em.recipientName || em.recipient_name || '';
+              const emailSubject = em.subject || em.sub || 'Follow-up from Nexus AI';
+              const emailBody = em.body || em.content || em.message || '';
+              
+              if (!to && callState?.friend) {
+                to = callState.friend.email;
+                toName = callState.friend.name;
+              }
+              
+              if (to) {
+                addEmail({
+                  to,
+                  toName: toName || to.split('@')[0],
+                  from: user?.email || '',
+                  fromName: user?.name || '',
+                  subject: emailSubject,
+                  body: emailBody,
+                  status: 'sent',
+                  aiGenerated: true
+                });
+
+                completedActionsList.push({ 
+                  type: 'send_email', 
+                  title: toName || to,
+                  details: {
+                    to,
+                    toName: toName || to.split('@')[0],
+                    subject: emailSubject,
+                    body: emailBody
+                  }
+                });
+                toast.success(`Confirmation email sent to ${toName || to}`);
+              }
+              break;
+            }
+          }
+        }
+      }
+
+      const responseText = speechResponse || "Workspace updated successfully.";
+      const now = format(new Date(), 'HH:mm:ss');
+
+      // Add bot response to transcripts
+      setTranscripts(prev => [
+        ...prev,
+        { senderName: 'Nexus AI', text: responseText, timestamp: now, isFinal: true }
+      ]);
+
+      // Broadcast bot response to coworker
+      if (callChannelRef.current && activeCallPartnerId) {
+        callChannelRef.current.send({
+          type: 'broadcast',
+          event: 'signal',
+          payload: {
+            targetUserId: activeCallPartnerId,
+            fromUserId: user?.id,
+            signalType: 'transcript',
+            data: { senderName: 'Nexus AI', text: responseText, timestamp: now, isFinal: true, actions: completedActionsList }
+          }
+        });
+      }
+
+      // Speak response out loud and display it
+      setExecutedActions(completedActionsList);
+      setAiSpeechText(responseText);
+      speakText(responseText);
+      setShowAiPopup(true);
+
+    } catch (err) {
+      console.error("Workspace command failed:", err);
+      toast.error("Failed to execute workspace command.");
+    } finally {
+      setIsProcessingCommand(false);
+      setAiCommandWaiting(false);
     }
+  };
 
-    wav2vec2WorkerRef.current.postMessage({
-      audioData: mergedBuffer,
-      isFinal
-    });
+  const handleSendManualCommand = () => {
+    if (!nexusInputText.trim()) return;
+    executeWorkspaceCommand(nexusInputText);
+  };
+
+  const triggerNexusBot = () => {
+    setTimeout(() => {
+      const botText = "Hello! I am Nexus AI, your virtual chief of staff. What do you need help with during this call?";
+      const now = format(new Date(), 'HH:mm:ss');
+
+      // 1. Add bot response to our local transcripts
+      setTranscripts(prev => [
+        ...prev,
+        { senderName: 'Nexus AI', text: botText, timestamp: now, isFinal: true }
+      ]);
+
+      // 2. Broadcast bot response to the partner
+      if (callChannelRef.current && activeCallPartnerId) {
+        callChannelRef.current.send({
+          type: 'broadcast',
+          event: 'signal',
+          payload: {
+            targetUserId: activeCallPartnerId,
+            fromUserId: user?.id,
+            signalType: 'transcript',
+            data: { senderName: 'Nexus AI', text: botText, timestamp: now, isFinal: true }
+          }
+        });
+      }
+
+      // 3. Speak response out loud locally and update states
+      setAiSpeechText(botText);
+      speakText(botText);
+      setAiCommandWaiting(true);
+
+      // 4. Trigger visual popup overlay card
+      setShowAiPopup(true);
+    }, 1000); // 1s delay for realistic pacing
   };
 
   const handleWav2Vec2Result = (text: string, isFinal: boolean) => {
@@ -323,107 +564,125 @@ export default function TeamChatPage() {
           targetUserId: activeCallPartnerId,
           fromUserId: user?.id,
           signalType: 'transcript',
-          data: { text: text.trim(), timestamp: now, isFinal: isFinal }
+          data: { senderName: 'You', text: text.trim(), timestamp: now, isFinal: isFinal }
         }
       });
     }
-  };
 
-  // Sync ref to latest callback to avoid stale closures in worker
-  handleWav2Vec2ResultRef.current = handleWav2Vec2Result;
+    // Trigger Nexus AI bot if "hey nexus" is detected in our finalized speech segment
+    // Normalize text to strip punctuation (commas, periods, exclamation points) to match accurately
+    if (isFinal) {
+      const normalizedText = text.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ');
+      const match = normalizedText.match(/hey nexus\s*(.*)/i);
+      
+      if (match) {
+        const command = match[1].trim();
+        if (command) {
+          // One-shot command (e.g. "Hey Nexus, schedule a meeting tomorrow")
+          executeWorkspaceCommand(command);
+        } else {
+          // Standard trigger/greeting (starts waiting for command)
+          triggerNexusBot();
+        }
+      } else if (aiCommandWaiting) {
+        // Two-step command (bot was waiting for input after greeting)
+        executeWorkspaceCommand(text);
+      }
+    }
+  };
 
   const startTranscription = async () => {
     if (typeof window === 'undefined') return;
     if (!enableSTTRef.current) return;
-    // Don't start if audio is already streaming
-    if (audioProcessorRef.current) return;
+    // Don't start if audio is already streaming or WebSocket is active
+    if (audioProcessorRef.current || deepgramSocketRef.current) return;
 
-    // Mark status based on whether the model is already loaded
-    if (sttModelProgressRef.current >= 100) {
-      setSttStatus('listening');
-    } else {
-      setSttStatus('idle'); // model still loading; will switch to listening when ready
-    }
+    setSttStatus('idle');
 
-    // Start audio capture
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      audioStreamRef.current = stream;
+      // 1. Fetch Deepgram API Key
+      const keyRes = await fetch('/api/deepgram-key');
+      if (!keyRes.ok) {
+        const errJson = await keyRes.json().catch(() => ({}));
+        throw new Error(errJson.error || `Server returned status ${keyRes.status}`);
+      }
+      const { key } = await keyRes.json();
+      if (!key) {
+        throw new Error('Deepgram API key is empty');
+      }
 
-      // 16 kHz AudioContext — Whisper's required sample rate
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
-      audioContextRef.current = audioContext;
+      // 2. Establish WebSocket connection to Deepgram
+      const url = 'wss://api.deepgram.com/v1/listen?encoding=linear16&sample_rate=16000&channels=1&interim_results=true&smart_format=true&model=nova-2';
+      const ws = new WebSocket(url, ['token', key]);
+      deepgramSocketRef.current = ws;
 
-      const source = audioContext.createMediaStreamSource(stream);
-      audioInputSourceRef.current = source;
+      ws.onopen = async () => {
+        console.log('[Deepgram] WebSocket connected');
+        setSttStatus('listening');
+        setSttModelProgress(100);
+        toast.success('Deepgram live transcription ready!');
 
-      // Buffer size 4096 gives ~256ms per chunk at 16kHz — good granularity
-      const processor = audioContext.createScriptProcessor(4096, 1, 1);
-      audioProcessorRef.current = processor;
+        // Start capturing microphone input only after WebSocket is open
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          audioStreamRef.current = stream;
 
-      source.connect(processor);
-      processor.connect(audioContext.destination);
+          const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
+          audioContextRef.current = audioContext;
 
-      let audioBufferList: Float32Array[] = [];
-      let lastActiveTime = Date.now();
-      // Start as false: any audio detected immediately flags speech
-      let speechDetected = false;
-      let lastSendTime = Date.now();
+          const source = audioContext.createMediaStreamSource(stream);
+          audioInputSourceRef.current = source;
 
-      // Voice Activity Detection constants
-      const VAD_THRESHOLD = 0.012;        // RMS threshold for speech
-      const SILENCE_FINALIZE_MS = 1200;   // finalize after 1.2s of silence
-      const INTERIM_SEND_MS = 2000;       // send interim every 2s while speaking
+          // Buffer size 4096 gives ~256ms per chunk at 16kHz
+          const processor = audioContext.createScriptProcessor(4096, 1, 1);
+          audioProcessorRef.current = processor;
 
-      processor.onaudioprocess = (e) => {
-        const inputData = e.inputBuffer.getChannelData(0);
+          source.connect(processor);
+          processor.connect(audioContext.destination);
 
-        // Copy frame into rolling buffer
-        const chunk = new Float32Array(inputData.length);
-        chunk.set(inputData);
-        audioBufferList.push(chunk);
-
-        // RMS energy for VAD
-        let sum = 0;
-        for (let i = 0; i < inputData.length; i++) sum += inputData[i] * inputData[i];
-        const rms = Math.sqrt(sum / inputData.length);
-
-        const now = Date.now();
-
-        if (rms > VAD_THRESHOLD) {
-          // Active speech detected
-          lastActiveTime = now;
-          speechDetected = true;
-        }
-
-        if (speechDetected) {
-          const silenceDuration = now - lastActiveTime;
-          const timeSinceSend = now - lastSendTime;
-
-          if (silenceDuration > SILENCE_FINALIZE_MS) {
-            // Silence long enough — commit final segment
-            sendAudioToWorker(audioBufferList, true);
-            audioBufferList = [];
-            speechDetected = false;
-            lastSendTime = now;
-          } else if (timeSinceSend > INTERIM_SEND_MS) {
-            // Still speaking — send interim preview
-            sendAudioToWorker([...audioBufferList], false);
-            lastSendTime = now;
-          }
-        } else {
-          // No speech yet — keep buffer bounded (max ~10s of silence)
-          const maxSilenceFrames = Math.ceil(16000 * 10 / 4096);
-          if (audioBufferList.length > maxSilenceFrames) {
-            audioBufferList = audioBufferList.slice(-Math.ceil(maxSilenceFrames / 2));
-          }
+          processor.onaudioprocess = (e) => {
+            const inputData = e.inputBuffer.getChannelData(0);
+            if (deepgramSocketRef.current && deepgramSocketRef.current.readyState === WebSocket.OPEN) {
+              const pcmBuffer = convertFloat32ToInt16(inputData);
+              deepgramSocketRef.current.send(pcmBuffer);
+            }
+          };
+        } catch (err) {
+          console.error('[Deepgram] Failed to start audio capture:', err);
+          toast.error('Microphone access is required for live captions.');
+          stopTranscription();
         }
       };
 
-    } catch (err) {
-      console.error('[Whisper] Failed to start audio capture:', err);
+      ws.onmessage = (event) => {
+        try {
+          const received = JSON.parse(event.data);
+          const transcript = received.channel?.alternatives?.[0]?.transcript || '';
+          const isFinal = received.is_final;
+          
+          if (transcript.trim()) {
+            handleWav2Vec2Result(transcript, isFinal);
+          }
+        } catch (err) {
+          console.error('[Deepgram] Error parsing message:', err);
+        }
+      };
+
+      ws.onerror = (err) => {
+        console.error('[Deepgram] WebSocket error:', err);
+        setSttStatus('error');
+      };
+
+      ws.onclose = (event) => {
+        console.log('[Deepgram] WebSocket closed', event.code, event.reason);
+        // If we didn't manually stop it and there was an error status, keep error status
+        setSttStatus((prev) => (prev === 'error' ? 'error' : 'idle'));
+      };
+
+    } catch (err: any) {
+      console.error('[Deepgram] Failed to initialize transcription:', err);
       setSttStatus('error');
-      toast.error('Microphone access is required for live captions.');
+      toast.error(`Failed to initialize Deepgram: ${err.message || err}`);
       setEnableSTT(false);
     }
   };
@@ -452,6 +711,14 @@ export default function TeamChatPage() {
         audioStreamRef.current.getTracks().forEach(track => track.stop());
       } catch (e) {}
       audioStreamRef.current = null;
+    }
+    if (deepgramSocketRef.current) {
+      try {
+        if (deepgramSocketRef.current.readyState === WebSocket.OPEN) {
+          deepgramSocketRef.current.close();
+        }
+      } catch (e) {}
+      deepgramSocketRef.current = null;
     }
 
     setSttStatus('idle');
@@ -745,21 +1012,28 @@ export default function TeamChatPage() {
             break;
 
           case 'transcript':
-            // Partner sent real-time local transcript updates
-            const partnerName = callStateRef.current?.friend?.name || 'Partner';
+            // Partner sent real-time local transcript updates (or Nexus AI broadcasted message)
+            const senderName = data.senderName || callStateRef.current?.friend?.name || 'Partner';
             const partnerNow = data.timestamp || format(new Date(), 'HH:mm:ss');
             
             setTranscripts(prev => {
               const list = [...prev];
-              const lastIdx = list.map(e => e.senderName).lastIndexOf(partnerName);
+              const lastIdx = list.map(e => e.senderName).lastIndexOf(senderName);
               
               if (lastIdx !== -1 && !list[lastIdx].isFinal) {
-                list[lastIdx] = { senderName: partnerName, text: data.text, timestamp: partnerNow, isFinal: !!data.isFinal };
+                list[lastIdx] = { senderName, text: data.text, timestamp: partnerNow, isFinal: !!data.isFinal };
               } else {
-                list.push({ senderName: partnerName, text: data.text, timestamp: partnerNow, isFinal: !!data.isFinal });
+                list.push({ senderName, text: data.text, timestamp: partnerNow, isFinal: !!data.isFinal });
               }
               return list;
             });
+
+            // If it's a finalized message from Nexus AI, play it out loud locally and show the popup
+            if (senderName === 'Nexus AI' && data.isFinal) {
+              setAiSpeechText(data.text);
+              speakText(data.text);
+              setShowAiPopup(true);
+            }
             break;
         }
       })
@@ -3130,6 +3404,221 @@ export default function TeamChatPage() {
                 <div className="flex-1 w-full max-w-lg flex flex-col items-center justify-center gap-6">
                   {callState.status === 'connected' ? (
                     <div className="relative w-full aspect-video bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden shadow-2xl flex items-center justify-center">
+                      {/* Premium AI Bot Popup Alert */}
+                      <AnimatePresence>
+                        {(showAiPopup || isProcessingCommand) && (
+                          <motion.div
+                            initial={{ opacity: 0, y: -20, scale: 0.95 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                            className={cn(
+                              "absolute top-4 left-4 right-4 backdrop-blur-xl border rounded-2xl p-4.5 flex flex-col gap-3 shadow-[0_0_30px_rgba(168,85,247,0.2)] z-20 pointer-events-auto max-w-sm mx-auto max-h-[85%] overflow-y-auto scrollbar-thin transition-all duration-300",
+                              isProcessingCommand 
+                                ? "bg-indigo-950/75 border-indigo-500/40 shadow-indigo-500/10" 
+                                : "bg-purple-950/75 border-purple-500/35"
+                            )}
+                          >
+                            <style dangerouslySetInnerHTML={{__html: `
+                              @keyframes pulseWave {
+                                0%, 100% { height: 4px; }
+                                50% { height: 16px; }
+                              }
+                              .wave-bar {
+                                width: 3px;
+                                border-radius: 9999px;
+                                animation: pulseWave 0.8s ease-in-out infinite;
+                              }
+                            `}} />
+
+                            {/* Header */}
+                            <div className="flex items-center justify-between w-full border-b border-white/10 pb-2">
+                              <div className="flex items-center gap-2">
+                                <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-purple-500/20 shrink-0">
+                                  <Sparkles className="w-3.5 h-3.5 text-white animate-pulse" />
+                                </div>
+                                <div className="text-left">
+                                  <h3 className="text-[11px] font-bold text-zinc-100 uppercase tracking-wider font-mono">Nexus AI Assistant</h3>
+                                  <span className="text-[8px] text-purple-400/80 font-mono">
+                                    {isProcessingCommand 
+                                      ? "Analyzing intent..." 
+                                      : aiCommandWaiting 
+                                        ? "Listening for command..." 
+                                        : "Ready"
+                                    }
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                {/* Soundwave pulse wave indicator */}
+                                {(isProcessingCommand || aiCommandWaiting) && (
+                                  <div className="flex items-center gap-0.5 h-4 shrink-0 px-2 py-0.5 bg-purple-900/30 border border-purple-500/20 rounded-full">
+                                    <div className="wave-bar bg-purple-400" style={{ animationDelay: '0.1s' }} />
+                                    <div className="wave-bar bg-indigo-400" style={{ animationDelay: '0.2s' }} />
+                                    <div className="wave-bar bg-purple-400" style={{ animationDelay: '0.3s' }} />
+                                    <div className="wave-bar bg-indigo-400" style={{ animationDelay: '0.4s' }} />
+                                  </div>
+                                )}
+                                <button 
+                                  onClick={() => {
+                                    setShowAiPopup(false);
+                                    setIsProcessingCommand(false);
+                                  }}
+                                  className="text-zinc-400 hover:text-zinc-100 transition-colors cursor-pointer p-0.5 rounded hover:bg-white/5"
+                                >
+                                  <X className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Speech Output */}
+                            <div className="bg-white/5 border border-white/10 rounded-xl p-3 text-left text-[11px] leading-relaxed text-zinc-200">
+                              {isProcessingCommand ? (
+                                <div className="flex items-center gap-2 text-zinc-400">
+                                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                  <span>Syncing with workspace...</span>
+                                </div>
+                              ) : (
+                                aiSpeechText
+                              )}
+                            </div>
+
+                            {/* Manual Command Input (Type Command) */}
+                            {!isProcessingCommand && (
+                              <div className="flex gap-2 items-center bg-zinc-900/80 border border-zinc-800 focus-within:border-purple-500/50 rounded-xl px-2.5 py-1.5 transition-all">
+                                <Keyboard className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                                <input 
+                                  type="text"
+                                  placeholder={aiCommandWaiting ? "Type your command..." : "Type command (e.g. set meeting tomorrow)..."}
+                                  value={nexusInputText}
+                                  onChange={(e) => setNexusInputText(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      handleSendManualCommand();
+                                    }
+                                  }}
+                                  className="flex-1 bg-transparent text-[11px] text-zinc-100 placeholder-zinc-500 outline-none min-w-0"
+                                />
+                                {nexusInputText.trim() && (
+                                  <button
+                                    onClick={handleSendManualCommand}
+                                    className="bg-purple-600 hover:bg-purple-500 text-white rounded-lg p-1.5 transition-colors shrink-0 cursor-pointer"
+                                  >
+                                    <Send className="w-3 h-3" />
+                                  </button>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Detailed Executed Actions List Cards */}
+                            {!isProcessingCommand && executedActions.length > 0 && (
+                              <div className="mt-1 pt-3 border-t border-purple-500/15 flex flex-col gap-2.5">
+                                <span className="text-[8px] font-mono font-bold uppercase tracking-wider text-purple-400/80 text-left">
+                                  Workspace Operations Completed:
+                                </span>
+                                <div className="flex flex-col gap-2">
+                                  {executedActions.map((act, idx) => {
+                                    if (act.type === 'create_calendar_event') {
+                                      return (
+                                        <div key={idx} className="bg-indigo-500/10 border border-indigo-500/20 rounded-xl p-3 text-left">
+                                          <div className="flex items-center gap-1.5 text-indigo-300 font-bold text-[10px] uppercase tracking-wider mb-1">
+                                            <Calendar className="w-3.5 h-3.5" />
+                                            <span>Calendar Event Scheduled</span>
+                                          </div>
+                                          <h4 className="text-zinc-100 font-semibold text-[11px]">{act.details?.title || act.title}</h4>
+                                          <div className="text-[10px] text-zinc-400 mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
+                                            <span>📅 {act.details?.date}</span>
+                                            <span>⏰ {act.details?.startTime} - {act.details?.endTime}</span>
+                                          </div>
+                                          {act.details?.attendees && act.details.attendees.length > 0 && (
+                                            <div className="flex items-center gap-1.5 mt-2">
+                                              <span className="text-[9px] text-zinc-500">Attendees:</span>
+                                              <div className="flex -space-x-1.5 overflow-hidden">
+                                                {act.details.attendees.map((att: Person, i: number) => (
+                                                  <div 
+                                                    key={att.id || i}
+                                                    title={att.name}
+                                                    className="w-4.5 h-4.5 rounded-full bg-zinc-700 border border-zinc-950 flex items-center justify-center text-[8px] font-bold text-white shrink-0"
+                                                    style={getAvatarStyle(att.avatar) || undefined}
+                                                  >
+                                                    {!att.avatar && att.name.substring(0, 1).toUpperCase()}
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            </div>
+                                          )}
+                                        </div>
+                                      );
+                                    }
+
+                                    if (act.type === 'create_task') {
+                                      return (
+                                        <div key={idx} className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3 text-left">
+                                          <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-1.5 text-emerald-300 font-bold text-[10px] uppercase tracking-wider">
+                                              <CheckCheck className="w-3.5 h-3.5" />
+                                              <span>Task Created</span>
+                                            </div>
+                                            {act.details?.priority && (
+                                              <span className={cn(
+                                                "text-[8px] px-1.5 py-0.5 rounded font-extrabold uppercase tracking-wide leading-none",
+                                                act.details.priority === 'high' ? 'bg-red-500/20 text-red-400 border border-red-500/30' :
+                                                act.details.priority === 'medium' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' :
+                                                'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                                              )}>
+                                                {act.details.priority}
+                                              </span>
+                                            )}
+                                          </div>
+                                          <h4 className="text-zinc-100 font-semibold text-[11px] mt-1">{act.details?.title || act.title}</h4>
+                                          <div className="text-[10px] text-zinc-400 mt-1 flex justify-between items-center">
+                                            <span>📅 Due: {act.details?.dueDate}</span>
+                                            {act.details?.assignee && (
+                                              <div className="flex items-center gap-1">
+                                                <div 
+                                                  title={act.details.assignee.name}
+                                                  className="w-4.5 h-4.5 rounded-full bg-zinc-700 border border-zinc-950 flex items-center justify-center text-[8px] font-bold text-white shrink-0"
+                                                  style={getAvatarStyle(act.details.assignee.avatar) || undefined}
+                                                >
+                                                  {!act.details.assignee.avatar && act.details.assignee.name.substring(0, 1).toUpperCase()}
+                                                </div>
+                                              </div>
+                                            )}
+                                          </div>
+                                        </div>
+                                      );
+                                    }
+
+                                    if (act.type === 'send_email') {
+                                      return (
+                                        <div key={idx} className="bg-pink-500/10 border border-pink-500/20 rounded-xl p-3 text-left">
+                                          <div className="flex items-center gap-1.5 text-pink-300 font-bold text-[10px] uppercase tracking-wider mb-1">
+                                            <Mail className="w-3.5 h-3.5" />
+                                            <span>Email Dispatched</span>
+                                          </div>
+                                          <h4 className="text-zinc-100 font-semibold text-[11px]">{act.details?.subject || 'Meeting Confirmation'}</h4>
+                                          <p className="text-[9.5px] text-zinc-400 mt-0.5">To: <span className="text-zinc-300 font-medium">{act.details?.toName || act.title}</span> ({act.details?.to})</p>
+                                          {act.details?.body && (
+                                            <p className="text-[9px] text-zinc-500 mt-1.5 bg-black/20 rounded p-1.5 italic line-clamp-2">
+                                              "{act.details.body}"
+                                            </p>
+                                          )}
+                                        </div>
+                                      );
+                                    }
+
+                                    return (
+                                      <div key={idx} className="text-[9px] px-2 py-1 rounded bg-zinc-900 border border-zinc-800 text-zinc-300 text-left">
+                                        {act.title}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
                       
                       <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-900">
                         {callState.type === 'video' ? (
@@ -3167,7 +3656,11 @@ export default function TeamChatPage() {
                           <div className="absolute bottom-20 left-4 right-4 bg-black/60 backdrop-blur-md px-4 py-2.5 rounded-xl border border-zinc-800/80 max-w-md mx-auto text-center animate-in fade-in slide-in-from-bottom-2 duration-200 shadow-xl pointer-events-none select-none z-10">
                             {transcripts.length > 0 ? (
                               <>
-                                <span className="text-[8px] font-mono font-bold uppercase tracking-wider text-indigo-400 block mb-0.5">
+                                <span className={cn(
+                                  "text-[8px] font-mono font-bold uppercase tracking-wider block mb-0.5",
+                                  transcripts[transcripts.length - 1].senderName === 'Nexus AI' ? 'text-purple-400 font-extrabold animate-pulse' :
+                                  transcripts[transcripts.length - 1].senderName === 'You' ? 'text-indigo-400' : 'text-emerald-400'
+                                )}>
                                   {transcripts[transcripts.length - 1].senderName}
                                 </span>
                                 <p className="text-[11px] text-zinc-200 leading-normal font-medium">
@@ -3347,6 +3840,25 @@ export default function TeamChatPage() {
                       title={enableSTT ? "Disable Live Captions" : "Enable Live Captions"}
                     >
                       <Subtitles className="w-5 h-5" />
+                    </Button>
+
+                    <Button
+                      type="button"
+                      onClick={() => {
+                        setShowAiPopup(true);
+                        setAiSpeechText("I'm listening. Tell me what workspace task you need help with!");
+                        setAiCommandWaiting(true);
+                        speakText("I'm listening. Tell me what workspace task you need help with!");
+                      }}
+                      className={cn(
+                        "w-12 h-12 rounded-full flex items-center justify-center shadow-lg border transition-all duration-300",
+                        showAiPopup 
+                          ? "bg-purple-600 border-purple-500 text-white shadow-[0_0_15px_rgba(168,85,247,0.4)]" 
+                          : "bg-zinc-900 border-zinc-800 hover:bg-zinc-800 text-purple-400 hover:text-purple-300"
+                      )}
+                      title="Nexus AI Assistant"
+                    >
+                      <Sparkles className="w-5 h-5" />
                     </Button>
 
                     <Button

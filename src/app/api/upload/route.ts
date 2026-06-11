@@ -7,18 +7,33 @@ export async function POST(req: Request) {
   try {
     // Polyfill browser globals required by pdfjs-dist / napi-rs/canvas in Node.js
     if (typeof global.DOMMatrix === 'undefined') {
-      // @ts-ignore
-      const canvas = require('@napi-rs/canvas');
-      // @ts-ignore
-      global.DOMMatrix = canvas.DOMMatrix;
-      // @ts-ignore
-      global.ImageData = canvas.ImageData;
-      // @ts-ignore
-      global.Path2D = canvas.Path2D;
-      // @ts-ignore
-      global.DOMPoint = canvas.DOMPoint;
-      // @ts-ignore
-      global.DOMRect = canvas.DOMRect;
+      try {
+        // @ts-ignore
+        const canvas = require('@napi-rs/canvas');
+        // @ts-ignore
+        global.DOMMatrix = canvas.DOMMatrix;
+        // @ts-ignore
+        global.ImageData = canvas.ImageData;
+        // @ts-ignore
+        global.Path2D = canvas.Path2D;
+        // @ts-ignore
+        global.DOMPoint = canvas.DOMPoint;
+        // @ts-ignore
+        global.DOMRect = canvas.DOMRect;
+      } catch (canvasErr) {
+        console.warn('Failed to load @napi-rs/canvas polyfills, using mock fallbacks:', canvasErr);
+        // Provide mock classes to prevent ReferenceErrors in pdfjs-dist
+        // @ts-ignore
+        global.DOMMatrix = global.DOMMatrix || class DOMMatrix {};
+        // @ts-ignore
+        global.ImageData = global.ImageData || class ImageData {};
+        // @ts-ignore
+        global.Path2D = global.Path2D || class Path2D {};
+        // @ts-ignore
+        global.DOMPoint = global.DOMPoint || class DOMPoint {};
+        // @ts-ignore
+        global.DOMRect = global.DOMRect || class DOMRect {};
+      }
     }
 
     // @ts-ignore

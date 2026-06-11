@@ -2,9 +2,18 @@ import { NextResponse, after } from 'next/server';
 import { getSupabaseServiceRole } from '@/lib/supabase';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { getDocumentFavicon } from '@/lib/utils';
+import path from 'path';
+import fs from 'fs';
 
 export async function POST(req: Request) {
   try {
+    // Force Next.js Node File Trace (NFT) to copy the PDF worker to Vercel Lambdas
+    const workerPath = path.join(process.cwd(), 'node_modules/pdf-parse/dist/pdf-parse/cjs/pdf.worker.mjs');
+    if (fs.existsSync(workerPath)) {
+      const size = fs.statSync(workerPath).size;
+      console.log(`PDF worker file verified at: ${workerPath} (${size} bytes)`);
+    }
+
     // Polyfill browser globals required by pdfjs-dist / napi-rs/canvas in Node.js
     if (typeof global.DOMMatrix === 'undefined') {
       try {

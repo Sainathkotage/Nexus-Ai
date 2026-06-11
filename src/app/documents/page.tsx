@@ -141,7 +141,7 @@ export default function DocumentsPage() {
     }
   };
 
-  const userDocuments = documents.filter(doc => !user || doc.uploadedBy?.id === user.id || doc.uploadedBy?.email === user.email);
+  const userDocuments = user ? documents.filter(doc => doc.uploadedBy?.id === user.id || doc.uploadedBy?.email === user.email) : [];
   const selectedDocument = userDocuments.find(d => d.id === selectedDocumentId) || null;
 
   if (selectedDocument) {

@@ -1118,6 +1118,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
       // 2. Fetch from Supabase Database
       try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const currentUserId = session?.user?.id;
+        const currentUserEmail = session?.user?.email || '';
+
         const [
           docsQuery,
           tasksQuery,
@@ -1149,7 +1153,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         if (convosQuery.error) throw convosQuery.error;
         if (insightsQuery.error) throw insightsQuery.error;
 
-        const docs = docsQuery.data.map(mapDbDoc);
+        const allDocs = docsQuery.data.map(mapDbDoc);
+        const docs = allDocs.filter(doc => 
+          !currentUserId || 
+          doc.uploadedBy?.id === currentUserId || 
+          doc.uploadedBy?.email === currentUserEmail
+        );
         const tasks = tasksQuery.data.map(mapDbTask);
         const events = eventsQuery.data.map(mapDbEvent);
         const emails = emailsQuery.data.map(mapDbEmail);
@@ -2847,6 +2856,45 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
   }, [hydrateTeamAccess]);
 
+  const clearWorkspaceCache = useCallback(() => {
+    setUser(null);
+    setUserStatusState('offline');
+    setFriendIds([]);
+    setDocuments([]);
+    setTasks([]);
+    setCalendarEvents([]);
+    setEmails([]);
+    setConversations([]);
+    setInsights([]);
+    setAllUsers([]);
+    setWorkspace(null);
+    setMyWorkspaces([]);
+    setWorkspaceMembers([]);
+
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('nexus_user');
+      localStorage.removeItem('nexus_user_status');
+      localStorage.removeItem('nexus_documents');
+      localStorage.removeItem('nexus_tasks');
+      localStorage.removeItem('nexus_calendarEvents');
+      localStorage.removeItem('nexus_emails');
+      localStorage.removeItem('nexus_conversations');
+      localStorage.removeItem('nexus_aiInsights');
+      localStorage.removeItem('nexus_roles');
+      localStorage.removeItem('nexus_login_activities');
+      localStorage.removeItem('nexus_theme_config');
+      localStorage.removeItem('nexus_notifications');
+      localStorage.removeItem('nexus_deals');
+      localStorage.removeItem('nexus_ai_inbox');
+      localStorage.removeItem('nexus_workspace');
+      localStorage.removeItem('nexus_workspace_members');
+      localStorage.removeItem('nexus_workspace_invites');
+      localStorage.removeItem('nexus_audit_logs');
+      localStorage.removeItem('nexus_feedback_items');
+      localStorage.removeItem('nexus_ai_usage');
+    }
+  }, []);
+
   const logout = useCallback(async (everywhere = false) => {
     try {
       if (user) {
@@ -2867,12 +2915,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       console.warn('Supabase sign out warning:', e);
       captureError(e, { context: 'signout', everywhere });
     }
-    setUser(null);
-    setUserStatusState('offline');
-    setFriendIds([]);
-    localStorage.removeItem('nexus_user');
-    localStorage.removeItem('nexus_user_status');
-  }, [user]);
+    clearWorkspaceCache();
+  }, [user, clearWorkspaceCache]);
 
   const deleteAccount = useCallback(async () => {
     if (!user) return { success: false, error: 'Not signed in' };
@@ -2902,11 +2946,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       trackEvent('user_deleted_account', { userId: user.id });
       resetPostHog();
       
-      setUser(null);
-      setUserStatusState('offline');
-      setFriendIds([]);
-      localStorage.removeItem('nexus_user');
-      localStorage.removeItem('nexus_user_status');
+      clearWorkspaceCache();
       
       toast.success('Your account has been deleted successfully.');
       return { success: true };

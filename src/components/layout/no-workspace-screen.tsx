@@ -108,12 +108,9 @@ export function NoWorkspaceScreen() {
   };
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-[#f7f6f3] dark:bg-[#121212] p-4 relative overflow-hidden transition-colors duration-300">
-      {/* Background Orbs */}
-      <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-gradient-to-br from-indigo-500/10 to-violet-500/10 blur-[100px]" />
-      <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full bg-gradient-to-br from-orange-500/10 to-pink-500/10 blur-[100px]" />
-
-      <div className="w-full max-w-[460px] bg-white dark:bg-[#1c1c1c] border border-[#e9e9e7] dark:border-[#2d2d2d] rounded-2xl p-6 md:p-8 shadow-notion relative z-10 flex flex-col gap-6 transition-all duration-300">
+    <div className="min-h-screen w-full flex items-center justify-center p-4 relative overflow-hidden transition-colors duration-300">
+      <div className="mesh-backdrop" />
+      <div className="w-full max-w-[460px] glass p-6 md:p-8 shadow-2xl relative z-10 flex flex-col gap-6 rounded-2xl transition-all duration-300">
         
         {/* Header */}
         <div className="flex flex-col items-center text-center gap-2">
@@ -129,12 +126,12 @@ export function NoWorkspaceScreen() {
         </div>
 
         {/* Tabs Switcher */}
-        <div className="flex bg-[#f1f1ef] dark:bg-[#252525] rounded-lg p-1 w-full border border-border/40">
+        <div className="flex bg-black/5 dark:bg-white/10 rounded-full p-1 w-full border border-black/5 dark:border-white/5">
           <button
             onClick={() => setActiveTab('create')}
-            className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-all flex items-center justify-center gap-1.5 ${
+            className={`flex-1 py-1.5 text-xs font-semibold rounded-full transition-all flex items-center justify-center gap-1.5 ${
               activeTab === 'create'
-                ? 'bg-white dark:bg-[#2f2f2f] text-[#37352f] dark:text-[#e3e3e2] shadow-sm'
+                ? 'bg-white dark:bg-white/10 text-primary shadow-sm'
                 : 'text-muted-foreground hover:text-foreground'
             }`}
           >
@@ -143,9 +140,9 @@ export function NoWorkspaceScreen() {
           </button>
           <button
             onClick={() => setActiveTab('join')}
-            className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-all flex items-center justify-center gap-1.5 ${
+            className={`flex-1 py-1.5 text-xs font-semibold rounded-full transition-all flex items-center justify-center gap-1.5 ${
               activeTab === 'join'
-                ? 'bg-white dark:bg-[#2f2f2f] text-[#37352f] dark:text-[#e3e3e2] shadow-sm'
+                ? 'bg-white dark:bg-white/10 text-primary shadow-sm'
                 : 'text-muted-foreground hover:text-foreground'
             }`}
           >
@@ -168,7 +165,7 @@ export function NoWorkspaceScreen() {
                   value={teamName}
                   onChange={(e) => setTeamName(e.target.value)}
                   placeholder="e.g. Acme Corporation or Dev Team"
-                  className="w-full bg-[#fcfcfb] dark:bg-[#252525] border border-border/80 dark:border-border/20 rounded-lg pl-9 pr-4 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary/40 dark:focus:ring-primary/20"
+                  className="w-full rounded-lg border border-border/40 bg-black/[0.03] dark:bg-white/[0.05] pl-9 pr-4 py-2 text-sm transition-all duration-150 outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 placeholder:text-muted-foreground/60"
                 />
               </div>
             </div>
@@ -176,7 +173,7 @@ export function NoWorkspaceScreen() {
             <Button
               type="submit"
               disabled={loading}
-              className="w-full mt-2 bg-[#37352f] hover:bg-[#37352f]/90 text-white dark:bg-[#e3e3e2] dark:text-[#191919] dark:hover:bg-[#e3e3e2]/90 shadow-sm transition-all text-xs font-bold"
+              className="w-full mt-2 cursor-pointer text-xs font-bold"
             >
               {loading ? 'Creating Team...' : 'Create Team Workspace'}
             </Button>
@@ -201,7 +198,7 @@ export function NoWorkspaceScreen() {
                     }
                   }}
                   placeholder="e.g. ABCDEFGH"
-                  className="w-full bg-[#fcfcfb] dark:bg-[#252525] border border-border/80 dark:border-border/20 rounded-lg pl-9 pr-4 py-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-primary/40 dark:focus:ring-primary/20"
+                  className="w-full rounded-lg border border-border/40 bg-black/[0.03] dark:bg-white/[0.05] pl-9 pr-4 py-2 text-sm font-mono transition-all duration-150 outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 placeholder:text-muted-foreground/60"
                 />
               </div>
             </div>
@@ -209,7 +206,7 @@ export function NoWorkspaceScreen() {
             <Button
               type="submit"
               disabled={loading}
-              className="w-full mt-2 bg-[#37352f] hover:bg-[#37352f]/90 text-white dark:bg-[#e3e3e2] dark:text-[#191919] dark:hover:bg-[#e3e3e2]/90 shadow-sm transition-all text-xs font-bold"
+              className="w-full mt-2 cursor-pointer text-xs font-bold"
             >
               {loading ? 'Validating Code...' : 'Join Team Workspace'}
             </Button>

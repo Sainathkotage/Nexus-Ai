@@ -136,8 +136,8 @@ export function ChatMessage({ message, onModify }: ChatMessageProps) {
         <div className={cn(
           "w-fit max-w-[90%] leading-relaxed text-sm whitespace-pre-wrap font-sans transition-all",
           isUser 
-            ? "bg-[#f0f4f9] dark:bg-[#1e1f20] text-foreground p-3.5 px-4 rounded-2xl rounded-tr-sm border border-border/20 shadow-sm" 
-            : "bg-transparent text-foreground p-1"
+            ? "bg-accent/35 text-foreground p-3.5 px-4 rounded-2xl rounded-tr-sm border border-primary/20 backdrop-blur-sm shadow-sm" 
+            : "glass text-foreground p-3.5 px-4 rounded-2xl rounded-tl-sm shadow-sm"
         )}>
           {renderText(message.content)}
           
@@ -208,7 +208,7 @@ export function ChatMessage({ message, onModify }: ChatMessageProps) {
                 {menuOpen && (
                   <>
                     <div className="fixed inset-0 z-30" onClick={() => setMenuOpen(false)} />
-                    <div className="absolute left-0 bottom-8 z-40 bg-card border border-border/80 rounded-xl shadow-lg p-1.5 flex flex-col gap-0.5 min-w-[150px] animate-in fade-in slide-in-from-bottom-2 duration-150">
+                    <div className="absolute left-0 bottom-8 z-40 glass shadow-2xl rounded-xl p-1.5 flex flex-col gap-0.5 min-w-[150px] animate-in fade-in slide-in-from-bottom-2 duration-150">
                       <div className="px-2 py-1 text-[9px] uppercase tracking-wider font-semibold text-muted-foreground border-b border-border/40 mb-1">
                         Modify Response
                       </div>

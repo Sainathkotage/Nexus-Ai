@@ -126,7 +126,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="p-0 gap-0 max-w-[560px] shadow-notion border-border overflow-hidden [&>button]:hidden">
+      <DialogContent className="p-0 gap-0 max-w-[560px] overflow-hidden [&>button]:hidden shadow-2xl">
         <div onKeyDown={handleKeyDown}>
           {/* Search Input */}
           <div className="flex items-center gap-3 px-4 border-b border-border">
@@ -168,11 +168,11 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                         onClick={item.action}
                         onMouseEnter={() => setSelectedIndex(globalIndex)}
                         className={cn(
-                          "w-full px-3 py-2 flex items-center gap-3 rounded-md mx-1 cursor-pointer text-left",
-                          "transition-colors duration-75",
+                          "w-full px-4 py-2 flex items-center gap-3 rounded-lg mx-1 cursor-pointer text-left",
+                          "transition-apple",
                           globalIndex === selectedIndex
-                            ? "bg-accent text-foreground"
-                            : "text-foreground hover:bg-accent/50"
+                            ? "bg-accent text-primary font-medium"
+                            : "text-foreground hover:bg-black/5 dark:hover:bg-white/5"
                         )}
                         style={{ width: 'calc(100% - 8px)' }}
                       >

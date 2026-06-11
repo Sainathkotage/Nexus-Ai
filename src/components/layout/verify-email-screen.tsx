@@ -65,12 +65,9 @@ export function VerifyEmailScreen() {
   };
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-[#f7f6f3] dark:bg-[#121212] p-4 relative overflow-hidden transition-colors duration-300">
-      {/* Background Orbs */}
-      <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-gradient-to-br from-indigo-500/10 to-violet-500/10 blur-[100px]" />
-      <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full bg-gradient-to-br from-orange-500/10 to-pink-500/10 blur-[100px]" />
-
-      <div className="w-full max-w-[460px] bg-white dark:bg-[#1c1c1c] border border-[#e9e9e7] dark:border-[#2d2d2d] rounded-2xl p-6 md:p-8 shadow-notion relative z-10 flex flex-col gap-6 transition-all duration-300">
+    <div className="min-h-screen w-full flex items-center justify-center p-4 relative overflow-hidden transition-colors duration-300">
+      <div className="mesh-backdrop" />
+      <div className="w-full max-w-[460px] glass p-6 md:p-8 shadow-2xl relative z-10 flex flex-col gap-6 rounded-2xl transition-all duration-300">
         
         {/* Header */}
         <div className="flex flex-col items-center text-center gap-3">
@@ -88,7 +85,7 @@ export function VerifyEmailScreen() {
         <div className="flex flex-col gap-3">
           <Button
             onClick={handleOpenGmail}
-            className="w-full bg-[#37352f] hover:bg-[#37352f]/90 text-white dark:bg-[#e3e3e2] dark:text-[#191919] dark:hover:bg-[#e3e3e2]/90 shadow-sm transition-all text-xs font-bold py-2 flex items-center justify-center gap-1.5"
+            className="w-full text-xs font-bold py-2 flex items-center justify-center gap-1.5"
           >
             <span>Open Gmail Inbox</span>
           </Button>

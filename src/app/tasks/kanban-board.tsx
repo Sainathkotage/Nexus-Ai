@@ -16,10 +16,10 @@ interface KanbanBoardProps {
   onDeleteTask: (taskId: string) => void;
 }
 
-const COLUMNS: { id: TaskStatus; title: string; color: string }[] = [
-  { id: 'todo', title: 'To Do', color: 'bg-slate-100 dark:bg-slate-800' },
-  { id: 'in-progress', title: 'In Progress', color: 'bg-blue-100 dark:bg-blue-900/20' },
-  { id: 'done', title: 'Done', color: 'bg-green-100 dark:bg-green-900/20' },
+const COLUMNS: { id: TaskStatus; title: string; dotColor: string }[] = [
+  { id: 'todo', title: 'To Do', dotColor: 'bg-zinc-400 dark:bg-zinc-500' },
+  { id: 'in-progress', title: 'In Progress', dotColor: 'bg-blue-500' },
+  { id: 'done', title: 'Done', dotColor: 'bg-emerald-500' },
 ];
 
 export function KanbanBoard({ tasks, onMoveTask, onDeleteTask }: KanbanBoardProps) {
@@ -79,10 +79,13 @@ export function KanbanBoard({ tasks, onMoveTask, onDeleteTask }: KanbanBoardProp
               >
                 <div className="flex flex-col w-80 shrink-0 h-full">
                   {/* Column Header */}
-                  <div className={`p-3 rounded-t-lg ${column.color} border border-border`}>
+                  <div className="p-3 rounded-t-2xl glass border border-b-0">
                     <div className="flex items-center justify-between">
-                      <h3 className="font-semibold text-sm">{column.title}</h3>
-                      <span className="text-xs bg-background px-2 py-0.5 rounded-full">
+                      <div className="flex items-center gap-2">
+                        <span className={`w-2 h-2 rounded-full ${column.dotColor}`} />
+                        <h3 className="font-semibold text-sm text-foreground">{column.title}</h3>
+                      </div>
+                      <span className="text-xs bg-black/5 dark:bg-white/10 px-2 py-0.5 rounded-full font-semibold">
                         {columnTasks.length}
                       </span>
                     </div>
@@ -90,7 +93,7 @@ export function KanbanBoard({ tasks, onMoveTask, onDeleteTask }: KanbanBoardProp
 
                   {/* Drop Zone */}
                   <div 
-                    className="flex-1 p-3 space-y-3 bg-muted/30 rounded-b-lg border border-t-0 border-border overflow-y-auto min-h-[200px]"
+                    className="flex-1 p-3 space-y-3 glass-subtle rounded-b-2xl border border-t-0 border-border/40 overflow-y-auto min-h-[200px]"
                     data-column={column.id}
                   >
                     {columnTasks.map((task) => (

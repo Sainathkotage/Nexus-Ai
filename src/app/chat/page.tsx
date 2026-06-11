@@ -248,7 +248,7 @@ export default function ChatPage() {
   };
 
   return (
-    <div className="flex h-full w-full overflow-hidden bg-background relative">
+    <div className="flex h-full w-full overflow-hidden bg-transparent relative">
       
       {/* Backdrop for mobile */}
       {!sidebarCollapsed && (
@@ -266,7 +266,7 @@ export default function ChatPage() {
             animate={{ width: 280, opacity: 1 }}
             exit={{ width: 0, opacity: 0 }}
             transition={{ duration: 0.15 }}
-            className="border-r border-border bg-sidebar flex flex-col h-full shrink-0 overflow-hidden max-md:fixed max-md:left-0 max-md:top-0 max-md:h-full max-md:z-30 max-md:shadow-2xl"
+            className="border-r border-border/40 bg-sidebar/20 backdrop-blur-md flex flex-col h-full shrink-0 overflow-hidden max-md:fixed max-md:left-0 max-md:top-0 max-md:h-full max-md:z-30 max-md:shadow-2xl"
           >
             
             {/* Conversations Header */}
@@ -380,7 +380,7 @@ export default function ChatPage() {
       </AnimatePresence>
 
       {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col h-full min-h-0 relative bg-background overflow-hidden">
+      <div className="flex-1 flex flex-col h-full min-h-0 relative bg-transparent overflow-hidden">
         
         {/* Header - Collapsible Toggle & Active Info */}
         <div className="h-12 border-b border-border flex items-center justify-between px-4 md:px-6 shrink-0">
@@ -473,7 +473,7 @@ export default function ChatPage() {
                 }
               }}
               placeholder="Ask a question about your documents..."
-              className="w-full bg-muted border-transparent rounded-full py-4 pl-14 pr-24 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring/20 transition-all"
+              className="w-full glass shadow-lg rounded-full py-4 pl-14 pr-24 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
               data-tutorial="chat-input"
             />
             

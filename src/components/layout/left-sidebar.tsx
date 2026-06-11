@@ -77,7 +77,7 @@ export function LeftSidebar({ onOpenSearch }: LeftSidebarProps) {
       animate={{ width: 240, opacity: 1 }}
       exit={{ width: 0, opacity: 0 }}
       transition={{ duration: 0.15, ease: 'easeOut' }}
-      className="h-full border-r border-sidebar-border bg-sidebar flex flex-col overflow-hidden shrink-0 max-lg:fixed max-lg:left-0 max-lg:top-0 max-lg:z-30 max-lg:shadow-2xl"
+      className="h-[calc(100vh-1.5rem)] my-3 ml-3 mr-1.5 rounded-2xl border border-sidebar-border/40 glass flex flex-col overflow-hidden shrink-0 max-lg:fixed max-lg:left-0 max-lg:top-0 max-lg:z-30 max-lg:shadow-2xl shadow-notion"
       data-tutorial="left-sidebar"
     >
       {/* Workspace Header */}
@@ -101,7 +101,7 @@ export function LeftSidebar({ onOpenSearch }: LeftSidebarProps) {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -10, scale: 0.95 }}
               transition={{ duration: 0.1 }}
-              className="absolute top-12 left-2 right-2 bg-popover border border-border shadow-lg rounded-lg p-2 flex flex-col gap-1 z-50 text-sm"
+              className="absolute top-12 left-2 right-2 glass shadow-xl rounded-xl p-2 flex flex-col gap-1 z-50 text-sm"
             >
               <div className="px-2 py-1 border-b border-border pb-1.5 text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">
                 Your Workspaces
@@ -173,10 +173,10 @@ export function LeftSidebar({ onOpenSearch }: LeftSidebarProps) {
             key={item.id}
             onClick={() => handleNav(item.id)}
             className={cn(
-              "flex items-center gap-2.5 px-2 py-1.5 rounded-md transition-colors text-sm w-full text-left relative",
+              "flex items-center gap-2.5 px-3 py-1.5 rounded-full transition-apple text-sm w-full text-left relative",
               activePage === item.id 
-                ? "bg-accent text-foreground font-medium" 
-                : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+                ? "bg-accent text-primary font-semibold" 
+                : "text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5"
             )}
           >
             <item.icon className="w-4 h-4 shrink-0" />
@@ -219,7 +219,7 @@ export function LeftSidebar({ onOpenSearch }: LeftSidebarProps) {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 10, scale: 0.95 }}
               transition={{ duration: 0.1 }}
-              className="absolute bottom-14 left-2 right-2 bg-popover border border-border shadow-md rounded-lg p-2.5 flex flex-col gap-1.5 z-50 text-sm"
+              className="absolute bottom-14 left-2 right-2 glass shadow-xl rounded-xl p-2.5 flex flex-col gap-1.5 z-50 text-sm"
             >
               <div className="px-2 py-1 border-b border-border pb-1.5">
                 <span className="font-semibold text-foreground text-xs block truncate">{user.name}#{user.tag || '0000'}</span>

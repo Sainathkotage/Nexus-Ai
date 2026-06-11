@@ -38,10 +38,10 @@ interface TaskCardProps {
 }
 
 const priorityColors = {
-  low: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
-  medium: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300',
-  high: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
-  urgent: 'bg-rose-200 text-rose-800 dark:bg-rose-950/40 dark:text-rose-300',
+  low: 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20',
+  medium: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20',
+  high: 'bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-500/20',
+  urgent: 'bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/30 font-semibold',
 };
 
 export function TaskCard({ task, onMove, onDelete }: TaskCardProps) {
@@ -54,7 +54,7 @@ export function TaskCard({ task, onMove, onDelete }: TaskCardProps) {
 
   return (
     <>
-      <div className="group bg-card border border-border rounded-lg p-4 hover:shadow-md transition-shadow cursor-grab active:cursor-grabbing">
+      <div className="group glass p-4 shadow-notion hover:shadow-lg transition-apple hover:-translate-y-0.5 cursor-grab active:cursor-grabbing rounded-xl">
         <div className="flex items-start justify-between gap-2 mb-2">
           <div className="flex items-start gap-2 flex-1">
             <GripVertical className="w-4 h-4 text-muted-foreground mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />

@@ -149,22 +149,23 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background text-foreground selection:bg-primary/10 relative">
+      <div className="mesh-backdrop" />
       <LeftSidebar onOpenSearch={() => setCommandPaletteOpen(true)} />
       {leftSidebarOpen && (
         <div 
-          className="fixed inset-0 bg-black/30 backdrop-blur-xs z-20 lg:hidden" 
+          className="fixed inset-0 glass-overlay z-20 lg:hidden" 
           onClick={toggleLeftSidebar} 
         />
       )}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
         <TopBar />
-        <main className="flex-1 overflow-auto relative z-0 flex flex-col">
+        <main className="flex-1 overflow-auto relative z-0 flex flex-col p-2 lg:p-3">
           {children}
         </main>
       </div>
       {rightSidebarOpen && (
         <div 
-          className="fixed inset-0 bg-black/30 backdrop-blur-xs z-20 lg:hidden" 
+          className="fixed inset-0 glass-overlay z-20 lg:hidden" 
           onClick={toggleRightSidebar} 
         />
       )}

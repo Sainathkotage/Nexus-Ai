@@ -78,7 +78,7 @@ export function TopBar() {
   };
 
   return (
-    <header className="h-11 border-b border-border bg-background/80 backdrop-blur-sm flex items-center justify-between px-3 sticky top-0 z-20 shrink-0">
+    <header className="h-11 border-b border-white/10 dark:border-white/5 bg-background/45 backdrop-blur-md flex items-center justify-between px-4 sticky top-0 z-20 shrink-0">
       
       {/* Left side */}
       <div className="flex items-center gap-1.5">
@@ -112,7 +112,7 @@ export function TopBar() {
       <div className="flex items-center gap-0.5">
         {/* Global Time Tracker Widget */}
         <div 
-          className="hidden sm:flex items-center gap-1.5 bg-[#f1f1ef] dark:bg-[#252525] border border-border/80 dark:border-border/10 rounded px-2 py-0.5 mr-2 text-[10px] font-semibold text-muted-foreground transition-all"
+          className="hidden sm:flex items-center gap-1.5 bg-black/5 dark:bg-white/5 border border-border/40 rounded-full px-3 py-0.5 mr-2 text-[10px] font-semibold text-muted-foreground transition-apple"
           data-tutorial="time-tracker"
         >
           <Clock className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
@@ -195,7 +195,7 @@ export function TopBar() {
           </Button>
 
           {showNotifications && (
-            <div className="absolute right-0 top-9 w-80 bg-popover border border-border shadow-lg rounded-xl p-3 z-50 flex flex-col gap-2.5">
+            <div className="absolute right-0 top-9 w-80 glass shadow-2xl rounded-2xl p-4 z-50 flex flex-col gap-3">
               <div className="flex items-center justify-between border-b border-border/60 pb-1.5 shrink-0">
                 <span className="text-xs font-bold text-foreground">Updates & Mentions</span>
                 <button 

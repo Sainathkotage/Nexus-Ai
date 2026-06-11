@@ -35,7 +35,7 @@ export function TaskCard({ task, onMove }: TaskCardProps) {
   const isOverdue = task.dueDate ? new Date(task.dueDate) < new Date() && task.status !== 'done' : false;
 
   return (
-    <div className="group relative bg-card border border-border rounded-xl p-4 shadow-sm hover:shadow transition-all flex flex-col gap-3">
+    <div className="group relative glass rounded-xl p-4 shadow-notion hover:shadow-lg transition-apple hover:-translate-y-0.5 flex flex-col gap-3">
       
       {/* Priority & Title */}
       <div className="flex items-start gap-2">

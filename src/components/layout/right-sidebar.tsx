@@ -127,9 +127,9 @@ export function RightSidebar() {
       animate={{ width: 280, opacity: 1 }}
       exit={{ width: 0, opacity: 0 }}
       transition={{ duration: 0.15, ease: 'easeOut' }}
-      className="h-full border-l border-border bg-sidebar flex flex-col shrink-0 overflow-hidden max-lg:fixed max-lg:right-0 max-lg:top-0 max-lg:h-full max-lg:z-30 max-lg:shadow-2xl"
+      className="h-[calc(100vh-1.5rem)] my-3 mr-3 ml-1.5 rounded-2xl border border-sidebar-border/40 glass flex flex-col shrink-0 overflow-hidden max-lg:fixed max-lg:right-0 max-lg:top-0 max-lg:z-30 max-lg:shadow-2xl shadow-notion"
     >
-      <div className="h-11 flex items-center justify-between px-3 border-b border-border shrink-0">
+      <div className="h-11 flex items-center justify-between px-3 border-b border-border/40 shrink-0">
         <span className="text-sm font-semibold text-foreground">Team Members</span>
         <Button variant="ghost" size="icon" className="w-7 h-7 rounded-sm" onClick={toggleRightSidebar}>
           <X className="w-3.5 h-3.5 text-muted-foreground" />

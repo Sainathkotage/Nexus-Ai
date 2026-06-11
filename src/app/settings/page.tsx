@@ -88,6 +88,8 @@ export default function SettingsPage() {
     unbanWorkspaceMember,
     deleteWorkspace,
     allUsers,
+    deleteAccount,
+    logout,
   } = useWorkspace();
   const { confirm, prompt } = usePopup();
   const [activeSection, setActiveSection] = useState('general');
@@ -761,10 +763,52 @@ export default function SettingsPage() {
                     await updateProfile(userProfile.name, userProfile.email, userProfile.avatar);
                     toast.success('Profile credentials updated!');
                   }}
-                  className="w-fit bg-foreground text-background hover:opacity-90 h-8 text-xs font-bold"
+                  className="w-fit bg-foreground text-background hover:opacity-90 h-8 text-xs font-bold cursor-pointer"
                 >
                   Save Profile
                 </Button>
+
+                <div className="my-6 border-t border-border" />
+
+                <div className="flex flex-col gap-5 border border-red-500/25 rounded-xl p-5 bg-red-500/5 max-w-md">
+                  <div>
+                    <h2 className="text-base font-semibold text-red-500 mb-1 flex items-center gap-2">
+                      <AlertTriangle className="w-5 h-5 shrink-0" />
+                      Danger Zone
+                    </h2>
+                    <p className="text-xs text-muted-foreground">Irreversible actions on your personal account.</p>
+                  </div>
+                  <div className="h-px bg-red-500/20" />
+                  
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex flex-col gap-1">
+                      <span className="text-xs font-semibold text-foreground">Delete Account</span>
+                      <span className="text-[10px] text-muted-foreground">Permanently wipe your profile and credentials from Supabase. This action cannot be reverted.</span>
+                    </div>
+                    <Button 
+                      type="button" 
+                      variant="destructive"
+                      className="bg-red-600 hover:bg-red-700 text-white font-semibold text-xs h-8 px-4 shrink-0 cursor-pointer"
+                      onClick={async () => {
+                        const confirmText = await prompt(
+                          `Type "DELETE" to confirm your account deletion:`,
+                          '',
+                          'Delete Account'
+                        );
+                        if (confirmText === 'DELETE') {
+                          const result = await deleteAccount();
+                          if (result.success) {
+                            toast.success('Account successfully deleted.');
+                          }
+                        } else if (confirmText !== null) {
+                          toast.error('Confirmation code did not match.');
+                        }
+                      }}
+                    >
+                      Delete Account
+                    </Button>
+                  </div>
+                </div>
               </section>
 
               {/* Enterprise Seats Management Section */}
@@ -1324,6 +1368,40 @@ export default function SettingsPage() {
                       <ArrowUpRight className="w-3 h-3" />
                     </span>
                   </div>
+                </div>
+              </section>
+
+              <section className="flex flex-col gap-5">
+                <div>
+                  <h2 className="text-base font-semibold mb-1">Active Sessions & Devices</h2>
+                  <p className="text-sm text-muted-foreground">Manage your current active sessions across all browser devices.</p>
+                </div>
+                <div className="h-px bg-border" />
+
+                <div className="p-4 border border-border rounded-lg bg-card/20 max-w-lg flex items-start justify-between gap-4">
+                  <div className="flex flex-col gap-1 text-left">
+                    <span className="text-xs font-semibold text-foreground">Sign out of all other devices</span>
+                    <span className="text-[10px] text-muted-foreground">
+                      This will revoke all active refresh tokens and terminate all current sessions.
+                    </span>
+                  </div>
+                  <Button 
+                    type="button" 
+                    variant="outline"
+                    className="border-red-500/40 text-red-500 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-950/20 text-xs font-semibold h-8 cursor-pointer shrink-0"
+                    onClick={async () => {
+                      const isConfirmed = await confirm(
+                        "Are you sure you want to log out of all active devices? You will be logged out globally across all browsers.",
+                        "Logout Everywhere"
+                      );
+                      if (isConfirmed) {
+                        await logout(true);
+                        toast.success("Successfully logged out from all other devices.");
+                      }
+                    }}
+                  >
+                    Logout Everywhere
+                  </Button>
                 </div>
               </section>
             </div>

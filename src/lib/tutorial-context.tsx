@@ -5,6 +5,8 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useWorkspace } from '@/lib/store';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
+import { trackEvent } from '@/lib/posthog';
+import { captureError } from '@/lib/sentry';
 
 export interface TutorialStep {
   id: number;
@@ -179,6 +181,15 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
 
     console.log(`[Tutorial Analytics] ${eventName}:`, { stepIdx, stepName, duration, meta });
 
+    // Track in PostHog Product Analytics
+    trackEvent(eventName, {
+      userId: user.id,
+      stepIndex: stepIdx ?? null,
+      stepName: stepName ?? null,
+      duration: duration ?? null,
+      ...meta
+    });
+
     try {
       const { error } = await supabase.from('tutorial_analytics_events').insert({
         user_id: user.id,
@@ -190,11 +201,12 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (error) {
-        // Fallback or ignore
         console.warn('Supabase analytics insert failed:', error.message);
+        captureError(error, { context: 'supabase_analytics', eventName });
       }
     } catch (e) {
       console.warn('Failed to insert analytics event in Supabase:', e);
+      captureError(e, { context: 'supabase_analytics_exception', eventName });
     }
   }, [user, abVariant]);
 

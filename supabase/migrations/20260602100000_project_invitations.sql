@@ -49,14 +49,32 @@ DROP POLICY IF EXISTS "Allow project admins to manage invitations" ON public.inv
 
 -- 4. Create Row Level Security Policies
 
+-- Create security definer functions to prevent infinite recursion in RLS
+CREATE OR REPLACE FUNCTION public.is_project_member(project_id_to_check UUID, user_id_to_check UUID)
+RETURNS BOOLEAN AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.project_members
+    WHERE project_id = project_id_to_check
+      AND user_id = user_id_to_check
+  );
+$$ LANGUAGE sql SECURITY DEFINER STABLE;
+
+CREATE OR REPLACE FUNCTION public.is_project_admin(project_id_to_check UUID, user_id_to_check UUID)
+RETURNS BOOLEAN AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.project_members
+    WHERE project_id = project_id_to_check
+      AND user_id = user_id_to_check
+      AND role = 'admin'
+  );
+$$ LANGUAGE sql SECURITY DEFINER STABLE;
+
+-- 4. Create Row Level Security Policies
+
 -- Create policy to allow members to view projects they belong to
 CREATE POLICY "Allow project members to read projects" ON public.projects
   FOR SELECT USING (
-    EXISTS (
-      SELECT 1 FROM public.project_members
-      WHERE project_members.project_id = projects.id
-        AND project_members.user_id = auth.uid()
-    )
+    public.is_project_member(id, auth.uid())
   );
 
 -- Create policy to allow creating projects
@@ -66,30 +84,16 @@ CREATE POLICY "Allow authenticated users to create projects" ON public.projects
 -- Create policy to allow members to read membership
 CREATE POLICY "Allow members to read project membership" ON public.project_members
   FOR SELECT USING (
-    EXISTS (
-      SELECT 1 FROM public.project_members self
-      WHERE self.project_id = project_members.project_id
-        AND self.user_id = auth.uid()
-    )
+    public.is_project_member(project_id, auth.uid())
   );
 
 -- Create policy to allow admins to manage membership
 CREATE POLICY "Allow project admins to manage membership" ON public.project_members
   FOR ALL USING (
-    EXISTS (
-      SELECT 1 FROM public.project_members self
-      WHERE self.project_id = project_members.project_id
-        AND self.user_id = auth.uid()
-        AND self.role = 'admin'
-    )
+    public.is_project_admin(project_id, auth.uid())
   )
   WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM public.project_members self
-      WHERE self.project_id = project_members.project_id
-        AND self.user_id = auth.uid()
-        AND self.role = 'admin'
-    )
+    public.is_project_admin(project_id, auth.uid())
   );
 
 -- Allow reading invitations (needed to validate before joining)
@@ -99,18 +103,9 @@ CREATE POLICY "Allow read access to invitations by token" ON public.invitations
 -- Allow project admins to manage invitations
 CREATE POLICY "Allow project admins to manage invitations" ON public.invitations
   FOR ALL USING (
-    EXISTS (
-      SELECT 1 FROM public.project_members self
-      WHERE self.project_id = invitations.project_id
-        AND self.user_id = auth.uid()
-        AND self.role = 'admin'
-    )
+    public.is_project_admin(project_id, auth.uid())
   )
   WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM public.project_members self
-      WHERE self.project_id = invitations.project_id
-        AND self.user_id = auth.uid()
-        AND self.role = 'admin'
-    )
+    public.is_project_admin(project_id, auth.uid())
   );
+

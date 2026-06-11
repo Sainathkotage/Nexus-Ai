@@ -10,6 +10,8 @@ import {
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { DEFAULT_SIGNUP_ROLES } from '@/lib/default-roles';
+import { initPostHog, trackEvent, identifyUser, resetPostHog } from '@/lib/posthog';
+import { initSentry, captureError } from '@/lib/sentry';
 
 const NEXUS_DATA_VERSION = '3';
 
@@ -445,7 +447,7 @@ interface WorkspaceState {
   sendOtp: (emailOrPhone: string) => Promise<{ success: boolean; error?: string }>;
   verifyOtp: (emailOrPhone: string, token: string) => Promise<{ success: boolean; error?: string }>;
   register: (email: string, username: string, tag: string, role: string, password: string) => Promise<{ success: boolean; needsVerification?: boolean; error?: string }>;
-  logout: () => Promise<void>;
+  logout: (everywhere?: boolean) => Promise<void>;
   setUserStatus: (status: 'online' | 'offline' | 'idle' | 'dnd') => Promise<void>;
   addFriendByTag: (nameTag: string) => Promise<{ ok: boolean; message: string; friend?: Person }>;
   sendTeamMessage: (friendId: string, content: string, media?: { url: string; name: string; type: string }) => Promise<void>;
@@ -573,6 +575,7 @@ interface WorkspaceState {
   addAiInboxItem: (item: Omit<AiInboxItem, 'id' | 'createdAt' | 'status'>) => void;
   completeAiInboxItem: (id: string) => void;
   updateProfile: (name: string, email: string, avatar: string) => Promise<void>;
+  deleteAccount: () => Promise<{ success: boolean; error?: string }>;
 }
 
 const WorkspaceContext = createContext<WorkspaceState | undefined>(undefined);
@@ -588,6 +591,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [rightSidebarOpen, setRightSidebarOpen] = useState(false);
 
   useEffect(() => {
+    initSentry();
+    initPostHog();
     if (typeof window !== 'undefined') {
       if (window.innerWidth >= 1024) {
         setLeftSidebarOpen(true);
@@ -2556,6 +2561,33 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           status: 'online',
           emailVerified: !!(data.user.email_confirmed_at || data.user.confirmed_at)
         };
+
+        // Identify and Track Signup in PostHog Product Analytics
+        identifyUser(data.user.id, {
+          email,
+          username,
+          role: finalRole,
+          tag,
+        });
+        trackEvent('user_signed_up', {
+          userId: data.user.id,
+          role: finalRole,
+        });
+
+        // Trigger welcome email via Resend endpoint
+        try {
+          await fetch('/api/emails/send', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              to: email,
+              subject: 'Welcome to Nexus AI!',
+              body: `Hello ${username},\n\nWelcome to Nexus AI! Your collaborative workspace for tasks, documents, emails, and team chat is ready.\n\nBest regards,\nThe Nexus Team`
+            })
+          });
+        } catch (mailErr) {
+          console.warn('Failed to send welcome email:', mailErr);
+        }
         
         // Wrap profiles upsert in a safe try-catch so it won't crash signup if unauthenticated/blocked by RLS.
         // Also note that database trigger handles public.profiles insertion automatically, so this is just a backup.
@@ -2634,6 +2666,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         let tag = '1000';
         let role = 'Member';
         let profileStatus = 'online';
+
+        // Track Login in PostHog Product Analytics
+        identifyUser(data.user.id, {
+          email: resolvedEmail,
+          username: name
+        });
+        trackEvent('user_logged_in', { userId: data.user.id });
         
         try {
           const { data: profile } = await supabase
@@ -2808,22 +2847,65 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
   }, [hydrateTeamAccess]);
 
-  const logout = useCallback(async () => {
+  const logout = useCallback(async (everywhere = false) => {
     try {
       if (user) {
         try {
           await supabase.from('profiles').update({ status: 'offline' }).eq('id', user.id);
         } catch (err) {}
       }
-      await supabase.auth.signOut();
+      
+      // Reset PostHog session
+      resetPostHog();
+
+      if (everywhere) {
+        await supabase.auth.signOut({ scope: 'global' });
+      } else {
+        await supabase.auth.signOut();
+      }
     } catch (e) {
       console.warn('Supabase sign out warning:', e);
+      captureError(e, { context: 'signout', everywhere });
     }
     setUser(null);
     setUserStatusState('offline');
     setFriendIds([]);
     localStorage.removeItem('nexus_user');
     localStorage.removeItem('nexus_user_status');
+  }, [user]);
+
+  const deleteAccount = useCallback(async () => {
+    if (!user) return { success: false, error: 'Not signed in' };
+    
+    try {
+      const res = await fetch('/api/auth/delete-account', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || 'Failed to delete account');
+      }
+      
+      // Track deletion and reset PostHog session
+      trackEvent('user_deleted_account', { userId: user.id });
+      resetPostHog();
+      
+      setUser(null);
+      setUserStatusState('offline');
+      setFriendIds([]);
+      localStorage.removeItem('nexus_user');
+      localStorage.removeItem('nexus_user_status');
+      
+      toast.success('Your account has been deleted successfully.');
+      return { success: true };
+    } catch (err: any) {
+      console.error('Delete account error:', err);
+      captureError(err, { context: 'delete_account' });
+      toast.error(err.message || 'Failed to delete account');
+      return { success: false, error: err.message };
+    }
   }, [user]);
 
   const setUserStatus = useCallback(async (status: 'online' | 'offline' | 'idle' | 'dnd') => {
@@ -4556,7 +4638,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     addReaction, removeReaction, togglePinMessage, markMessageAsRead, createChannel,
     createWorkspace, joinWorkspaceByCode, createJoinRequest, reviewJoinRequest, regenerateWorkspaceInviteCode, updateMemberRole, switchWorkspace,
     removeWorkspaceMember, banWorkspaceMember, unbanWorkspaceMember, deleteWorkspace,
-    updateProfile,
+    updateProfile, deleteAccount,
   };
 
   return (

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient, createSupabaseAdminClient } from '@/lib/supabase/server';
 import { getTodayAiUsage, isAdminRole } from '@/lib/permissions';
+import { detectPromptInjection } from '@/lib/security';
 
 export async function POST(req: Request) {
   try {
@@ -9,6 +10,18 @@ export async function POST(req: Request) {
     if (!messages || !Array.isArray(messages)) {
       return NextResponse.json({ error: 'Invalid messages format' }, { status: 400 });
     }
+
+    // Shield against prompt injection attacks
+    const userMessages = messages.filter((msg: any) => msg.role === 'user');
+    for (const msg of userMessages) {
+      if (msg.content && detectPromptInjection(msg.content)) {
+        return NextResponse.json(
+          { error: 'Potential prompt injection attempt detected. Request blocked for security.' },
+          { status: 400 }
+        );
+      }
+    }
+
 
     const systemPrompt = `You are Nexus AI, an advanced AI Chief of Staff. You help users manage their workspace, analyze documents, and organize tasks. Provide concise, helpful, and professional responses formatted in markdown.
     

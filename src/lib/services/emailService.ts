@@ -154,3 +154,140 @@ export async function sendInvitationEmail(to: string, data: {
     return false;
   }
 }
+
+export async function sendWelcomeEmail(to: string, data: {
+  username: string;
+}) {
+  try {
+    const apiKey = process.env.RESEND_API_KEY;
+    if (!apiKey) {
+      console.warn("RESEND_API_KEY is not configured. Welcome email to", to, "will not be sent.");
+      return false;
+    }
+
+    const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body {
+      background-color: #09090b;
+      color: #fafafa;
+      font-family: 'Inter', -apple-system, sans-serif;
+      margin: 0;
+      padding: 40px 20px;
+    }
+    .email-container {
+      max-width: 480px;
+      margin: 0 auto;
+      background-color: #121217;
+      border: 1px solid #27272a;
+      border-radius: 16px;
+      padding: 32px;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+      text-align: center;
+    }
+    .logo {
+      font-size: 24px;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      background: linear-gradient(to right, #6366f1, #a855f7);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 24px;
+    }
+    h1 {
+      font-size: 18px;
+      font-weight: 700;
+      color: #ffffff;
+      margin-top: 0;
+      margin-bottom: 16px;
+      line-height: 1.4;
+    }
+    .welcome-text {
+      font-size: 13px;
+      color: #d4d4d8;
+      margin: 20px 0;
+      line-height: 1.6;
+      text-align: left;
+    }
+    .cta-button {
+      display: inline-block;
+      background-color: #6366f1;
+      color: #ffffff !important;
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 600;
+      padding: 12px 28px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      transition: background-color 0.2s;
+    }
+    .cta-button:hover {
+      background-color: #4f46e5;
+    }
+    .footer {
+      margin-top: 32px;
+      border-top: 1px solid #27272a;
+      padding-top: 20px;
+      font-size: 11px;
+      color: #71717a;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  <div class="email-container">
+    <div class="logo">NEXUS AI</div>
+    
+    <div class="content">
+      <h1>Welcome to your new AI workspace, ${data.username}!</h1>
+      
+      <p class="welcome-text">
+        Nexus AI is a collaborative workspace that unifies your tasks, documents, emails, and team chat. Equipped with a secure AI Chief of Staff, it continuously tracks commitments, summaries, and meeting transcripts to keep your operations synchronized.
+      </p>
+      
+      <a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}" class="cta-button" target="_blank">
+        Launch Workspace
+      </a>
+    </div>
+    
+    <div class="footer">
+      <p>If you have any questions, reach out to our team at support@nexus-ai.com.</p>
+    </div>
+  </div>
+</body>
+</html>
+    `;
+
+    console.log(`Sending welcome email to ${to} using Resend...`);
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        from: 'Nexus AI <onboarding@resend.dev>',
+        to: [to],
+        subject: `Welcome to Nexus AI, ${data.username}!`,
+        html
+      })
+    });
+
+    if (response.ok) {
+      const resData = await response.json();
+      console.log('Welcome email sent successfully:', resData);
+      return true;
+    } else {
+      const errorText = await response.text();
+      console.error('Welcome email Resend API error:', errorText);
+      return false;
+    }
+  } catch (error) {
+    console.error('Error sending welcome email:', error);
+    return false;
+  }
+}
+

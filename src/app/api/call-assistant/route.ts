@@ -1,8 +1,18 @@
 import { NextResponse } from 'next/server';
+import { detectPromptInjection } from '@/lib/security';
 
 export async function POST(req: Request) {
   try {
     const { command, currentDate, users, currentCallPartner, currentUser } = await req.json();
+
+    // Shield against prompt injection attacks
+    if (command && detectPromptInjection(command)) {
+      return NextResponse.json(
+        { error: 'Potential prompt injection attempt detected. Request blocked for security.' },
+        { status: 400 }
+      );
+    }
+
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {

@@ -104,17 +104,25 @@ export async function POST(req: Request) {
       }`;
     } else if (format === 'mindmap') {
       studySystemPrompt = `You are an information architect. Build a concept map/mindmap connecting entities, details, and chapters of the document: "${documentTitle}".
-      Generate a hierarchical tree of concepts.
+      Generate a hierarchical tree of concepts with brief explanatory summaries for each concept.
       Return ONLY a valid JSON object representing the node hierarchy:
       {
         "id": "root",
         "label": "Document Name or Main Topic",
+        "description": "A brief overview summary of this main topic based on the sources.",
         "children": [
           {
             "id": "child-1",
             "label": "Subtopic A",
+            "description": "Brief 1-2 sentence description of Subtopic A.",
+            "relationship": "part-of" | "causes" | "defines" | "related-to",
             "children": [
-              { "id": "subchild-1", "label": "Detail A1" }
+              {
+                "id": "subchild-1",
+                "label": "Detail A1",
+                "description": "Brief 1-2 sentence description of Detail A1.",
+                "relationship": "defines"
+              }
             ]
           }
         ]

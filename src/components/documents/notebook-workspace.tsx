@@ -877,7 +877,11 @@ export function NotebookWorkspace({ document, onClose }: NotebookWorkspaceProps)
 
                               {/* Mindmap Viewer */}
                               {activeResource === 'mindmap' && (
-                                <MindmapView data={studyData['mindmap']} />
+                                <MindmapView 
+                                  data={studyData['mindmap']} 
+                                  document={document}
+                                  onQuoteClick={handleQuoteClick}
+                                />
                               )}
 
                             </div>

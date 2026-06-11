@@ -10,8 +10,12 @@ export async function POST(req: Request) {
     // Force Next.js Node File Trace (NFT) to copy the PDF worker to Vercel Lambdas
     const workerPath = path.join(process.cwd(), 'node_modules/pdf-parse/dist/pdf-parse/cjs/pdf.worker.mjs');
     if (fs.existsSync(workerPath)) {
-      const size = fs.statSync(workerPath).size;
-      console.log(`PDF worker file verified at: ${workerPath} (${size} bytes)`);
+      try {
+        const dummyBuffer = fs.readFileSync(workerPath);
+        console.log(`PDF worker file verified and read for NFT tracing at: ${workerPath} (${dummyBuffer.length} bytes)`);
+      } catch (readErr) {
+        console.warn('Failed to read worker file for NFT tracing:', readErr);
+      }
     }
 
     // Polyfill browser globals required by pdfjs-dist / napi-rs/canvas in Node.js

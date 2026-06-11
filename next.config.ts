@@ -11,6 +11,11 @@ const nextConfig: NextConfig = {
     workerThreads: false,
     cpus: 1,
   },
+  outputFileTracingIncludes: {
+    '/api/upload': [
+      'node_modules/pdf-parse/dist/pdf-parse/cjs/pdf.worker.mjs',
+    ],
+  },
   serverExternalPackages: ['@napi-rs/canvas', 'pdf-parse', 'pdfjs-dist'],
 };
 

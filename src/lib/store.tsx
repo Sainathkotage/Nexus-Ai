@@ -2878,9 +2878,19 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     if (!user) return { success: false, error: 'Not signed in' };
     
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json'
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
       const res = await fetch('/api/auth/delete-account', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
+        headers
       });
       
       if (!res.ok) {

@@ -5,7 +5,20 @@ import { cookies } from 'next/headers';
 export async function POST(req: Request) {
   try {
     const supabase = await createSupabaseServerClient();
-    const { data: { user }, error: authErr } = await supabase.auth.getUser();
+    const authHeader = req.headers.get('Authorization');
+    let user = null;
+    let authErr = null;
+
+    if (authHeader?.startsWith('Bearer ')) {
+      const token = authHeader.split(' ')[1];
+      const { data, error } = await supabase.auth.getUser(token);
+      user = data?.user;
+      authErr = error;
+    } else {
+      const { data, error } = await supabase.auth.getUser();
+      user = data?.user;
+      authErr = error;
+    }
 
     if (authErr || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

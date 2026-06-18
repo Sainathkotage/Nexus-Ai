@@ -7,13 +7,39 @@ import { Button } from '@/components/ui/button';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '@/lib/utils';
 import { useWorkspace } from '@/lib/store';
+import { toast } from 'sonner';
 
 export function HelpCenter() {
   const { restartTutorial, isTutorialActive } = useTutorial();
-  const { user } = useWorkspace();
+  const { user, submitFeedback } = useWorkspace();
   const [isOpen, setIsOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'faq' | 'shortcuts'>('faq');
+  const [activeTab, setActiveTab] = useState<'faq' | 'shortcuts' | 'feedback'>('faq');
   const panelRef = useRef<HTMLDivElement>(null);
+
+  const [feedbackCategory, setFeedbackCategory] = useState('general');
+  const [feedbackText, setFeedbackText] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmitFeedback = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!feedbackText.trim()) return;
+
+    setIsSubmitting(true);
+    try {
+      const fullMessage = `[${feedbackCategory.toUpperCase()}] ${feedbackText}`;
+      const res = await submitFeedback(fullMessage, 'help_center_popup');
+      if (res.ok) {
+        toast.success('Feedback submitted! Thank you.');
+        setFeedbackText('');
+      } else {
+        toast.error(res.message || 'Failed to send feedback.');
+      }
+    } catch (err) {
+      toast.error('An error occurred. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   // If tutorial is currently running, hide the help center button to avoid UI clutter
   const shouldRender = user && !isTutorialActive;
@@ -118,7 +144,7 @@ export function HelpCenter() {
                   activeTab === 'faq' ? "bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 shadow-[0_1px_3px_rgba(0,0,0,0.06)]" : "text-neutral-500 hover:text-neutral-700 dark:text-neutral-400"
                 )}
               >
-                FAQs & Guide
+                FAQs
               </button>
               <button
                 type="button"
@@ -128,7 +154,17 @@ export function HelpCenter() {
                   activeTab === 'shortcuts' ? "bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 shadow-[0_1px_3px_rgba(0,0,0,0.06)]" : "text-neutral-500 hover:text-neutral-700 dark:text-neutral-400"
                 )}
               >
-                Keyboard Shortcuts
+                Shortcuts
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('feedback')}
+                className={cn(
+                  "flex-1 py-1 text-[10px] font-semibold rounded-full transition-all cursor-pointer",
+                  activeTab === 'feedback' ? "bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 shadow-[0_1px_3px_rgba(0,0,0,0.06)]" : "text-neutral-500 hover:text-neutral-700 dark:text-neutral-400"
+                )}
+              >
+                Feedback
               </button>
             </div>
 
@@ -175,6 +211,45 @@ export function HelpCenter() {
                     <span className="text-neutral-500 dark:text-neutral-400">Toggle Left Sidebar</span>
                     <kbd className="bg-neutral-100 dark:bg-neutral-800/80 px-1.5 py-0.5 border border-black/[0.04] dark:border-white/[0.06] rounded-md font-mono text-[9px] text-neutral-800 dark:text-neutral-200 shadow-[0_1px_1px_rgba(0,0,0,0.04)] font-medium">Ctrl + \</kbd>
                   </div>
+                </div>
+              )}
+
+              {activeTab === 'feedback' && (
+                <div className="flex flex-col gap-3.5 py-1 text-xs">
+                  <form onSubmit={handleSubmitFeedback} className="flex flex-col gap-3">
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[9px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-wider">Feedback Category</label>
+                      <select
+                        value={feedbackCategory}
+                        onChange={(e) => setFeedbackCategory(e.target.value)}
+                        className="bg-black/[0.03] dark:bg-white/[0.05] border border-black/[0.06] dark:border-white/[0.08] rounded-xl px-2.5 py-1.5 text-[11px] text-neutral-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-primary/30"
+                      >
+                        <option value="general" className="bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100">General Feedback</option>
+                        <option value="bug" className="bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100">Bug Report</option>
+                        <option value="feature" className="bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100">Feature Request</option>
+                      </select>
+                    </div>
+
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[9px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-wider">Your Message</label>
+                      <textarea
+                        value={feedbackText}
+                        onChange={(e) => setFeedbackText(e.target.value)}
+                        placeholder="Tell us what you think or report an issue..."
+                        rows={5}
+                        className="bg-black/[0.03] dark:bg-white/[0.05] border border-black/[0.06] dark:border-white/[0.08] rounded-xl p-2.5 text-[11px] text-neutral-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-primary/30 resize-none placeholder:text-neutral-450 dark:placeholder:text-neutral-550 leading-normal"
+                        required
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={isSubmitting}
+                      className="w-full bg-[#0071e3] hover:bg-[#0077ed] disabled:bg-[#0071e3]/50 text-white font-medium h-8 rounded-full text-[11px] mt-1 shadow-none transition-colors cursor-pointer flex items-center justify-center"
+                    >
+                      {isSubmitting ? 'Sending...' : 'Send Feedback'}
+                    </button>
+                  </form>
                 </div>
               )}
             </div>

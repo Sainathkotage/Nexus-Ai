@@ -1,0 +1,7 @@
+# Nexus AI Application
+
+> This is the secure web application dashboard for Nexus AI. For the primary product documentation, feature descriptions, comparison matrices, and index files, please refer to our main marketing site.
+
+## Reference Indexes
+- [Nexus AI Main Index](https://nexus-ai.com/llms.txt): The main site index listing all product features, CRM solutions, and project management layouts.
+- [Nexus AI Full Documentation](https://nexus-ai.com/llms-full.txt): A single consolidated Markdown file with full copy, specs, and comparison engines.

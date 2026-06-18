@@ -1122,6 +1122,47 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         const currentUserId = session?.user?.id;
         const currentUserEmail = session?.user?.email || '';
 
+        // Hydrate profile and set user immediately to avoid layout flashes or race conditions
+        let authenticatedUser: Person | null = null;
+        let mappedProfilesList: Person[] = [];
+        
+        if (session && session.user) {
+          let name = session.user.email?.split('@')[0] || 'User';
+          let tag = '1000';
+          let role = 'Member';
+          let userStatus = 'online';
+          
+          try {
+            const { data: profile } = await supabase
+              .from('profiles')
+              .select('*')
+              .eq('id', session.user.id)
+              .maybeSingle();
+            if (profile) {
+              name = profile.username;
+              tag = profile.tag;
+              role = profile.role || 'Member';
+              userStatus = profile.status || 'online';
+              setUserStatusState(userStatus);
+            }
+          } catch (profileErr) {
+            console.warn('Failed to fetch user profile:', profileErr);
+          }
+
+          authenticatedUser = {
+            id: session.user.id,
+            name,
+            email: session.user.email || '',
+            avatar: '',
+            role,
+            tag,
+            status: userStatus as any,
+            emailVerified: !!(session.user.email_confirmed_at || session.user.confirmed_at)
+          };
+          setUser(authenticatedUser);
+          localStorage.setItem('nexus_user_status', authenticatedUser.status || 'online');
+        }
+
         const [
           docsQuery,
           tasksQuery,
@@ -1146,24 +1187,16 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           supabase.from('message_reads').select('*'),
         ]);
 
-        if (docsQuery.error) throw docsQuery.error;
-        if (tasksQuery.error) throw tasksQuery.error;
-        if (eventsQuery.error) throw eventsQuery.error;
-        if (emailsQuery.error) throw emailsQuery.error;
-        if (convosQuery.error) throw convosQuery.error;
-        if (insightsQuery.error) throw insightsQuery.error;
-
-        const allDocs = docsQuery.data.map(mapDbDoc);
-        const docs = allDocs.filter(doc => 
+        const docs = (!docsQuery.error && docsQuery.data ? docsQuery.data.map(mapDbDoc) : []).filter(doc => 
           !currentUserId || 
           doc.uploadedBy?.id === currentUserId || 
           doc.uploadedBy?.email === currentUserEmail
         );
-        const tasks = tasksQuery.data.map(mapDbTask);
-        const events = eventsQuery.data.map(mapDbEvent);
-        const emails = emailsQuery.data.map(mapDbEmail);
-        const convos = convosQuery.data.map(mapDbConversation);
-        const fetchedInsights = insightsQuery.data.map((ins: any) => ({
+        const tasks = !tasksQuery.error && tasksQuery.data ? tasksQuery.data.map(mapDbTask) : [];
+        const events = !eventsQuery.error && eventsQuery.data ? eventsQuery.data.map(mapDbEvent) : [];
+        const emails = !emailsQuery.error && emailsQuery.data ? emailsQuery.data.map(mapDbEmail) : [];
+        const convos = !convosQuery.error && convosQuery.data ? convosQuery.data.map(mapDbConversation) : [];
+        const fetchedInsights = !insightsQuery.error && insightsQuery.data ? insightsQuery.data.map((ins: any) => ({
           id: ins.id,
           type: ins.type as any,
           title: ins.title,
@@ -1171,7 +1204,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           priority: ins.priority as any,
           timestamp: ins.created_at || new Date().toISOString(),
           createdAt: ins.created_at
-        }));
+        })) : [];
 
         setDocuments(docs);
         setTasks(tasks);
@@ -1187,42 +1220,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
         // Sync authentication profiles, channels, direct messages with Supabase
         try {
-          const { data: { session } } = await supabase.auth.getSession();
-          let currentUserId = '';
-          if (session && session.user) {
-            currentUserId = session.user.id;
-            let name = session.user.email?.split('@')[0] || 'User';
-            let tag = '1000';
-            let role = 'Member';
-            
-            const { data: profile } = await supabase
-              .from('profiles')
-              .select('*')
-              .eq('id', session.user.id)
-              .single();
-            if (profile) {
-              name = profile.username;
-              tag = profile.tag;
-              role = profile.role || 'Member';
-              setUserStatusState(profile.status || 'online');
-            }
-
-            const authenticatedUser: Person = {
-              id: session.user.id,
-              name,
-              email: session.user.email || '',
-              avatar: '',
-              role,
-              tag,
-              status: profile?.status || 'online',
-              emailVerified: !!(session.user.email_confirmed_at || session.user.confirmed_at)
-            };
-            setUser(authenticatedUser);
-            localStorage.setItem('nexus_user_status', authenticatedUser.status || 'online');
-          }
-
           // Fetch all profiles from public.profiles
-          let mappedProfilesList: Person[] = [];
           const { data: dbProfiles } = await supabase.from('profiles').select('*');
           if (dbProfiles && dbProfiles.length > 0) {
             mappedProfilesList = dbProfiles.map((p: any) => ({
@@ -1235,17 +1233,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
               status: p.status || 'offline',
               lastSeenAt: p.last_seen_at
             }));
-            // Only clear allUsers if not logged in.
-            // If logged in, hydrateTeamAccess will handle setting visible users correctly.
             if (!currentUserId) {
               setAllUsers([]);
             }
           }
 
           // Fetch team memberships and DMs involving this user.
-          if (currentUserId) {
-            const currentPerson = mappedProfilesList.find(profile => profile.id === currentUserId);
-            if (currentPerson) await hydrateTeamAccess(currentPerson, mappedProfilesList);
+          if (currentUserId && authenticatedUser) {
+            const currentPerson = mappedProfilesList.find(profile => profile.id === currentUserId) || authenticatedUser;
+            await hydrateTeamAccess(currentPerson, mappedProfilesList);
 
             const { data: dms } = await supabase
               .from('direct_messages')
@@ -1310,8 +1306,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
             rawMsgs.forEach((dbM: any) => {
               const mapped = mapDbChannelMessage(dbM, mappedProfilesList);
-              
-              // Link reactions
               mapped.reactions = dbReactions
                 .filter((r: any) => r.message_id === mapped.id)
                 .map((r: any) => ({
@@ -1322,7 +1316,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                   createdAt: r.created_at
                 }));
 
-              // Link reads
               mapped.reads = dbReads
                 .filter((rd: any) => rd.message_id === mapped.id)
                 .map((rd: any) => ({
@@ -1340,7 +1333,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
               }
             });
 
-            // Link replies to parent messages
             replyMsgs.forEach((reply: any) => {
               const chId = reply.channelId || 'c1';
               const chMsgs = messagesMapped[chId] || [];
@@ -1359,7 +1351,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
             setChannelMessages(messagesMapped);
           }
-
         } catch (authErr) {
           console.warn('Supabase profiles and channels load error:', authErr);
         }
@@ -2555,7 +2546,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         email,
         password,
         options: {
-          data: { username, tag, role: finalRole }
+          data: { username, tag, role: finalRole },
+          emailRedirectTo: typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : undefined
         }
       });
       if (error) throw error;

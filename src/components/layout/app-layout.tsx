@@ -49,7 +49,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     }
   }, [inviteCodeParam]);
 
-  const isLandingPage = pathname === '/landing';
   const isAuthCallbackOrInvite = pathname.startsWith('/auth') || pathname.startsWith('/invite');
 
   // Synchronous query check directly during render to prevent layout lag or hydration flashes
@@ -67,18 +66,16 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
       const inviteQuery = inviteCode ? `inviteCode=${inviteCode}` : '';
 
-      if (!user && !isLandingPage && !hasAuthParam && !hasInviteParam && !isAuthCallbackOrInvite) {
+      if (!user && !hasAuthParam && !hasInviteParam && !isAuthCallbackOrInvite) {
+        const marketingUrl = process.env.NEXT_PUBLIC_MARKETING_URL || 'http://localhost:4321';
         const query = inviteQuery ? `?${inviteQuery}` : '';
-        router.push(`/landing${query}`);
-      } else if (user && isLandingPage) {
-        const query = inviteQuery ? `?${inviteQuery}` : '';
-        router.push(`/${query}`);
+        window.location.href = `${marketingUrl}${query}`;
       }
     }
-  }, [user, isAppLoading, isLandingPage, hasAuthParam, hasInviteParam, isAuthCallbackOrInvite, router, searchParams]);
+  }, [user, isAppLoading, hasAuthParam, hasInviteParam, isAuthCallbackOrInvite, router, searchParams]);
 
   useEffect(() => {
-    if (isLandingPage) return;
+    if (!user) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
@@ -87,11 +84,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isLandingPage]);
-
-  if (isLandingPage) {
-    return <div className="min-h-screen w-full overflow-x-hidden">{children}</div>;
-  }
+  }, [user]);
 
   if (isAppLoading) {
     if (!user) {

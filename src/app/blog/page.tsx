@@ -23,7 +23,7 @@ export default function BlogIndexPage() {
     "url": `${domain}/blog`,
     "publisher": {
       "@type": "Organization",
-      "name": "Nexus AI, Inc."
+      "name": "Aixentrix, Inc."
     }
   };
 

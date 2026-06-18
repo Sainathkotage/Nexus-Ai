@@ -111,6 +111,31 @@ export const competitorsData: Record<string, CompetitorComparison> = {
       "Upload to Nexus AI Importer.",
       "Select target team members to map roles and calendars."
     ]
+  },
+  slack: {
+    name: "Slack",
+    slug: "slack",
+    coreModel: "Real-time Chat Streams (Synchronous)",
+    emailIntegration: "Basic channel notifications only",
+    calendarAutomation: "Meeting notification alerts only",
+    handoverAutomation: "None (Prone to search history retention caps)",
+    pros: [
+      "Extensive integration store",
+      "Fast synchronous direct messaging",
+      "Huddle voice calls"
+    ],
+    cons: [
+      "Causes communication fatigue and context fragmentation",
+      "Difficult to search across historical discussions",
+      "No native task board or document consolidation"
+    ],
+    faqQuestion: "How does Nexus AI replace the need for both Slack and email?",
+    faqAnswer: "Nexus AI unifies team chat with your email inbox, group tasks, and documents in one interface, so you don't switch between tools.",
+    migrationSteps: [
+      "Export your Slack workspace messages from Settings -> Import/Export.",
+      "Upload the archive ZIP into Nexus AI Workspace settings.",
+      "AI will map public channels and create matching communication streams."
+    ]
   }
 };
 

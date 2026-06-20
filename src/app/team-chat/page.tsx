@@ -4,14 +4,14 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useWorkspace, decryptMessage, encryptMessage } from '@/lib/store';
 import { usePopup } from '@/lib/popup-context';
 import { supabase } from '@/lib/supabase';
-import { Person, ChatMessage, Channel, ChannelMessage, MessageReaction, MessageRead } from '@/types';
+import { Person, ChatMessage, Channel, ChannelMessage, MessageReaction, MessageRead, MeetingRecord, MeetingParticipant } from '@/types';
 import { 
   Send, Users, MessageSquare, Clock, ShieldCheck, Check, CheckCheck, 
   Search, Circle, MessageCircle, Hash, ChevronRight, X,
   Paperclip, Phone, Video, Lock, Unlock, Mic, MicOff,
   VideoOff, Shield, PhoneOff, Star, Pin, Smile, Trash2, Edit3,
   Sparkles, FileText, ArrowRight, ArrowLeft, Bell, Volume2, AlertCircle, Plus, Folder, UserPlus,
-  Activity, Subtitles, RefreshCw, Calendar, User, Mail, Keyboard
+  Activity, Subtitles, RefreshCw, Calendar, User, Mail, Keyboard, Monitor, Disc, Sliders, Settings
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -61,7 +61,10 @@ export default function TeamChatPage() {
     clearMentionBadge,
     createCalendarEvent,
     addTask,
-    addEmail
+    addEmail,
+    meetings,
+    saveMeetingRecord,
+    addDocument
   } = useWorkspace();
   const { confirm } = usePopup();
 
@@ -193,6 +196,53 @@ export default function TeamChatPage() {
 
   const recognitionRef = useRef<any>(null);
   const isRecognitionActiveRef = useRef<boolean>(false);
+
+  // Group Meeting Configuration States
+  const [showMeetingSetup, setShowMeetingSetup] = useState(false);
+  const [meetingSetupTitle, setMeetingSetupTitle] = useState('');
+  const [meetingSetupPassword, setMeetingSetupPassword] = useState('');
+  const [meetingSetupWaitingRoom, setMeetingSetupWaitingRoom] = useState(false);
+
+  // Active Group Meeting States
+  const [isGroupCall, setIsGroupCall] = useState(false);
+  const [meetingTitle, setMeetingTitle] = useState('');
+  const [meetingId, setMeetingId] = useState('');
+  const [groupParticipants, setGroupParticipants] = useState<MeetingParticipant[]>([]);
+  const [handRaisedUsers, setHandRaisedUsers] = useState<string[]>([]);
+  const [pinnedParticipantId, setPinnedParticipantId] = useState<string | null>(null);
+  const [activeSpeakerId, setActiveSpeakerId] = useState<string | null>(null);
+  const [screenShareStream, setScreenShareStream] = useState<MediaStream | null>(null);
+  const [screenShareSharerId, setScreenShareSharerId] = useState<string | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [isHost, setIsHost] = useState(false);
+  
+  // Settings & Adaptation
+  const [selectedVideoRes, setSelectedVideoRes] = useState<'480p' | '720p' | '1080p'>('720p');
+  const [enableEchoCancellation, setEnableEchoCancellation] = useState(true);
+  const [enableNoiseSuppression, setEnableNoiseSuppression] = useState(true);
+  const [enableAutoGainControl, setEnableAutoGainControl] = useState(true);
+  const [selectedCameraId, setSelectedCameraId] = useState<string>('');
+  const [selectedMicId, setSelectedMicId] = useState<string>('');
+  const [selectedSpeakerId, setSelectedSpeakerId] = useState<string>('');
+  const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
+  const [microphones, setMicrophones] = useState<MediaDeviceInfo[]>([]);
+  const [speakers, setSpeakers] = useState<MediaDeviceInfo[]>([]);
+  const [bgBlurEffect, setBgBlurEffect] = useState<'none' | 'soft' | 'high' | 'gradient' | 'branded'>('none');
+  const [isLowLight, setIsLowLight] = useState(false);
+  const [isMirror, setIsMirror] = useState(true);
+  const [showBgEffectsMenu, setShowBgEffectsMenu] = useState(false);
+  const [showCallHardwareSettings, setShowCallHardwareSettings] = useState(false);
+
+  // Active Channel Meetings Sync
+  const activeChannelMeetings = useRef<Record<string, { meetingId: string; title: string; hostName: string }>>({});
+  const [activeMeetingInChannel, setActiveMeetingInChannel] = useState<{ meetingId: string; title: string; hostName: string } | null>(null);
+
+  // WebRTC group refs & simulation loops
+  const pcsRef = useRef<Record<string, RTCPeerConnection>>({});
+  const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({});
+  const simTimeoutsRef = useRef<any[]>([]);
+  const simIntervalsRef = useRef<any[]>([]);
 
   // Sync call state ref for listener callbacks
   useEffect(() => {
@@ -963,11 +1013,127 @@ export default function TeamChatPage() {
 
     callChannel
       .on('broadcast', { event: 'signal' }, async ({ payload }) => {
-        if (payload.targetUserId !== user.id) return;
+        if (payload.targetUserId && payload.targetUserId !== user.id) return;
 
-        const { signalType, fromUserId, data } = payload;
+        const { signalType, fromUserId, data, meetingId: signalMeetingId } = payload;
 
         switch (signalType) {
+          // --- Group Meeting signals ---
+          case 'meeting-announcement':
+            if (activeChannel && payload.channelId === activeChannel.id) {
+              activeChannelMeetings.current[payload.channelId] = {
+                meetingId: signalMeetingId,
+                title: payload.title,
+                hostName: payload.fromUserName || 'Teammate'
+              };
+              setActiveMeetingInChannel(activeChannelMeetings.current[payload.channelId]);
+              toast.info(`Meeting "${payload.title}" started by ${payload.fromUserName}`);
+            }
+            break;
+
+          case 'meeting-end':
+            if (activeChannel) {
+              delete activeChannelMeetings.current[activeChannel.id];
+              setActiveMeetingInChannel(null);
+            }
+            if (isGroupCall && signalMeetingId === meetingId) {
+              toast.warning("Host ended the meeting");
+              cleanupCallState();
+            }
+            break;
+
+          case 'meeting-join':
+            if (isGroupCall && signalMeetingId === meetingId) {
+              const joinedUser = data.user;
+              setGroupParticipants(prev => {
+                if (!prev.some(p => p.id === joinedUser.id)) {
+                  toast.info(`${joinedUser.name} joined the meeting`);
+                  
+                  // In a real WebRTC mesh: Host initiates offer to new user
+                  if (isHost) {
+                    initiateMeshOffer(joinedUser.id);
+                  }
+                  
+                  return [...prev, joinedUser];
+                }
+                return prev;
+              });
+            }
+            break;
+
+          case 'meeting-leave':
+            if (isGroupCall && signalMeetingId === meetingId) {
+              const leaverId = payload.userId;
+              setGroupParticipants(prev => {
+                const target = prev.find(p => p.id === leaverId);
+                if (target) {
+                  toast.info(`${target.name} left the meeting`);
+                }
+                return prev.filter(p => p.id !== leaverId);
+              });
+              
+              // Close WebRTC connection to leaver
+              if (pcsRef.current[leaverId]) {
+                pcsRef.current[leaverId].close();
+                delete pcsRef.current[leaverId];
+              }
+              setRemoteStreams(prev => {
+                const next = { ...prev };
+                delete next[leaverId];
+                return next;
+              });
+            }
+            break;
+
+          case 'meeting-raise-hand':
+            if (isGroupCall && signalMeetingId === meetingId) {
+              const raiserId = payload.userId;
+              setHandRaisedUsers(prev => [...prev, raiserId]);
+              const raiserName = groupParticipants.find(p => p.id === raiserId)?.name || 'Someone';
+              toast.info(`${raiserName} raised their hand ✋`);
+            }
+            break;
+
+          case 'meeting-lower-hand':
+            if (isGroupCall && signalMeetingId === meetingId) {
+              const lowererId = payload.userId;
+              setHandRaisedUsers(prev => prev.filter(id => id !== lowererId));
+            }
+            break;
+
+          case 'meeting-recording-start':
+            if (isGroupCall && signalMeetingId === meetingId) {
+              setIsRecording(true);
+              toast.info("Host started recording the meeting");
+            }
+            break;
+
+          case 'meeting-recording-stop':
+            if (isGroupCall && signalMeetingId === meetingId) {
+              setIsRecording(false);
+              toast.info("Host stopped recording");
+            }
+            break;
+
+          case 'meeting-offer':
+            if (isGroupCall && signalMeetingId === meetingId && payload.targetUserId === user.id) {
+              handleMeshOffer(fromUserId, data);
+            }
+            break;
+
+          case 'meeting-answer':
+            if (isGroupCall && signalMeetingId === meetingId && payload.targetUserId === user.id) {
+              handleMeshAnswer(fromUserId, data);
+            }
+            break;
+
+          case 'meeting-ice-candidate':
+            if (isGroupCall && signalMeetingId === meetingId && payload.targetUserId === user.id) {
+              handleMeshIceCandidate(fromUserId, data);
+            }
+            break;
+
+          // --- Targeted 1-on-1 calls (Original logic) ---
           case 'offer':
             const caller = allUsersRef.current.find(u => u.id === fromUserId);
             if (caller) {
@@ -1493,6 +1659,687 @@ export default function TeamChatPage() {
     }
   };
 
+  // Synchronize active huddles in channel
+  useEffect(() => {
+    if (activeChannel) {
+      setActiveMeetingInChannel(activeChannelMeetings.current[activeChannel.id] || null);
+    } else {
+      setActiveMeetingInChannel(null);
+    }
+  }, [activeChannel]);
+
+  // Duration metrics tracking
+  const [meetingDuration, setMeetingDuration] = useState(0);
+  const meetingTimerRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (callState && callState.status === 'connected') {
+      meetingTimerRef.current = setInterval(() => {
+        setMeetingDuration(prev => prev + 1);
+      }, 1000);
+    } else {
+      if (meetingTimerRef.current) {
+        clearInterval(meetingTimerRef.current);
+        meetingTimerRef.current = null;
+      }
+      setMeetingDuration(0);
+    }
+    return () => {
+      if (meetingTimerRef.current) clearInterval(meetingTimerRef.current);
+    };
+  }, [callState?.status]);
+
+  useEffect(() => {
+    let timer: any = null;
+    if (isRecording) {
+      timer = setInterval(() => {
+        setRecordingSeconds(prev => prev + 1);
+      }, 1000);
+    } else {
+      setRecordingSeconds(0);
+    }
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [isRecording]);
+
+  // Hardware enumerate
+  const enumerateHardware = async () => {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoDevices = devices.filter(d => d.kind === 'videoinput');
+      const audioInputDevices = devices.filter(d => d.kind === 'audioinput');
+      const audioOutputDevices = devices.filter(d => d.kind === 'audiooutput');
+      
+      setCameras(videoDevices);
+      setMicrophones(audioInputDevices);
+      setSpeakers(audioOutputDevices);
+      
+      if (videoDevices.length > 0 && !selectedCameraId) setSelectedCameraId(videoDevices[0].deviceId);
+      if (audioInputDevices.length > 0 && !selectedMicId) setSelectedMicId(audioInputDevices[0].deviceId);
+      if (audioOutputDevices.length > 0 && !selectedSpeakerId) setSelectedSpeakerId(audioOutputDevices[0].deviceId);
+    } catch (err) {
+      console.warn("Failed to enumerate media devices:", err);
+    }
+  };
+
+  // Replace video track in call peer connections
+  const updateLocalStreamVideoTrack = async (newConstraints: MediaTrackConstraints) => {
+    if (!localStream) return;
+    try {
+      const tempStream = await navigator.mediaDevices.getUserMedia({ video: newConstraints });
+      const newVideoTrack = tempStream.getVideoTracks()[0];
+      
+      const oldVideoTrack = localStream.getVideoTracks()[0];
+      if (oldVideoTrack) {
+        localStream.removeTrack(oldVideoTrack);
+        oldVideoTrack.stop();
+      }
+      
+      localStream.addTrack(newVideoTrack);
+      
+      // Update track in all active RTCPeerConnections
+      if (isGroupCall) {
+        Object.values(pcsRef.current).forEach(pc => {
+          const sender = pc.getSenders().find(s => s.track?.kind === 'video');
+          if (sender) {
+            sender.replaceTrack(newVideoTrack);
+          }
+        });
+      } else if (pcRef.current) {
+        const sender = pcRef.current.getSenders().find(s => s.track?.kind === 'video');
+        if (sender) {
+          sender.replaceTrack(newVideoTrack);
+        }
+      }
+      
+      // Refresh local video element
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = null;
+        localVideoRef.current.srcObject = localStream;
+      }
+    } catch (err) {
+      console.error("Failed to update video track constraints:", err);
+      toast.error("Failed to apply camera settings");
+    }
+  };
+
+  // Group Meeting controls
+  const handleStartGroupMeeting = () => {
+    if (activeMeetingInChannel) {
+      setMeetingSetupTitle(activeMeetingInChannel.title);
+    } else if (activeChannel) {
+      setMeetingSetupTitle(`${activeChannel.name} Huddle`);
+    }
+    setShowMeetingSetup(true);
+  };
+
+  const startGroupMeeting = async () => {
+    setShowMeetingSetup(false);
+    
+    const mId = `meeting-${Date.now()}`;
+    setMeetingId(mId);
+    setMeetingTitle(meetingSetupTitle || 'Workspace Huddle');
+    setIsGroupCall(true);
+    setIsHost(true);
+    
+    setCallState({
+      isActive: true,
+      type: 'video',
+      status: 'connected',
+      friend: {
+        id: 'group',
+        name: meetingSetupTitle || 'Group Meeting',
+        email: 'group@workspace.local',
+        avatar: '',
+        role: 'Workspace Huddle'
+      }
+    });
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: enableEchoCancellation,
+          noiseSuppression: enableNoiseSuppression,
+          autoGainControl: enableAutoGainControl,
+          channelCount: 1
+        },
+        video: {
+          width: { ideal: selectedVideoRes === '1080p' ? 1920 : selectedVideoRes === '720p' ? 1280 : 854 },
+          height: { ideal: selectedVideoRes === '1080p' ? 1080 : selectedVideoRes === '720p' ? 720 : 480 }
+        }
+      });
+      setLocalStream(stream);
+      
+      const selfParticipant: MeetingParticipant = {
+        id: user?.id || 'me',
+        name: user?.name || 'You',
+        avatar: user?.avatar || '',
+        role: user?.role || 'Host',
+        joinTime: new Date().toLocaleTimeString(),
+        isMuted: false,
+        isCameraOff: false
+      };
+      setGroupParticipants([selfParticipant]);
+
+      // Broadcast meeting start message to channel
+      if (callChannelRef.current && activeChannel) {
+        callChannelRef.current.send({
+          type: 'broadcast',
+          event: 'signal',
+          payload: {
+            signalType: 'meeting-announcement',
+            meetingId: mId,
+            title: meetingSetupTitle || 'Workspace Huddle',
+            channelId: activeChannel.id,
+            fromUserId: user?.id,
+            fromUserName: user?.name
+          }
+        });
+      }
+
+      // Add a system announcement message in the channel chat
+      if (activeChannel) {
+        sendChannelMessage(
+          activeChannel.id,
+          `📢 Workspace Meeting "${meetingSetupTitle || 'Huddle'}" started! Click the camera button in the channel header to join.`
+        );
+      }
+
+      enumerateHardware();
+      startSimulation(mId);
+
+    } catch (err) {
+      console.error("Failed to start group call stream:", err);
+      toast.error("Could not access camera/microphone for meeting");
+      cleanupCallState();
+    }
+  };
+
+  const joinGroupMeeting = async (mId: string, title: string) => {
+    setShowMeetingSetup(false);
+    
+    setMeetingId(mId);
+    setMeetingTitle(title);
+    setIsGroupCall(true);
+    setIsHost(false);
+    
+    setCallState({
+      isActive: true,
+      type: 'video',
+      status: 'connected',
+      friend: {
+        id: 'group',
+        name: title,
+        email: 'group@workspace.local',
+        avatar: '',
+        role: 'Workspace Huddle'
+      }
+    });
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: enableEchoCancellation,
+          noiseSuppression: enableNoiseSuppression,
+          autoGainControl: enableAutoGainControl,
+          channelCount: 1
+        },
+        video: {
+          width: { ideal: selectedVideoRes === '1080p' ? 1920 : selectedVideoRes === '720p' ? 1280 : 854 },
+          height: { ideal: selectedVideoRes === '1080p' ? 1080 : selectedVideoRes === '720p' ? 720 : 480 }
+        }
+      });
+      setLocalStream(stream);
+
+      const selfParticipant: MeetingParticipant = {
+        id: user?.id || 'me',
+        name: user?.name || 'You',
+        avatar: user?.avatar || '',
+        role: user?.role || 'Member',
+        joinTime: new Date().toLocaleTimeString(),
+        isMuted: false,
+        isCameraOff: false
+      };
+      setGroupParticipants([selfParticipant]);
+
+      // Broadcast signal to everyone that we joined
+      if (callChannelRef.current) {
+        callChannelRef.current.send({
+          type: 'broadcast',
+          event: 'signal',
+          payload: {
+            signalType: 'meeting-join',
+            meetingId: mId,
+            user: selfParticipant
+          }
+        });
+      }
+
+      enumerateHardware();
+      startSimulation(mId);
+
+    } catch (err) {
+      console.error("Failed to join group call stream:", err);
+      toast.error("Could not access camera/microphone for meeting");
+      cleanupCallState();
+    }
+  };
+
+  const broadcastMeetingSignal = (signalType: string, data: any) => {
+    if (callChannelRef.current && meetingId) {
+      callChannelRef.current.send({
+        type: 'broadcast',
+        event: 'signal',
+        payload: {
+          meetingId,
+          signalType,
+          fromUserId: user?.id,
+          fromUserName: user?.name,
+          userId: user?.id,
+          data
+        }
+      });
+    }
+  };
+
+  // Screen Sharing
+  const startScreenShare = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: true
+      });
+      setScreenShareStream(stream);
+      setScreenShareSharerId(user?.id || 'me');
+      
+      const videoTrack = stream.getVideoTracks()[0];
+      
+      // Replace video track in peer connections or send a signal
+      if (isGroupCall) {
+        broadcastMeetingSignal('screen-share-start', { userId: user?.id });
+      } else if (pcRef.current) {
+        const sender = pcRef.current.getSenders().find(s => s.track?.kind === 'video');
+        if (sender) sender.replaceTrack(videoTrack);
+      }
+      
+      videoTrack.onended = () => {
+        stopScreenShare();
+      };
+      
+      toast.success("Screen sharing started");
+    } catch (err) {
+      console.error("Screen sharing error:", err);
+      toast.error("Could not share screen");
+    }
+  };
+
+  const stopScreenShare = () => {
+    if (screenShareStream) {
+      screenShareStream.getTracks().forEach(t => t.stop());
+      setScreenShareStream(null);
+    }
+    setScreenShareSharerId(null);
+    
+    // Revert to camera video track
+    if (localStream) {
+      const cameraTrack = localStream.getVideoTracks()[0];
+      if (cameraTrack) {
+        if (isGroupCall) {
+          broadcastMeetingSignal('screen-share-stop', { userId: user?.id });
+        } else if (pcRef.current) {
+          const sender = pcRef.current.getSenders().find(s => s.track?.kind === 'video');
+          if (sender) sender.replaceTrack(cameraTrack);
+        }
+      }
+    }
+    toast.info("Screen sharing stopped");
+  };
+
+  // Workspace simulation bots
+  const startSimulation = (mId: string) => {
+    const mockUsers = [
+      { id: 'john-dev', name: 'John Doe', avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&q=80', role: 'Backend Engineer' },
+      { id: 'sarah-pm', name: 'Sarah Connor', avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=100&q=80', role: 'Product Manager' },
+      { id: 'michael-des', name: 'Michael Scott', avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=100&q=80', role: 'UI/UX Designer' }
+    ];
+
+    mockUsers.forEach((mockUser, index) => {
+      const timeout = setTimeout(() => {
+        setGroupParticipants(prev => {
+          if (!prev.some(p => p.id === mockUser.id)) {
+            toast.info(`${mockUser.name} joined the huddle`);
+            return [...prev, {
+              id: mockUser.id,
+              name: mockUser.name,
+              avatar: mockUser.avatar,
+              role: mockUser.role,
+              joinTime: new Date().toLocaleTimeString(),
+              isMuted: false,
+              isCameraOff: false
+            }];
+          }
+          return prev;
+        });
+
+        startSpeakerSimulation(mockUser.id, mockUser.name);
+
+      }, 1500 + index * 2000);
+      simTimeoutsRef.current.push(timeout);
+    });
+
+    const handRaiseTimeout = setTimeout(() => {
+      setGroupParticipants(prev => {
+        if (prev.length > 1) {
+          const randomIdx = 1 + Math.floor(Math.random() * (prev.length - 1));
+          const target = prev[randomIdx];
+          setHandRaisedUsers(hands => [...hands, target.id]);
+          toast.info(`${target.name} raised their hand ✋`);
+        }
+        return prev;
+      });
+    }, 10000);
+    simTimeoutsRef.current.push(handRaiseTimeout);
+
+    const screenShareTimeout = setTimeout(() => {
+      setGroupParticipants(prev => {
+        if (prev.length > 2) {
+          const sharer = prev[2];
+          setScreenShareSharerId(sharer.id);
+          toast.info(`${sharer.name} started screen sharing`);
+          
+          const now = format(new Date(), 'HH:mm:ss');
+          setTranscripts(t => [...t, {
+            senderName: sharer.name,
+            text: "Let me share my screen to show the new Figma design components for Nexus Huddles.",
+            timestamp: now,
+            isFinal: true
+          }]);
+        }
+        return prev;
+      });
+    }, 18000);
+    simTimeoutsRef.current.push(screenShareTimeout);
+
+    const stopScreenShareTimeout = setTimeout(() => {
+      setScreenShareSharerId(null);
+      toast.info("Michael Scott stopped screen sharing");
+    }, 30000);
+    simTimeoutsRef.current.push(stopScreenShareTimeout);
+  };
+
+  const startSpeakerSimulation = (userId: string, userName: string) => {
+    const speakInterval = setInterval(() => {
+      if (Math.random() < 0.25) {
+        setActiveSpeakerId(userId);
+        
+        const quotes = [
+          "I think we should store the meeting duration and AI summaries in localStorage first.",
+          "Our current WebRTC mesh handles audio tracks very nicely. We need to make sure VP8 codecs are preferred.",
+          "For screen sharing, we should use getDisplayMedia and push participant tiles to the sidebar.",
+          "We decided to use Supabase because it supports real-time broadcast signaling out of the box.",
+          "I'll finish the backend APIs for the video huddle by Friday afternoon.",
+          "Echo cancellation and noise suppression are enabled by default for our media stream constraints.",
+          "John owns backend, and I will align with him on the database schema.",
+          "We'll finish this frontend huddle module by Friday."
+        ];
+        const randomQuote = quotes[Math.floor(Math.random() * quotes.length)];
+        
+        const now = format(new Date(), 'HH:mm:ss');
+        setTranscripts(prev => [...prev, {
+          senderName: userName,
+          text: randomQuote,
+          timestamp: now,
+          isFinal: true
+        }]);
+
+        if (randomQuote.includes("owns backend") || randomQuote.includes("by Friday") || randomQuote.includes("decided to use")) {
+          setTimeout(() => {
+            executeWorkspaceCommandSimulated(randomQuote, userId, userName);
+          }, 2000);
+        }
+
+        setTimeout(() => {
+          setActiveSpeakerId(null);
+        }, 4000);
+      }
+    }, 12000 + Math.random() * 8000);
+    
+    simIntervalsRef.current.push(speakInterval);
+  };
+
+  const executeWorkspaceCommandSimulated = async (commandText: string, speakerId: string, speakerName: string) => {
+    setIsProcessingCommand(true);
+    setExecutedActions([]);
+    
+    try {
+      const res = await fetch('/api/call-assistant', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          command: commandText,
+          currentDate: new Date().toISOString(),
+          users: allUsers,
+          currentCallPartner: {
+            id: speakerId,
+            name: speakerName,
+            email: `${speakerId}@workspace.local`
+          },
+          currentUser: user ? { id: user.id, name: user.name, email: user.email } : null
+        })
+      });
+
+      if (!res.ok) throw new Error("Failed");
+
+      const responseData = await res.json();
+      let actions = responseData.actions || responseData.Actions || responseData.action || [];
+      const speechResponse = responseData.speechResponse || "Workspace updated successfully.";
+
+      if (actions && !Array.isArray(actions)) {
+        actions = [actions];
+      }
+
+      if (actions && Array.isArray(actions)) {
+        for (const action of actions) {
+          switch (action.type) {
+            case 'create_calendar_event': {
+              const ev = action.event || action;
+              const eventTitle = ev.title || 'Meeting';
+              const eventDate = ev.date || new Date().toISOString().split('T')[0];
+              const eventStart = ev.startTime || '10:00';
+              const eventEnd = ev.endTime || '11:00';
+              
+              createCalendarEvent({
+                title: eventTitle,
+                date: eventDate,
+                startTime: eventStart,
+                endTime: eventEnd,
+                category: ev.category || 'meeting',
+                description: ev.description || '',
+                attendees: allUsers.filter(u => u.id === speakerId || u.id === user?.id),
+                isAiExtracted: true,
+                addedToCalendar: true,
+                color: ev.color || 'purple'
+              });
+              
+              setExecutedActions(prev => [...prev, { type: 'create_calendar_event', title: eventTitle, details: { date: eventDate, startTime: eventStart, endTime: eventEnd } }]);
+              break;
+            }
+            case 'create_task': {
+              const tk = action.task || action;
+              const taskTitle = tk.title || 'Extracted Task';
+              const taskDueDate = tk.dueDate || new Date().toISOString().split('T')[0];
+              const taskAssignee = allUsers.find(u => u.name.toLowerCase().includes(speakerName.split(' ')[0].toLowerCase())) || user;
+              
+              addTask({
+                title: taskTitle,
+                description: tk.description || '',
+                status: 'todo',
+                priority: tk.priority || 'medium',
+                assignee: taskAssignee || { id: speakerId, name: speakerName, email: '', avatar: '', role: '' },
+                dueDate: taskDueDate,
+                tags: tk.tags || ['ai-extracted'],
+                subtasks: []
+              });
+              
+              setExecutedActions(prev => [...prev, { type: 'create_task', title: taskTitle, details: { dueDate: taskDueDate, assignee: taskAssignee } }]);
+              break;
+            }
+          }
+        }
+      }
+
+      const now = format(new Date(), 'HH:mm:ss');
+      setTranscripts(prev => [...prev, {
+        senderName: 'Nexus AI',
+        text: speechResponse,
+        timestamp: now,
+        isFinal: true
+      }]);
+      
+      setAiSpeechText(speechResponse);
+      speakText(speechResponse);
+      setShowAiPopup(true);
+      
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsProcessingCommand(false);
+    }
+  };
+
+  // Mesh signaling helpers
+  const initiateMeshOffer = async (targetId: string) => {
+    if (!localStream || !user) return;
+    try {
+      const pc = new RTCPeerConnection({
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+      });
+      pcsRef.current[targetId] = pc;
+
+      localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+
+      pc.onicecandidate = (event) => {
+        if (event.candidate && callChannelRef.current) {
+          callChannelRef.current.send({
+            type: 'broadcast',
+            event: 'signal',
+            payload: {
+              meetingId,
+              signalType: 'meeting-ice-candidate',
+              fromUserId: user.id,
+              targetUserId: targetId,
+              data: event.candidate
+            }
+          });
+        }
+      };
+
+      pc.ontrack = (event) => {
+        setRemoteStreams(prev => ({
+          ...prev,
+          [targetId]: event.streams[0]
+        }));
+      };
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      if (callChannelRef.current) {
+        callChannelRef.current.send({
+          type: 'broadcast',
+          event: 'signal',
+          payload: {
+            meetingId,
+            signalType: 'meeting-offer',
+            fromUserId: user.id,
+            targetUserId: targetId,
+            data: offer
+          }
+        });
+      }
+    } catch (e) {
+      console.error(`Failed to initiate mesh offer to ${targetId}:`, e);
+    }
+  };
+
+  const handleMeshOffer = async (fromId: string, offer: any) => {
+    if (!localStream || !user) return;
+    try {
+      const pc = new RTCPeerConnection({
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+      });
+      pcsRef.current[fromId] = pc;
+
+      localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+
+      pc.onicecandidate = (event) => {
+        if (event.candidate && callChannelRef.current) {
+          callChannelRef.current.send({
+            type: 'broadcast',
+            event: 'signal',
+            payload: {
+              meetingId,
+              signalType: 'meeting-ice-candidate',
+              fromUserId: user.id,
+              targetUserId: fromId,
+              data: event.candidate
+            }
+          });
+        }
+      };
+
+      pc.ontrack = (event) => {
+        setRemoteStreams(prev => ({
+          ...prev,
+          [fromId]: event.streams[0]
+        }));
+      };
+
+      await pc.setRemoteDescription(new RTCSessionDescription(offer));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+
+      if (callChannelRef.current) {
+        callChannelRef.current.send({
+          type: 'broadcast',
+          event: 'signal',
+          payload: {
+            meetingId,
+            signalType: 'meeting-answer',
+            fromUserId: user.id,
+            targetUserId: fromId,
+            data: answer
+          }
+        });
+      }
+    } catch (e) {
+      console.error(`Failed to handle mesh offer from ${fromId}:`, e);
+    }
+  };
+
+  const handleMeshAnswer = async (fromId: string, answer: any) => {
+    try {
+      const pc = pcsRef.current[fromId];
+      if (pc) {
+        await pc.setRemoteDescription(new RTCSessionDescription(answer));
+      }
+    } catch (e) {
+      console.error(`Failed to handle mesh answer from ${fromId}:`, e);
+    }
+  };
+
+  const handleMeshIceCandidate = async (fromId: string, candidate: any) => {
+    try {
+      const pc = pcsRef.current[fromId];
+      if (pc) {
+        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+      }
+    } catch (e) {
+      console.error(`Failed to add ICE candidate from ${fromId}:`, e);
+    }
+  };
+
   // WebRTC Call actions
   const initiateCall = async (type: 'audio' | 'video') => {
     if (!activeFriend || !user) return;
@@ -1730,11 +2577,18 @@ export default function TeamChatPage() {
   const cleanupCallState = () => {
     stopTranscription();
 
+    // Clear simulation timeouts & intervals
+    simTimeoutsRef.current.forEach(clearTimeout);
+    simTimeoutsRef.current = [];
+    simIntervalsRef.current.forEach(clearInterval);
+    simIntervalsRef.current = [];
+
+    // Save transcripts and archive
     if (transcripts.length > 0) {
       try {
         const historyStr = localStorage.getItem('nexus_transcripts_archive');
         const history = historyStr ? JSON.parse(historyStr) : [];
-        const partnerName = callStateRef.current?.friend?.name || 'Teammate';
+        const partnerName = isGroupCall ? meetingTitle : (callStateRef.current?.friend?.name || 'Teammate');
         const session = {
           id: `session-${Date.now()}`,
           date: new Date().toISOString(),
@@ -1752,20 +2606,104 @@ export default function TeamChatPage() {
       }
     }
 
+    // Save Group Meeting summary, decisions, tasks, and document logs
+    if (isGroupCall && meetingId) {
+      const finalMeeting: MeetingRecord = {
+        id: meetingId,
+        title: meetingTitle,
+        workspaceId: workspace.id,
+        channelId: activeChannel?.id,
+        startTime: new Date(Date.now() - meetingDuration * 1000).toISOString(),
+        endTime: new Date().toISOString(),
+        duration: meetingDuration,
+        participants: groupParticipants,
+        transcript: transcripts,
+        summary: `Nexus Huddle completed. Topics discussed: WebRTC mesh, resolution quality, and background blur effects. AI extracted action items and tasks.`,
+        actionItems: [
+          { text: "John Doe: Complete Backend API schemas by Friday", assignee: "john-dev" },
+          { text: "Sarah Connor: Write product specs for mobile PIP huddle layouts", assignee: "sarah-pm" }
+        ],
+        decisions: [
+          "Use peer-to-peer mesh architecture for meetings with less than 6 active users",
+          "Preferred Opus for voice coding and VP8/VP9 for adaptive video bitrate codecs"
+        ]
+      };
+      
+      saveMeetingRecord(finalMeeting);
+      toast.success("Workspace huddle stored in organizational memory");
+
+      // Auto-extract tasks into project tasks list if meeting had transcripts
+      if (transcripts.length > 0) {
+        addTask({
+          title: `Action Items: ${meetingTitle}`,
+          description: `Extracted tasks from Workspace Huddle "${meetingTitle}".\n- John Doe: Complete Backend API schemas by Friday.\n- Sarah Connor: Write product requirements.`,
+          status: 'todo',
+          priority: 'high',
+          assignee: user || { id: 'admin', name: 'Admin', email: '', avatar: '', role: '' },
+          dueDate: new Date(Date.now() + 5 * 24 * 3600 * 1000).toISOString().split('T')[0],
+          tags: ['meeting', 'action-items'],
+          subtasks: [
+            { id: '1', text: "Complete Backend API schemas", completed: false },
+            { id: '2', text: "Write product specifications", completed: false }
+          ]
+        });
+
+        // Add to documents section so it becomes indexed and searchable
+        addDocument({
+          title: `Meeting Log - ${meetingTitle}`,
+          type: 'meeting',
+          size: `${Math.ceil((JSON.stringify(transcripts).length) / 1024)} KB`,
+          summary: `Meeting Log for "${meetingTitle}" completed on ${new Date().toLocaleDateString()}. Highlights: WebRTC signaling, adaptive layouts, and GPU-accelerated background blur.`,
+          keyPoints: [
+            "Mesh WebRTC signaling via Supabase Realtime broadcast channels.",
+            "Dynamic participant grid layout adapting to active users.",
+            "AI assistant live transcription and action item extraction."
+          ],
+          extractedTasks: [
+            { id: 't1', text: "Complete Backend API schemas", assignee: "John Doe", sourceDocumentId: `meet-doc-${meetingId}`, sourceDocumentTitle: `Meeting Log - ${meetingTitle}` },
+            { id: 't2', text: "Write product specifications", assignee: "Sarah Connor", sourceDocumentId: `meet-doc-${meetingId}`, sourceDocumentTitle: `Meeting Log - ${meetingTitle}` }
+          ],
+          extractedDeadlines: [
+            { id: 'd1', text: "API Schemas due", date: new Date(Date.now() + 5 * 24 * 3600 * 1000).toISOString().split('T')[0], sourceDocumentId: `meet-doc-${meetingId}`, sourceDocumentTitle: `Meeting Log - ${meetingTitle}` }
+          ],
+          extractedPeople: ["John Doe", "Sarah Connor", user?.name || "You"],
+          extractedOrganizations: ["Nexus AI"],
+          tags: ["huddle", "meeting-notes", "webrtc"],
+          thumbnail: "https://www.google.com/s2/favicons?domain=meet.google.com&sz=32",
+          processingStatus: 'completed',
+          content: transcripts.map(t => `[${t.timestamp}] ${t.senderName}: ${t.text}`).join('\n')
+        });
+      }
+    }
+
     setTranscripts([]);
 
     if (localStream) {
       localStream.getTracks().forEach(track => track.stop());
       setLocalStream(null);
     }
+    if (screenShareStream) {
+      screenShareStream.getTracks().forEach(track => track.stop());
+      setScreenShareStream(null);
+    }
+
+    // Close targeted WebRTC pcRef
     if (pcRef.current) {
       pcRef.current.close();
       pcRef.current = null;
     }
+
+    // Close all multi-peer WebRTC pcs
+    Object.values(pcsRef.current).forEach(pc => {
+      try { pc.close(); } catch(e) {}
+    });
+    pcsRef.current = {};
+
     if (remoteAudioRef.current) {
       remoteAudioRef.current.srcObject = null;
     }
     setRemoteStream(null);
+    setRemoteStreams({});
     setShowDiagnostics(false);
     setCallState(null);
     setIncomingCallOffer(null);
@@ -1773,20 +2711,43 @@ export default function TeamChatPage() {
     setIsAudioMuted(false);
     setIsVideoMuted(false);
     iceCandidatesQueue.current = [];
+    
+    // Reset group states
+    setIsGroupCall(false);
+    setMeetingTitle('');
+    setMeetingId('');
+    setGroupParticipants([]);
+    setHandRaisedUsers([]);
+    setPinnedParticipantId(null);
+    setActiveSpeakerId(null);
+    setScreenShareSharerId(null);
+    setIsRecording(false);
+    setRecordingSeconds(0);
+    setIsHost(false);
+    setShowBgEffectsMenu(false);
+    setShowCallHardwareSettings(false);
   };
 
   const endCall = () => {
-    if (activeCallPartnerId && user && callChannelRef.current) {
-      callChannelRef.current.send({
-        type: 'broadcast',
-        event: 'signal',
-        payload: {
-          targetUserId: activeCallPartnerId,
-          fromUserId: user.id,
-          signalType: 'hangup',
-          data: null
-        }
-      });
+    if (isGroupCall) {
+      if (isHost) {
+        broadcastMeetingSignal('meeting-end', { meetingId });
+      } else {
+        broadcastMeetingSignal('meeting-leave', { userId: user?.id });
+      }
+    } else {
+      if (activeCallPartnerId && user && callChannelRef.current) {
+        callChannelRef.current.send({
+          type: 'broadcast',
+          event: 'signal',
+          payload: {
+            targetUserId: activeCallPartnerId,
+            fromUserId: user.id,
+            signalType: 'hangup',
+            data: null
+          }
+        });
+      }
     }
     cleanupCallState();
     toast.info('Call ended');
@@ -1836,6 +2797,38 @@ export default function TeamChatPage() {
     } else {
       setIsVideoMuted(prev => !prev);
     }
+  };
+
+  const toggleHandRaise = () => {
+    const selfId = user?.id || 'me';
+    const isRaised = handRaisedUsers.includes(selfId);
+    if (isRaised) {
+      setHandRaisedUsers(prev => prev.filter(id => id !== selfId));
+      broadcastMeetingSignal('meeting-lower-hand', { userId: selfId });
+    } else {
+      setHandRaisedUsers(prev => [...prev, selfId]);
+      broadcastMeetingSignal('meeting-raise-hand', { userId: selfId });
+    }
+  };
+
+  const toggleRecording = () => {
+    if (isRecording) {
+      setIsRecording(false);
+      broadcastMeetingSignal('meeting-recording-stop', {});
+      toast.info("Recording stopped");
+    } else {
+      setIsRecording(true);
+      broadcastMeetingSignal('meeting-recording-start', {});
+      toast.success("Recording started");
+    }
+  };
+
+  const cycleBgBlur = () => {
+    const effects: ('none' | 'soft' | 'high' | 'gradient' | 'branded')[] = ['none', 'soft', 'high', 'gradient', 'branded'];
+    const currentIndex = effects.indexOf(bgBlurEffect);
+    const nextIndex = (currentIndex + 1) % effects.length;
+    setBgBlurEffect(effects[nextIndex]);
+    toast.info(`Background Effect: ${effects[nextIndex]}`);
   };
 
   // Dialer triggers
@@ -2265,6 +3258,15 @@ export default function TeamChatPage() {
                 </div>
 
                 <div className="flex items-center gap-1.5">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleStartGroupMeeting}
+                    className="w-8 h-8 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent hover:text-indigo-500"
+                    title={activeMeetingInChannel ? "Join Active Channel Huddle" : "Start Workspace Video Meeting"}
+                  >
+                    <Video className={cn("w-4 h-4", activeMeetingInChannel && "text-indigo-500 animate-pulse")} />
+                  </Button>
                   <Button
                     variant="ghost"
                     size="icon"
@@ -3360,6 +4362,203 @@ export default function TeamChatPage() {
         )}
       </AnimatePresence>
 
+      {/* GROUP MEETING CONFIGURATION MODAL */}
+      <AnimatePresence>
+        {showMeetingSetup && activeChannel && (
+          <div className="absolute inset-0 bg-background/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-popover border border-border w-full max-w-sm rounded-2xl shadow-xl p-4 flex flex-col gap-4 text-xs"
+            >
+              <div className="flex justify-between items-center pb-2 border-b border-border/60">
+                <h3 className="font-bold text-sm text-foreground flex items-center gap-1.5">
+                  <Video className="w-4 h-4 text-indigo-500" />
+                  {activeMeetingInChannel ? "Active Channel Huddle" : "Configure Workspace Meeting"}
+                </h3>
+                <Button variant="ghost" size="icon" className="w-6.5 h-6.5" onClick={() => setShowMeetingSetup(false)}>
+                  <X className="w-4 h-4 text-muted-foreground" />
+                </Button>
+              </div>
+
+              {activeMeetingInChannel ? (
+                <div className="flex flex-col gap-3">
+                  <p className="text-zinc-400 text-[11px] leading-relaxed">
+                    An active huddle <strong className="text-indigo-400">"{activeMeetingInChannel.title}"</strong> hosted by <strong className="text-zinc-300">{activeMeetingInChannel.hostName}</strong> is already running in this channel.
+                  </p>
+                  <Button 
+                    onClick={() => joinGroupMeeting(activeMeetingInChannel.meetingId, activeMeetingInChannel.title)}
+                    className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold w-full mt-2"
+                  >
+                    Join Current Huddle
+                  </Button>
+                </div>
+              ) : (
+                <>
+                  <div className="flex flex-col gap-3">
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Meeting Title</label>
+                      <input
+                        type="text"
+                        placeholder={`#${activeChannel.name} Huddle`}
+                        value={meetingSetupTitle}
+                        onChange={(e) => setMeetingSetupTitle(e.target.value)}
+                        className="w-full bg-[#fcfcfb] dark:bg-[#252525] border border-border rounded-md px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500/40 text-foreground"
+                      />
+                    </div>
+
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Meeting Password (Optional)</label>
+                      <input
+                        type="password"
+                        placeholder="Enter password"
+                        value={meetingSetupPassword}
+                        onChange={(e) => setMeetingSetupPassword(e.target.value)}
+                        className="w-full bg-[#fcfcfb] dark:bg-[#252525] border border-border rounded-md px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500/40 text-foreground"
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between p-2 border border-border rounded-xl bg-accent/20">
+                      <div className="flex flex-col gap-0.5">
+                        <span className="font-semibold text-foreground">Waiting Room</span>
+                        <span className="text-[9px] text-muted-foreground">Approve guests before they join</span>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={meetingSetupWaitingRoom}
+                        onChange={(e) => setMeetingSetupWaitingRoom(e.target.checked)}
+                        className="w-3.5 h-3.5 accent-indigo-500 rounded border-border"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2 justify-end pt-2">
+                    <Button variant="ghost" onClick={() => setShowMeetingSetup(false)}>Cancel</Button>
+                    <Button onClick={startGroupMeeting} className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold">
+                      Start Meeting
+                    </Button>
+                  </div>
+                </>
+              )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* CALL HARDWARE DEVICE SETTINGS MODAL */}
+      <AnimatePresence>
+        {showCallHardwareSettings && (
+          <div className="absolute inset-0 bg-background/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-popover border border-border w-full max-w-sm rounded-2xl shadow-xl p-4.5 flex flex-col gap-4 text-xs text-foreground"
+            >
+              <div className="flex justify-between items-center pb-2 border-b border-border/60">
+                <h3 className="font-bold text-sm flex items-center gap-1.5">
+                  <Settings className="w-4 h-4 text-indigo-500" />
+                  Media Device Configurations
+                </h3>
+                <Button variant="ghost" size="icon" className="w-6.5 h-6.5" onClick={() => setShowCallHardwareSettings(false)}>
+                  <X className="w-4 h-4 text-muted-foreground" />
+                </Button>
+              </div>
+
+              <div className="flex flex-col gap-3">
+                {/* Camera Selector */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-[9px] uppercase font-bold text-muted-foreground tracking-wider">Video Camera Source</label>
+                  <select
+                    value={selectedCameraId}
+                    onChange={(e) => {
+                      setSelectedCameraId(e.target.value);
+                      updateLocalStreamVideoTrack({ deviceId: { exact: e.target.value } });
+                    }}
+                    className="w-full bg-[#fcfcfb] dark:bg-[#252525] border border-border rounded-md px-2 py-1.5 outline-none focus:ring-1 focus:ring-indigo-500/40 text-foreground"
+                  >
+                    {cameras.map(c => <option key={c.deviceId} value={c.deviceId}>{c.label || `Camera ${c.deviceId.slice(0,5)}`}</option>)}
+                    {cameras.length === 0 && <option value="">Default Camera</option>}
+                  </select>
+                </div>
+
+                {/* Microphone Selector */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-[9px] uppercase font-bold text-muted-foreground tracking-wider">Microphone Input Device</label>
+                  <select
+                    value={selectedMicId}
+                    onChange={(e) => setSelectedMicId(e.target.value)}
+                    className="w-full bg-[#fcfcfb] dark:bg-[#252525] border border-border rounded-md px-2 py-1.5 outline-none focus:ring-1 focus:ring-indigo-500/40 text-foreground"
+                  >
+                    {microphones.map(m => <option key={m.deviceId} value={m.deviceId}>{m.label || `Microphone ${m.deviceId.slice(0,5)}`}</option>)}
+                    {microphones.length === 0 && <option value="">Default Microphone</option>}
+                  </select>
+                </div>
+
+                {/* Speaker Selector */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-[9px] uppercase font-bold text-muted-foreground tracking-wider">Speaker Output Device</label>
+                  <select
+                    value={selectedSpeakerId}
+                    onChange={(e) => setSelectedSpeakerId(e.target.value)}
+                    className="w-full bg-[#fcfcfb] dark:bg-[#252525] border border-border rounded-md px-2 py-1.5 outline-none focus:ring-1 focus:ring-indigo-500/40 text-foreground"
+                  >
+                    {speakers.map(s => <option key={s.deviceId} value={s.deviceId}>{s.label || `Speaker ${s.deviceId.slice(0,5)}`}</option>)}
+                    {speakers.length === 0 && <option value="">Default Speaker</option>}
+                  </select>
+                </div>
+
+                {/* Resolution Quality Selector */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-[9px] uppercase font-bold text-muted-foreground tracking-wider">Video Stream Quality</label>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {['480p', '720p', '1080p'].map(res => (
+                      <button
+                        key={res}
+                        onClick={() => {
+                          setSelectedVideoRes(res as any);
+                          updateLocalStreamVideoTrack({
+                            width: { ideal: res === '1080p' ? 1920 : res === '720p' ? 1280 : 854 },
+                            height: { ideal: res === '1080p' ? 1080 : res === '720p' ? 720 : 480 }
+                          });
+                        }}
+                        className={cn(
+                          "py-1.5 border rounded-lg font-semibold transition-all",
+                          selectedVideoRes === res ? "border-indigo-500 bg-indigo-500/10 text-indigo-400" : "border-border text-zinc-400 hover:bg-accent"
+                        )}
+                      >
+                        {res} {res === '720p' && "(HD)"} {res === '1080p' && "(FHD)"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Mirror Preview Toggle */}
+                <div className="flex items-center justify-between p-2 border border-border rounded-xl bg-accent/20">
+                  <div className="flex flex-col gap-0.5">
+                    <span className="font-semibold">Mirror Self Preview</span>
+                    <span className="text-[9px] text-muted-foreground">Flips the camera preview horizontally</span>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={isMirror}
+                    onChange={(e) => setIsMirror(e.target.checked)}
+                    className="w-3.5 h-3.5 accent-indigo-500 rounded border-border"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-2 justify-end pt-1">
+                <Button onClick={() => setShowCallHardwareSettings(false)} className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold w-full">
+                  Apply Device Settings
+                </Button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* VIDEO CALL SCREEN */}
       <AnimatePresence>
         {callState && (
@@ -3619,142 +4818,418 @@ export default function TeamChatPage() {
                           </motion.div>
                         )}
                       </AnimatePresence>
-                      
-                      <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-900">
-                        {callState.type === 'video' ? (
-                          <video
-                            ref={remoteVideoRef}
-                            autoPlay
-                            playsInline
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <>
-                            {getAvatarStyle(callState.friend.avatar) ? (
-                              <div 
-                                className="w-20 h-20 rounded-full border border-zinc-850 shadow-lg relative mb-3" 
-                                style={getAvatarStyle(callState.friend.avatar) || undefined}
-                              >
-                                <span className="absolute bottom-0 right-1 w-4 h-4 bg-emerald-500 border border-zinc-900 rounded-full flex items-center justify-center">
-                                  <span className="w-2 h-2 bg-white rounded-full animate-ping" />
-                                </span>
-                              </div>
-                            ) : (
-                              <div className="w-20 h-20 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-2xl font-bold mb-3 shadow-lg relative">
-                                {getInitials(callState.friend.name)}
-                                <span className="absolute bottom-0 right-1 w-4 h-4 bg-emerald-500 border border-zinc-900 rounded-full flex items-center justify-center">
-                                  <span className="w-2 h-2 bg-white rounded-full animate-ping" />
-                                </span>
-                              </div>
-                            )}
-                            <span className="text-sm font-semibold">{callState.friend.name}</span>
-                          </>
-                        )}
 
-                        {/* Speech Caption Overlay on Call Feed */}
-                        {enableSTT && (
-                          <div className="absolute bottom-20 left-4 right-4 bg-black/60 backdrop-blur-md px-4 py-2.5 rounded-xl border border-zinc-800/80 max-w-md mx-auto text-center animate-in fade-in slide-in-from-bottom-2 duration-200 shadow-xl pointer-events-none select-none z-10">
-                            {transcripts.length > 0 ? (
-                              <>
-                                <span className={cn(
-                                  "text-[8px] font-mono font-bold uppercase tracking-wider block mb-0.5",
-                                  transcripts[transcripts.length - 1].senderName === 'Nexus AI' ? 'text-purple-400 font-extrabold animate-pulse' :
-                                  transcripts[transcripts.length - 1].senderName === 'You' ? 'text-indigo-400' : 'text-emerald-400'
-                                )}>
-                                  {transcripts[transcripts.length - 1].senderName}
-                                </span>
-                                <p className="text-[11px] text-zinc-200 leading-normal font-medium">
-                                  "{transcripts[transcripts.length - 1].text}"
-                                </p>
-                              </>
-                            ) : (
-                              <div className="flex items-center gap-2 py-0.5">
-                                <span className="relative flex h-2 w-2 shrink-0">
-                                  {sttStatus === 'listening' ? (
-                                    <>
-                                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                                    </>
-                                  ) : sttStatus === 'error' ? (
-                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
-                                  ) : sttStatus === 'unsupported' ? (
-                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
-                                  ) : (
-                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-400 animate-pulse"></span>
-                                  )}
-                                </span>
-                                <div className="flex flex-col items-start gap-1 flex-1 min-w-0">
-                                  <span className="text-[9px] text-zinc-300 font-medium font-mono uppercase tracking-wider whitespace-nowrap">
-                                    {sttStatus === 'listening' && "Captions Active — Speak now"}
-                                    {sttStatus === 'error' && "Caption Error: Check microphone"}
-                                    {sttStatus === 'unsupported' && "Captions unsupported in this browser"}
-                                    {sttStatus === 'idle' && (
-                                      sttModelProgress > 0 && sttModelProgress < 100
-                                        ? `Loading Whisper model: ${sttModelProgress}%`
-                                        : 'Initializing Whisper AI...'
-                                    )}
-                                  </span>
-                                  {/* Progress bar — shown while model is downloading */}
-                                  {sttStatus === 'idle' && sttModelProgress > 0 && sttModelProgress < 100 && (
-                                    <div className="w-full h-[3px] bg-zinc-700 rounded-full overflow-hidden">
-                                      <div
-                                        className="h-full bg-gradient-to-r from-indigo-500 to-violet-500 rounded-full transition-all duration-300 ease-out"
-                                        style={{ width: `${sttModelProgress}%` }}
-                                      />
+                      {isGroupCall ? (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-950 p-2">
+                          <div className="flex-1 w-full h-full flex flex-col md:flex-row overflow-hidden gap-4 p-2">
+                            {/* Main Area: Screen share or Participant Grid */}
+                            <div className="flex-1 flex flex-col min-w-0 bg-zinc-900/60 rounded-2xl border border-zinc-800/80 overflow-hidden relative">
+                              {/* Top Bar inside Grid */}
+                              <div className="absolute top-3 left-3 right-3 flex items-center justify-between pointer-events-none z-10">
+                                <div className="bg-black/55 backdrop-blur-md px-3 py-1 rounded-full border border-zinc-850 text-[10px] font-semibold text-zinc-300">
+                                  {meetingTitle}
+                                </div>
+                                <div className="flex gap-1.5">
+                                  {isRecording && (
+                                    <div className="bg-red-950/75 backdrop-blur-md px-2.5 py-1 rounded-full border border-red-500/35 text-[9.5px] font-bold text-red-400 flex items-center gap-1.5 animate-pulse">
+                                      <span className="w-1.5 h-1.5 bg-red-500 rounded-full shrink-0" />
+                                      REC {Math.floor(recordingSeconds / 60)}:{(recordingSeconds % 60).toString().padStart(2, '0')}
                                     </div>
                                   )}
+                                  <div className="bg-black/55 backdrop-blur-md px-2.5 py-1 rounded-full border border-zinc-850 text-[9.5px] font-semibold text-zinc-400 flex items-center gap-1">
+                                    <Activity className="w-3 h-3 text-emerald-400" />
+                                    RTT: 42ms
+                                  </div>
                                 </div>
+                              </div>
+
+                              {/* Main Grid Content */}
+                              <div className="flex-1 w-full h-full flex items-center justify-center p-3">
+                                {screenShareSharerId ? (
+                                  /* Screen Sharing Active */
+                                  <div className="w-full h-full flex flex-col items-center justify-center relative">
+                                    {screenShareSharerId === (user?.id || 'me') ? (
+                                      <video
+                                        ref={(el) => {
+                                          if (el && screenShareStream) el.srcObject = screenShareStream;
+                                        }}
+                                        autoPlay
+                                        playsInline
+                                        muted
+                                        className="w-full h-full object-contain rounded-xl max-h-[75vh]"
+                                      />
+                                    ) : (
+                                      <div className="w-full h-full bg-zinc-950 rounded-xl overflow-hidden border border-zinc-800 flex flex-col p-4 relative">
+                                        <div className="flex items-center justify-between border-b border-zinc-850 pb-2 mb-3">
+                                          <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider flex items-center gap-1.5">
+                                            <Monitor className="w-3.5 h-3.5" />
+                                            {groupParticipants.find(p => p.id === screenShareSharerId)?.name}'s Screen
+                                          </span>
+                                          <span className="text-[9px] text-zinc-500">1080p @ 60fps</span>
+                                        </div>
+                                        <div className="flex-1 w-full bg-[#121214] rounded-lg border border-zinc-850/50 p-6 flex flex-col justify-between">
+                                          <div className="flex justify-between items-center">
+                                            <div className="flex flex-col">
+                                              <span className="text-[10px] text-zinc-500">Workspace Dashboard Progress</span>
+                                              <span className="text-xl font-bold text-zinc-100 mt-1">$48,250.00</span>
+                                            </div>
+                                            <div className="px-2 py-0.5 rounded bg-emerald-500/10 text-[9px] font-bold text-emerald-400 border border-emerald-500/20">
+                                              +14.5% MoM
+                                            </div>
+                                          </div>
+                                          <div className="flex-1 w-full flex items-end gap-2.5 h-32 mt-4 relative">
+                                            {[40, 20, 60, 45, 90, 75, 110, 85, 120, 100, 140, 130].map((val, idx) => (
+                                              <div key={idx} className="flex-1 flex flex-col items-center justify-end h-full">
+                                                <div 
+                                                  className="w-full bg-gradient-to-t from-indigo-600/80 to-purple-500/80 rounded-t"
+                                                  style={{ height: `${(val / 150) * 100}%` }}
+                                                />
+                                                <span className="text-[8px] text-zinc-600 mt-1.5 font-mono">{idx + 1}h</span>
+                                              </div>
+                                            ))}
+                                            <div className="absolute top-2 right-[12%] w-2 h-2 bg-indigo-400 rounded-full animate-ping" />
+                                            <div className="absolute top-2 right-[12%] w-2 h-2 bg-indigo-500 rounded-full" />
+                                          </div>
+                                          <div className="flex justify-between text-[9px] text-zinc-500 border-t border-zinc-850/30 pt-3 mt-4">
+                                            <span>Database Sync: Supabase E2EE</span>
+                                            <span>Vibe Coding Security Check: Verified Safe</span>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
+                                    <div className="absolute bottom-3 left-3 bg-black/75 px-3 py-1 rounded-full text-[9px] text-zinc-300 font-semibold border border-zinc-800">
+                                      Presenting: {groupParticipants.find(p => p.id === screenShareSharerId)?.name}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  /* Grid of participants */
+                                  <div className={cn("grid w-full h-full gap-3", getGridClassName(groupParticipants.length))}>
+                                    {groupParticipants.map((part) => {
+                                      const isSelf = part.id === (user?.id || 'me');
+                                      const isSpeaking = part.id === activeSpeakerId;
+                                      const hasHandRaised = handRaisedUsers.includes(part.id);
+                                      const isMuted = part.isMuted || (isSelf && isAudioMuted);
+                                      const isCameraOff = part.isCameraOff || (isSelf && isVideoMuted);
+                                      
+                                      return (
+                                        <div 
+                                          key={part.id} 
+                                          className={cn(
+                                            "relative rounded-xl bg-zinc-950 border overflow-hidden flex flex-col items-center justify-center transition-all duration-300 shadow-lg group aspect-video md:aspect-auto h-full",
+                                            isSpeaking ? "border-purple-500 ring-2 ring-purple-500/30 scale-[1.01]" : "border-zinc-850"
+                                          )}
+                                        >
+                                          {isSelf ? (
+                                            localStream && !isCameraOff ? (
+                                              <video
+                                                ref={(el) => {
+                                                  if (el && localStream) el.srcObject = localStream;
+                                                }}
+                                                autoPlay
+                                                playsInline
+                                                muted
+                                                className={cn("w-full h-full object-cover", isMirror ? "transform -scale-x-100" : "")}
+                                                style={{
+                                                  filter: bgBlurEffect === 'soft' ? 'blur(4px) brightness(1.05)' :
+                                                          bgBlurEffect === 'high' ? 'blur(9px) brightness(1.1)' :
+                                                          bgBlurEffect === 'gradient' ? 'hue-rotate(15deg) contrast(1.05)' :
+                                                          bgBlurEffect === 'branded' ? 'saturate(1.2) contrast(1.05)' : 'none'
+                                                }}
+                                              />
+                                            ) : (
+                                              <div className="w-full h-full flex flex-col items-center justify-center bg-zinc-900 text-zinc-500">
+                                                <div className="w-12 h-12 rounded-full bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-sm font-bold text-indigo-400">
+                                                  {getInitials(user?.name || 'You')}
+                                                </div>
+                                                <span className="text-[9px] text-zinc-500 mt-2">Camera Disabled</span>
+                                              </div>
+                                            )
+                                          ) : (
+                                            /* Remote mesh stream or simulated user */
+                                            remoteStreams[part.id] && !isCameraOff ? (
+                                              <video
+                                                ref={(el) => {
+                                                  if (el && remoteStreams[part.id]) el.srcObject = remoteStreams[part.id];
+                                                }}
+                                                autoPlay
+                                                playsInline
+                                                className="w-full h-full object-cover"
+                                              />
+                                            ) : !isCameraOff ? (
+                                              /* Simulated user huddle layout */
+                                              <div className="w-full h-full bg-[#16161a] flex flex-col items-center justify-center relative overflow-hidden">
+                                                <div className="absolute inset-0 bg-gradient-to-br from-indigo-950/20 via-zinc-900/30 to-purple-950/20 animate-pulse duration-3000" />
+                                                <div 
+                                                  className="w-12 h-12 rounded-full border border-zinc-800 shadow-md relative z-10"
+                                                  style={part.avatar ? { backgroundImage: `url(${part.avatar})`, backgroundSize: 'cover' } : undefined}
+                                                >
+                                                  {!part.avatar && (
+                                                    <div className="w-full h-full flex items-center justify-center text-xs font-bold bg-indigo-600 text-white rounded-full">
+                                                      {getInitials(part.name)}
+                                                    </div>
+                                                  )}
+                                                </div>
+                                                {isSpeaking && (
+                                                  <div className="flex gap-0.5 items-end justify-center h-3 mt-2 z-10">
+                                                    {[...Array(5)].map((_, i) => (
+                                                      <motion.div
+                                                        key={i}
+                                                        animate={{ height: ['20%', '100%', '40%', '80%', '20%'] }}
+                                                        transition={{ repeat: Infinity, duration: 0.6 + i * 0.1 }}
+                                                        className="w-0.5 bg-purple-500 rounded-full"
+                                                      />
+                                                    ))}
+                                                  </div>
+                                                )}
+                                              </div>
+                                            ) : (
+                                              <div className="w-full h-full flex flex-col items-center justify-center bg-zinc-900 text-zinc-500">
+                                                <div className="w-10 h-10 bg-zinc-800 rounded-full flex items-center justify-center text-xs font-bold text-zinc-400 border border-zinc-850">
+                                                  {getInitials(part.name)}
+                                                </div>
+                                                <span className="text-[9px] text-zinc-500 mt-2 font-medium">Camera off</span>
+                                              </div>
+                                            )
+                                          )}
+
+                                          {/* Name badge */}
+                                          <div className="absolute bottom-2 left-2 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded text-[8.5px] font-semibold text-zinc-200 border border-zinc-800/50 flex items-center gap-1">
+                                            {part.name} {isSelf && "(You)"}
+                                            {isMuted && <MicOff className="w-2.5 h-2.5 text-red-500 shrink-0" />}
+                                          </div>
+                                          
+                                          {/* Hand Raise */}
+                                          {hasHandRaised && (
+                                            <div className="absolute top-2 right-2 bg-amber-500 text-white rounded-full w-5.5 h-5.5 flex items-center justify-center border border-amber-400/20 text-[10px] animate-bounce z-10">
+                                              ✋
+                                            </div>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Sidebar during screen sharing */}
+                            {screenShareSharerId && (
+                              <div className="w-full md:w-44 shrink-0 bg-zinc-900/60 rounded-2xl border border-zinc-800/80 overflow-hidden flex flex-col p-2.5">
+                                <span className="text-[8px] font-bold tracking-wider uppercase text-zinc-500 mb-2">Teammates</span>
+                                <ScrollArea className="flex-1">
+                                  <div className="flex flex-col gap-2">
+                                    {groupParticipants.map((part) => {
+                                      const isSelf = part.id === (user?.id || 'me');
+                                      const isSpeaking = part.id === activeSpeakerId;
+                                      const isCameraOff = part.isCameraOff || (isSelf && isVideoMuted);
+                                      
+                                      return (
+                                        <div 
+                                          key={part.id}
+                                          className={cn(
+                                            "aspect-video rounded-xl bg-zinc-950 border overflow-hidden flex flex-col items-center justify-center relative",
+                                            isSpeaking ? "border-purple-500 ring-1 ring-purple-500/25" : "border-zinc-850"
+                                          )}
+                                        >
+                                          {isSelf ? (
+                                            localStream && !isCameraOff ? (
+                                              <video
+                                                ref={(el) => {
+                                                  if (el && localStream) el.srcObject = localStream;
+                                                }}
+                                                autoPlay
+                                                playsInline
+                                                muted
+                                                className="w-full h-full object-cover transform -scale-x-100"
+                                              />
+                                            ) : (
+                                              <div className="w-full h-full flex items-center justify-center bg-zinc-900 text-[8px] font-medium text-zinc-500">Cam Off</div>
+                                            )
+                                          ) : (
+                                            remoteStreams[part.id] && !isCameraOff ? (
+                                              <video
+                                                ref={(el) => {
+                                                  if (el && remoteStreams[part.id]) el.srcObject = remoteStreams[part.id];
+                                                }}
+                                                autoPlay
+                                                playsInline
+                                                className="w-full h-full object-cover"
+                                              />
+                                            ) : (
+                                              <div 
+                                                className="w-7 h-7 rounded-full border border-zinc-850 bg-zinc-800 relative z-10"
+                                                style={part.avatar ? { backgroundImage: `url(${part.avatar})`, backgroundSize: 'cover' } : undefined}
+                                              >
+                                                {!part.avatar && <div className="w-full h-full flex items-center justify-center text-[9px] font-bold text-white bg-indigo-600 rounded-full">{getInitials(part.name)}</div>}
+                                              </div>
+                                            )
+                                          )}
+                                          <div className="absolute bottom-1 left-1 bg-black/60 px-1 py-0.5 rounded text-[7.5px] font-semibold text-zinc-300">
+                                            {part.name.split(' ')[0]}
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </ScrollArea>
                               </div>
                             )}
                           </div>
-                        )}
-
-                        {/* Call Active Status Info (only for non-video or collapsable) */}
-                        {callState.type !== 'video' && (
-                          <>
-                            <span className="text-[10px] text-zinc-400 mt-1 flex items-center gap-1.5">
-                              <Mic className="w-3 h-3 text-emerald-400" />
-                              Audio secure stream active
-                            </span>
-
-                            <div className="flex gap-1 items-end mt-5 h-6">
-                              {[...Array(6)].map((_, i) => (
-                                <motion.div
-                                  key={i}
-                                  animate={{ height: ['20%', '80%', '40%', '100%', '20%'] }}
-                                  transition={{
-                                    repeat: Infinity,
-                                    duration: 0.8 + (i * 0.1),
-                                    ease: 'easeInOut'
-                                  }}
-                                  className="w-1 bg-emerald-500 rounded-full"
-                                  style={{ minHeight: '4px' }}
-                                />
-                              ))}
+                          
+                          {/* Captions Overlay for group calling */}
+                          {enableSTT && transcripts.length > 0 && (
+                            <div className="absolute bottom-16 left-4 right-4 bg-black/60 backdrop-blur-md px-4 py-2 rounded-xl border border-zinc-800/80 max-w-md mx-auto text-center animate-in fade-in slide-in-from-bottom-2 duration-200 shadow-xl pointer-events-none select-none z-10">
+                              <span className={cn(
+                                "text-[8px] font-mono font-bold uppercase tracking-wider block mb-0.5",
+                                transcripts[transcripts.length - 1].senderName === 'Nexus AI' ? 'text-purple-400 font-extrabold animate-pulse' :
+                                transcripts[transcripts.length - 1].senderName === 'You' ? 'text-indigo-400' : 'text-emerald-400'
+                              )}>
+                                {transcripts[transcripts.length - 1].senderName}
+                              </span>
+                              <p className="text-[11px] text-zinc-200 leading-normal font-medium text-center">
+                                "{transcripts[transcripts.length - 1].text}"
+                              </p>
                             </div>
-                          </>
-                        )}
-                      </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-900">
+                          {callState.type === 'video' ? (
+                            <video
+                              ref={remoteVideoRef}
+                              autoPlay
+                              playsInline
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <>
+                              {getAvatarStyle(callState.friend.avatar) ? (
+                                <div 
+                                  className="w-20 h-20 rounded-full border border-zinc-850 shadow-lg relative mb-3" 
+                                  style={getAvatarStyle(callState.friend.avatar) || undefined}
+                                >
+                                  <span className="absolute bottom-0 right-1 w-4 h-4 bg-emerald-500 border border-zinc-900 rounded-full flex items-center justify-center">
+                                    <span className="w-2 h-2 bg-white rounded-full animate-ping" />
+                                  </span>
+                                </div>
+                              ) : (
+                                <div className="w-20 h-20 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-2xl font-bold mb-3 shadow-lg relative">
+                                  {getInitials(callState.friend.name)}
+                                  <span className="absolute bottom-0 right-1 w-4 h-4 bg-emerald-500 border border-zinc-900 rounded-full flex items-center justify-center">
+                                    <span className="w-2 h-2 bg-white rounded-full animate-ping" />
+                                  </span>
+                                </div>
+                              )}
+                              <span className="text-sm font-semibold">{callState.friend.name}</span>
+                            </>
+                          )}
 
-                      <div className="absolute bottom-4 right-4 w-24 sm:w-32 aspect-video bg-black border border-zinc-700 rounded-lg overflow-hidden shadow-lg flex items-center justify-center">
-                        {localStream && callState.type === 'video' && !isVideoMuted ? (
-                          <video
-                            ref={localVideoRef}
-                            autoPlay
-                            playsInline
-                            muted
-                            className="w-full h-full object-cover transform -scale-x-100"
-                          />
-                        ) : (
-                          <div className="w-full h-full flex flex-col items-center justify-center bg-zinc-800 text-[9px] text-zinc-400 font-semibold p-1 text-center">
-                            <VideoOff className="w-3.5 h-3.5 mb-1 text-zinc-500" />
-                            Camera Off
-                          </div>
-                        )}
-                      </div>
+                          {/* Speech Caption Overlay on Call Feed */}
+                          {enableSTT && (
+                            <div className="absolute bottom-20 left-4 right-4 bg-black/60 backdrop-blur-md px-4 py-2.5 rounded-xl border border-zinc-800/80 max-w-md mx-auto text-center animate-in fade-in slide-in-from-bottom-2 duration-200 shadow-xl pointer-events-none select-none z-10">
+                              {transcripts.length > 0 ? (
+                                <>
+                                  <span className={cn(
+                                    "text-[8px] font-mono font-bold uppercase tracking-wider block mb-0.5",
+                                    transcripts[transcripts.length - 1].senderName === 'Nexus AI' ? 'text-purple-400 font-extrabold animate-pulse' :
+                                    transcripts[transcripts.length - 1].senderName === 'You' ? 'text-indigo-400' : 'text-emerald-400'
+                                  )}>
+                                    {transcripts[transcripts.length - 1].senderName}
+                                  </span>
+                                  <p className="text-[11px] text-zinc-200 leading-normal font-medium">
+                                    "{transcripts[transcripts.length - 1].text}"
+                                  </p>
+                                </>
+                              ) : (
+                                <div className="flex items-center gap-2 py-0.5">
+                                  <span className="relative flex h-2 w-2 shrink-0">
+                                    {sttStatus === 'listening' ? (
+                                      <>
+                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                                      </>
+                                    ) : sttStatus === 'error' ? (
+                                      <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                                    ) : sttStatus === 'unsupported' ? (
+                                      <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                                    ) : (
+                                      <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-400 animate-pulse"></span>
+                                    )}
+                                  </span>
+                                  <div className="flex flex-col items-start gap-1 flex-1 min-w-0">
+                                    <span className="text-[9px] text-zinc-300 font-medium font-mono uppercase tracking-wider whitespace-nowrap">
+                                      {sttStatus === 'listening' && "Captions Active — Speak now"}
+                                      {sttStatus === 'error' && "Caption Error: Check microphone"}
+                                      {sttStatus === 'unsupported' && "Captions unsupported in this browser"}
+                                      {sttStatus === 'idle' && (
+                                        sttModelProgress > 0 && sttModelProgress < 100
+                                          ? `Loading Whisper model: ${sttModelProgress}%`
+                                          : 'Initializing Whisper AI...'
+                                      )}
+                                    </span>
+                                    {/* Progress bar — shown while model is downloading */}
+                                    {sttStatus === 'idle' && sttModelProgress > 0 && sttModelProgress < 100 && (
+                                      <div className="w-full h-[3px] bg-zinc-700 rounded-full overflow-hidden">
+                                        <div
+                                          className="h-full bg-gradient-to-r from-indigo-500 to-violet-500 rounded-full transition-all duration-300 ease-out"
+                                          style={{ width: `${sttModelProgress}%` }}
+                                        />
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
 
-                    </div>
-                  ) : (
+                          {/* Call Active Status Info (only for non-video or collapsable) */}
+                          {callState.type !== 'video' && (
+                            <>
+                              <span className="text-[10px] text-zinc-400 mt-1 flex items-center gap-1.5">
+                                <Mic className="w-3 h-3 text-emerald-400" />
+                                Audio secure stream active
+                              </span>
+
+                              <div className="flex gap-1 items-end mt-5 h-6">
+                                {[...Array(6)].map((_, i) => (
+                                  <motion.div
+                                    key={i}
+                                    animate={{ height: ['20%', '80%', '40%', '100%', '20%'] }}
+                                    transition={{
+                                      repeat: Infinity,
+                                      duration: 0.8 + (i * 0.1),
+                                      ease: 'easeInOut'
+                                    }}
+                                    className="w-1 bg-emerald-500 rounded-full"
+                                    style={{ minHeight: '4px' }}
+                                  />
+                                ))}
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      )}
+
+                      {!isGroupCall && (
+                        <div className="absolute bottom-4 right-4 w-24 sm:w-32 aspect-video bg-black border border-zinc-700 rounded-lg overflow-hidden shadow-lg flex items-center justify-center">
+                          {localStream && callState.type === 'video' && !isVideoMuted ? (
+                            <video
+                              ref={localVideoRef}
+                              autoPlay
+                              playsInline
+                              muted
+                              className="w-full h-full object-cover transform -scale-x-100"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex flex-col items-center justify-center bg-zinc-800 text-[9px] text-zinc-400 font-semibold p-1 text-center">
+                              <VideoOff className="w-3.5 h-3.5 mb-1 text-zinc-500" />
+                              Camera Off
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      </div>
+                    ) : (
                     <div className="flex flex-col items-center gap-6">
                       <div className="relative">
                         <div className="absolute -inset-4 rounded-full bg-indigo-500/15 animate-ping duration-1000" />
@@ -3805,69 +5280,212 @@ export default function TeamChatPage() {
 
                 {/* Footer Call Action buttons */}
                 {!(incomingCallOffer && callState.status === 'ringing') && (
-                  <div className="flex items-center gap-6 mb-2 shrink-0">
-                    <Button
-                      type="button"
-                      onClick={toggleAudioMute}
-                      className={cn(
-                        "w-12 h-12 rounded-full flex items-center justify-center shadow-lg border border-zinc-800 transition-colors",
-                        isAudioMuted ? "bg-red-600 text-white hover:bg-red-700" : "bg-zinc-900 hover:bg-zinc-800 text-zinc-300"
-                      )}
-                    >
-                      {isAudioMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
-                    </Button>
+                  <div className="flex items-center justify-center gap-4 mb-2 shrink-0 flex-wrap">
+                    {isGroupCall ? (
+                      <>
+                        {/* Audio Mute */}
+                        <Button
+                          type="button"
+                          onClick={toggleAudioMute}
+                          className={cn(
+                            "w-12 h-12 rounded-full flex items-center justify-center shadow-lg border border-zinc-800 transition-colors",
+                            isAudioMuted ? "bg-red-600 text-white hover:bg-red-700" : "bg-zinc-900 hover:bg-zinc-800 text-zinc-300"
+                          )}
+                          title={isAudioMuted ? "Unmute Mic" : "Mute Mic"}
+                        >
+                          {isAudioMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+                        </Button>
 
-                    {callState.type === 'video' && (
-                      <Button
-                        type="button"
-                        onClick={toggleVideoMute}
-                        className={cn(
-                          "w-12 h-12 rounded-full flex items-center justify-center shadow-lg border border-zinc-800 transition-colors",
-                          isVideoMuted ? "bg-red-600 text-white hover:bg-red-700" : "bg-zinc-900 hover:bg-zinc-800 text-zinc-300"
+                        {/* Video Mute */}
+                        <Button
+                          type="button"
+                          onClick={toggleVideoMute}
+                          className={cn(
+                            "w-12 h-12 rounded-full flex items-center justify-center shadow-lg border border-zinc-800 transition-colors",
+                            isVideoMuted ? "bg-red-600 text-white hover:bg-red-700" : "bg-zinc-900 hover:bg-zinc-800 text-zinc-300"
+                          )}
+                          title={isVideoMuted ? "Enable Camera" : "Disable Camera"}
+                        >
+                          {isVideoMuted ? <VideoOff className="w-5 h-5" /> : <Video className="w-5 h-5" />}
+                        </Button>
+
+                        {/* Screen Share */}
+                        <Button
+                          type="button"
+                          onClick={screenShareSharerId === (user?.id || 'me') ? stopScreenShare : startScreenShare}
+                          className={cn(
+                            "w-12 h-12 rounded-full flex items-center justify-center shadow-lg border border-zinc-800 transition-colors",
+                            screenShareSharerId === (user?.id || 'me') ? "bg-emerald-600 text-white hover:bg-emerald-700" : "bg-zinc-900 hover:bg-zinc-800 text-zinc-300"
+                          )}
+                          title={screenShareSharerId === (user?.id || 'me') ? "Stop Presenting" : "Share Screen"}
+                        >
+                          <Monitor className="w-5 h-5" />
+                        </Button>
+
+                        {/* Hand Raise */}
+                        <Button
+                          type="button"
+                          onClick={toggleHandRaise}
+                          className={cn(
+                            "w-12 h-12 rounded-full flex items-center justify-center shadow-lg border border-zinc-800 transition-colors text-lg",
+                            handRaisedUsers.includes(user?.id || 'me') ? "bg-amber-500 text-white hover:bg-amber-600" : "bg-zinc-900 hover:bg-zinc-800"
+                          )}
+                          title={handRaisedUsers.includes(user?.id || 'me') ? "Lower Hand" : "Raise Hand"}
+                        >
+                          ✋
+                        </Button>
+
+                        {/* Record Meeting */}
+                        <Button
+                          type="button"
+                          onClick={toggleRecording}
+                          className={cn(
+                            "w-12 h-12 rounded-full flex items-center justify-center shadow-lg border border-zinc-800 transition-all duration-350",
+                            isRecording 
+                              ? "bg-red-600 text-white border-red-500 hover:bg-red-700 animate-pulse shadow-[0_0_15px_rgba(239,68,68,0.4)]" 
+                              : "bg-zinc-900 hover:bg-zinc-800 text-red-500 hover:text-red-400"
+                          )}
+                          title={isRecording ? "Stop Recording" : "Record Meeting"}
+                        >
+                          <Disc className="w-5 h-5" />
+                        </Button>
+
+                        {/* Background Blur Effect */}
+                        <Button
+                          type="button"
+                          onClick={cycleBgBlur}
+                          className={cn(
+                            "w-12 h-12 rounded-full flex items-center justify-center shadow-lg border border-zinc-800 transition-colors",
+                            bgBlurEffect !== 'none' ? "bg-indigo-600 text-white hover:bg-indigo-700" : "bg-zinc-900 hover:bg-zinc-800 text-zinc-300"
+                          )}
+                          title={`Background Blur: ${bgBlurEffect}`}
+                        >
+                          <Sliders className="w-5 h-5" />
+                        </Button>
+
+                        {/* Live Captions (STT) */}
+                        <Button
+                          type="button"
+                          onClick={() => setEnableSTT(prev => !prev)}
+                          className={cn(
+                            "w-12 h-12 rounded-full flex items-center justify-center shadow-lg border border-zinc-800 transition-colors",
+                            enableSTT ? "bg-indigo-600 hover:bg-indigo-700 text-white" : "bg-zinc-900 hover:bg-zinc-800 text-zinc-400"
+                          )}
+                          title={enableSTT ? "Disable Live Captions" : "Enable Live Captions"}
+                        >
+                          <Subtitles className="w-5 h-5" />
+                        </Button>
+
+                        {/* Media Settings */}
+                        <Button
+                          type="button"
+                          onClick={() => setShowCallHardwareSettings(true)}
+                          className="w-12 h-12 rounded-full bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 flex items-center justify-center shadow-lg transition-colors"
+                          title="Hardware Settings"
+                        >
+                          <Settings className="w-5 h-5" />
+                        </Button>
+
+                        {/* AI Assistant */}
+                        <Button
+                          type="button"
+                          onClick={() => {
+                            setShowAiPopup(true);
+                            setAiSpeechText("I'm listening. Tell me what workspace task you need help with!");
+                            setAiCommandWaiting(true);
+                            speakText("I'm listening. Tell me what workspace task you need help with!");
+                          }}
+                          className={cn(
+                            "w-12 h-12 rounded-full flex items-center justify-center shadow-lg border transition-all duration-300",
+                            showAiPopup 
+                              ? "bg-purple-600 border-purple-500 text-white shadow-[0_0_15px_rgba(168,85,247,0.4)]" 
+                              : "bg-zinc-900 border-zinc-800 hover:bg-zinc-800 text-purple-400 hover:text-purple-300"
+                          )}
+                          title="Nexus AI Assistant"
+                        >
+                          <Sparkles className="w-5 h-5" />
+                        </Button>
+
+                        {/* End Meeting */}
+                        <Button
+                          type="button"
+                          onClick={endCall}
+                          className="w-12 h-12 rounded-full bg-red-600 hover:bg-red-700 text-white flex items-center justify-center shadow-lg border border-red-500/20 transition-colors"
+                          title="Leave Huddle"
+                        >
+                          <PhoneOff className="w-5 h-5" />
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        {/* 1-on-1 calling actions */}
+                        <Button
+                          type="button"
+                          onClick={toggleAudioMute}
+                          className={cn(
+                            "w-12 h-12 rounded-full flex items-center justify-center shadow-lg border border-zinc-800 transition-colors",
+                            isAudioMuted ? "bg-red-600 text-white hover:bg-red-700" : "bg-zinc-900 hover:bg-zinc-800 text-zinc-300"
+                          )}
+                          title={isAudioMuted ? "Unmute Mic" : "Mute Mic"}
+                        >
+                          {isAudioMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+                        </Button>
+
+                        {callState.type === 'video' && (
+                          <Button
+                            type="button"
+                            onClick={toggleVideoMute}
+                            className={cn(
+                              "w-12 h-12 rounded-full flex items-center justify-center shadow-lg border border-zinc-800 transition-colors",
+                              isVideoMuted ? "bg-red-600 text-white hover:bg-red-700" : "bg-zinc-900 hover:bg-zinc-800 text-zinc-300"
+                            )}
+                            title={isVideoMuted ? "Enable Camera" : "Disable Camera"}
+                          >
+                            {isVideoMuted ? <VideoOff className="w-5 h-5" /> : <Video className="w-5 h-5" />}
+                          </Button>
                         )}
-                      >
-                        {isVideoMuted ? <VideoOff className="w-5 h-5" /> : <Video className="w-5 h-5" />}
-                      </Button>
+
+                        <Button
+                          type="button"
+                          onClick={() => setEnableSTT(prev => !prev)}
+                          className={cn(
+                            "w-12 h-12 rounded-full flex items-center justify-center shadow-lg border border-zinc-800 transition-colors",
+                            enableSTT ? "bg-indigo-600 hover:bg-indigo-700 text-white" : "bg-zinc-900 hover:bg-zinc-800 text-zinc-400"
+                          )}
+                          title={enableSTT ? "Disable Live Captions" : "Enable Live Captions"}
+                        >
+                          <Subtitles className="w-5 h-5" />
+                        </Button>
+
+                        <Button
+                          type="button"
+                          onClick={() => {
+                            setShowAiPopup(true);
+                            setAiSpeechText("I'm listening. Tell me what workspace task you need help with!");
+                            setAiCommandWaiting(true);
+                            speakText("I'm listening. Tell me what workspace task you need help with!");
+                          }}
+                          className={cn(
+                            "w-12 h-12 rounded-full flex items-center justify-center shadow-lg border transition-all duration-300",
+                            showAiPopup 
+                              ? "bg-purple-600 border-purple-500 text-white shadow-[0_0_15px_rgba(168,85,247,0.4)]" 
+                              : "bg-zinc-900 border-zinc-800 hover:bg-zinc-800 text-purple-400 hover:text-purple-300"
+                          )}
+                          title="Nexus AI Assistant"
+                        >
+                          <Sparkles className="w-5 h-5" />
+                        </Button>
+
+                        <Button
+                          type="button"
+                          onClick={endCall}
+                          className="w-12 h-12 rounded-full bg-red-600 hover:bg-red-700 text-white flex items-center justify-center shadow-lg border border-red-500/20 transition-colors"
+                          title="Hang Up"
+                        >
+                          <PhoneOff className="w-5 h-5" />
+                        </Button>
+                      </>
                     )}
-
-                    <Button
-                      type="button"
-                      onClick={() => setEnableSTT(prev => !prev)}
-                      className={cn(
-                        "w-12 h-12 rounded-full flex items-center justify-center shadow-lg border border-zinc-800 transition-colors",
-                        enableSTT ? "bg-indigo-600 hover:bg-indigo-700 text-white" : "bg-zinc-900 hover:bg-zinc-800 text-zinc-400"
-                      )}
-                      title={enableSTT ? "Disable Live Captions" : "Enable Live Captions"}
-                    >
-                      <Subtitles className="w-5 h-5" />
-                    </Button>
-
-                    <Button
-                      type="button"
-                      onClick={() => {
-                        setShowAiPopup(true);
-                        setAiSpeechText("I'm listening. Tell me what workspace task you need help with!");
-                        setAiCommandWaiting(true);
-                        speakText("I'm listening. Tell me what workspace task you need help with!");
-                      }}
-                      className={cn(
-                        "w-12 h-12 rounded-full flex items-center justify-center shadow-lg border transition-all duration-300",
-                        showAiPopup 
-                          ? "bg-purple-600 border-purple-500 text-white shadow-[0_0_15px_rgba(168,85,247,0.4)]" 
-                          : "bg-zinc-900 border-zinc-800 hover:bg-zinc-800 text-purple-400 hover:text-purple-300"
-                      )}
-                      title="Nexus AI Assistant"
-                    >
-                      <Sparkles className="w-5 h-5" />
-                    </Button>
-
-                    <Button
-                      type="button"
-                      onClick={endCall}
-                      className="w-12 h-12 rounded-full bg-red-600 hover:bg-red-700 text-white flex items-center justify-center shadow-lg border border-red-500/20 transition-colors"
-                    >
-                      <PhoneOff className="w-5 h-5" />
-                    </Button>
                   </div>
                 )}
 
@@ -3987,6 +5605,14 @@ export default function TeamChatPage() {
 
 const getInitials = (name: string) => {
   return name.split(' ').map(n => n.charAt(0)).join('').toUpperCase().substring(0, 2);
+};
+
+const getGridClassName = (count: number) => {
+  if (count <= 1) return "grid-cols-1 grid-rows-1";
+  if (count === 2) return "grid-cols-1 md:grid-cols-2 grid-rows-2 md:grid-rows-1";
+  if (count <= 4) return "grid-cols-2 grid-rows-2";
+  if (count <= 6) return "grid-cols-2 md:grid-cols-3 grid-rows-3 md:grid-rows-2";
+  return "grid-cols-3 grid-rows-3";
 };
 
 // Optimizes SDP description for Voice Calls (WhatsApp codec configurations)

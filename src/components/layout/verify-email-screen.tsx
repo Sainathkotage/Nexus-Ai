@@ -126,7 +126,7 @@ export function VerifyEmailScreen() {
           </span>
           <button
             type="button"
-            onClick={logout}
+            onClick={() => logout()}
             className="flex items-center gap-1 text-[10px] text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 px-2 py-1 rounded transition-colors font-medium"
           >
             <LogOut className="w-3 h-3" />

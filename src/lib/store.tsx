@@ -5,7 +5,8 @@ import {
   PageId, DocumentFile, Task, TaskStatus, CalendarEvent,
   Email, EmailStatus, ChatMessage, Conversation, AIInsight,
   Person, GoalOKR, Channel, Deal, ChannelMessage, LoginActivity,
-  NotificationItem, ThemeConfig, ChannelMessageReply, MessageReaction, MessageRead, AiInboxItem
+  NotificationItem, ThemeConfig, ChannelMessageReply, MessageReaction, MessageRead, AiInboxItem,
+  MeetingRecord, MeetingParticipant
 } from '@/types';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
@@ -576,6 +577,8 @@ interface WorkspaceState {
   completeAiInboxItem: (id: string) => void;
   updateProfile: (name: string, email: string, avatar: string) => Promise<void>;
   deleteAccount: () => Promise<{ success: boolean; error?: string }>;
+  meetings: MeetingRecord[];
+  saveMeetingRecord: (meeting: MeetingRecord) => void;
 }
 
 const WorkspaceContext = createContext<WorkspaceState | undefined>(undefined);
@@ -630,6 +633,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   // Insights
   const [insights, setInsights] = useState<AIInsight[]>([]);
+
+  // Meetings
+  const [meetings, setMeetings] = useState<MeetingRecord[]>([]);
 
   // Theme
   const [theme, setTheme] = useState<'light' | 'dark'>('dark');
@@ -1023,6 +1029,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         if (storedConvos) localConvos = JSON.parse(storedConvos);
         if (storedInsights) localInsights = JSON.parse(storedInsights);
 
+        const storedMeetings = localStorage.getItem('nexus_meetings');
+        let localMeetings: MeetingRecord[] = [];
+        if (storedMeetings) localMeetings = JSON.parse(storedMeetings);
+        if (localMeetings.length > 0) setMeetings(localMeetings);
+
         if (localDocs.length > 0) setDocuments(localDocs);
         if (localTasks.length > 0) setTasks(localTasks);
         if (localEvents.length > 0) setCalendarEvents(localEvents);
@@ -1143,7 +1154,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
               tag = profile.tag;
               role = profile.role || 'Member';
               userStatus = profile.status || 'online';
-              setUserStatusState(userStatus);
+              setUserStatusState(userStatus as "idle" | "online" | "offline" | "dnd");
             }
           } catch (profileErr) {
             console.warn('Failed to fetch user profile:', profileErr);
@@ -4642,6 +4653,21 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const saveMeetingRecord = useCallback((meeting: MeetingRecord) => {
+    setMeetings(prev => {
+      const existingIdx = prev.findIndex(m => m.id === meeting.id);
+      let updated: MeetingRecord[];
+      if (existingIdx !== -1) {
+        updated = [...prev];
+        updated[existingIdx] = meeting;
+      } else {
+        updated = [meeting, ...prev];
+      }
+      localStorage.setItem('nexus_meetings', JSON.stringify(updated));
+      return updated;
+    });
+  }, []);
+
   const value: WorkspaceState = {
     activePage, setActivePage,
     leftSidebarOpen, toggleLeftSidebar,
@@ -4681,6 +4707,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     createWorkspace, joinWorkspaceByCode, createJoinRequest, reviewJoinRequest, regenerateWorkspaceInviteCode, updateMemberRole, switchWorkspace,
     removeWorkspaceMember, banWorkspaceMember, unbanWorkspaceMember, deleteWorkspace,
     updateProfile, deleteAccount,
+    meetings, saveMeetingRecord,
   };
 
   return (

@@ -422,3 +422,34 @@ export interface HandoverRecord {
   createdAt: string;
   status: 'active' | 'transitioning' | 'completed';
 }
+
+// --- Meeting & Video Calling ---
+export interface MeetingParticipant {
+  id: string;
+  name: string;
+  avatar?: string;
+  role: string;
+  joinTime: string;
+  leaveTime?: string;
+  isMuted?: boolean;
+  isCameraOff?: boolean;
+  handRaised?: boolean;
+  isScreenSharing?: boolean;
+}
+
+export interface MeetingRecord {
+  id: string;
+  title: string;
+  workspaceId: string;
+  channelId?: string;
+  startTime: string;
+  endTime?: string;
+  duration?: number; // in seconds
+  participants: MeetingParticipant[];
+  recordingUrl?: string;
+  transcript?: { senderName: string; text: string; timestamp: string }[];
+  summary?: string;
+  actionItems?: { text: string; assignee?: string; dueDate?: string }[];
+  decisions?: string[];
+}
+

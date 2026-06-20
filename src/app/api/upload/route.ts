@@ -1,6 +1,7 @@
 import { NextResponse, after } from 'next/server';
 import { getSupabaseServiceRole } from '@/lib/supabase';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { callLLM, parseRobustJson } from '@/lib/ai';
 import { getDocumentFavicon } from '@/lib/utils';
 import path from 'path';
 import fs from 'fs';
@@ -77,7 +78,9 @@ export async function POST(req: Request) {
       text = new TextDecoder('utf-8').decode(buffer);
     }
 
-    const apiKey = process.env.GEMINI_API_KEY;
+    const openRouterApiKey = process.env.OPENROUTER_API_KEY;
+    const geminiApiKey = process.env.GEMINI_API_KEY;
+    const hasApiKey = !!(openRouterApiKey || geminiApiKey);
     const supabaseAdmin = getSupabaseServiceRole();
     const fileName = `${Date.now()}-${file.name}`;
 
@@ -150,9 +153,9 @@ export async function POST(req: Request) {
       throw new Error(`Failed to save document metadata: ${dbErr.message}`);
     }
 
-    // Defer Gemini API processing to run in the background after the response is sent
+    // Defer LLM processing to run in the background after the response is sent
     after(async () => {
-      if (apiKey && text.trim().length > 0) {
+      if (hasApiKey && text.trim().length > 0) {
         try {
           const prompt = `Analyze the following document content. Extract standard metadata and content analysis. 
 The output MUST be a JSON object with exactly the following fields (do not wrap in markdown code blocks, return raw json string):
@@ -176,24 +179,23 @@ If no tasks, deadlines, people, or organizations are found, return empty arrays.
 Document Content:
 ${text.substring(0, 15000)}`;
 
-          const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`;
-          const response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{ parts: [{ text: prompt }] }],
-              generationConfig: {
-                responseMimeType: "application/json",
-                temperature: 0.2
+          const rawText = await callLLM(
+            [
+              {
+                role: 'user',
+                content: prompt
               }
-            })
-          });
+            ],
+            {
+              temperature: 0.2,
+              jsonMode: true,
+              model: 'gemini-3.5-flash'
+            }
+          );
 
-          if (response.ok) {
-            const data = await response.json();
-            const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+          if (rawText) {
             const cleanText = rawText.trim().replace(/^```json/i, '').replace(/^```/, '').trim();
-            const analysis = JSON.parse(cleanText);
+            const analysis = parseRobustJson(cleanText);
 
             // Update document with analysis details
             const { error: updateErr } = await supabaseAdmin
@@ -270,15 +272,9 @@ ${text.substring(0, 15000)}`;
               }
             }
 
-          } else {
-            console.warn('Gemini extraction endpoint returned error:', response.status);
-            await supabaseAdmin
-              .from('documents')
-              .update({ processing_status: 'failed' })
-              .eq('id', docId);
           }
         } catch (err) {
-          console.error('Gemini extraction failed:', err);
+          console.error('LLM extraction failed:', err);
           await supabaseAdmin
             .from('documents')
             .update({ processing_status: 'failed' })

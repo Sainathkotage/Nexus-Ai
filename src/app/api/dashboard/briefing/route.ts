@@ -1,13 +1,15 @@
 import { NextResponse } from 'next/server';
+import { callLLM } from '@/lib/ai';
 
 export async function POST(req: Request) {
   try {
     const { tasks, calendarEvents, notifications } = await req.json();
 
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
+    const openRouterApiKey = process.env.OPENROUTER_API_KEY;
+    const geminiApiKey = process.env.GEMINI_API_KEY;
+    if (!openRouterApiKey && !geminiApiKey) {
       return NextResponse.json(
-        { error: 'Gemini API key is not configured.' },
+        { error: 'AI API key is not configured.' },
         { status: 500 }
       );
     }
@@ -42,35 +44,23 @@ Greet the user. Summarize what requires immediate attention based on their tasks
 
     const contents = [
       {
-        role: 'user',
+        role: 'user' as const,
         parts: [{ text: `Here is my workspace context for today:\n\n${context}\n\nPlease write my morning briefing.` }]
       }
     ];
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        contents,
-        system_instruction: {
-          parts: [{ text: systemPrompt }]
-        },
-        generationConfig: {
-          temperature: 0.6,
+    const aiBriefing = await callLLM(
+      [
+        {
+          role: 'user',
+          content: `Here is my workspace context for today:\n\n${context}\n\nPlease write my morning briefing.`
         }
-      })
-    });
-
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data?.error?.message || 'Gemini API briefing generation failed');
-    }
-
-    const aiBriefing = data.candidates?.[0]?.content?.parts?.[0]?.text || 'No updates for today.';
+      ],
+      {
+        systemPrompt,
+        temperature: 0.6
+      }
+    );
 
     return NextResponse.json({ text: aiBriefing.trim() });
   } catch (error: any) {

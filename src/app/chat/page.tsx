@@ -27,7 +27,11 @@ export default function ChatPage() {
     documents,
     user,
     workspace,
-    trackAiUsage
+    trackAiUsage,
+    allUsers,
+    createCalendarEvent,
+    addTask,
+    addEmail
   } = useWorkspace();
   const { confirm } = usePopup();
   
@@ -146,7 +150,14 @@ export default function ChatPage() {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: messageHistory, documentContext, workspaceId: workspace?.id }),
+        body: JSON.stringify({
+          messages: messageHistory,
+          documentContext,
+          workspaceId: workspace?.id,
+          users: allUsers,
+          currentUser: user ? { id: user.id, name: user.name, email: user.email } : null,
+          currentDate: new Date().toISOString()
+        }),
       });
 
       if (!response.ok) {
@@ -161,13 +172,107 @@ export default function ChatPage() {
         setIsTyping(false);
         addMessage(targetConvo.id, {
           role: 'assistant',
-          content: `Sorry, I encountered an error: ${errorMsg}. Please check your API key configuration in your .env.local file or your internet connection. (Gemini returned status ${response.status})`,
+          content: `Sorry, I encountered an error: ${errorMsg}. Please check your API key configuration in your .env.local file or your internet connection.`,
         });
         return;
       }
 
       const data = await response.json();
       setIsTyping(false);
+
+      // Execute workspace actions returned by the AI
+      if (data.actions && Array.isArray(data.actions)) {
+        for (const action of data.actions) {
+          if (!action || typeof action !== 'object') continue;
+
+          const actionType = action.type || action.action;
+          switch (actionType) {
+            case 'create_calendar_event': {
+              const ev = action.event || action;
+              const attendeeIdsOrNames = ev.attendeeIds || ev.attendee_ids || ev.attendees || [];
+              const eventAttendees = allUsers.filter(u => 
+                attendeeIdsOrNames.includes(u.id) ||
+                attendeeIdsOrNames.includes(u.email) ||
+                attendeeIdsOrNames.includes(u.name)
+              );
+              
+              const eventTitle = ev.title || 'Meeting';
+              const eventDate = ev.date || new Date().toISOString().split('T')[0];
+              const eventStart = ev.startTime || ev.start_time || '10:00';
+              const eventEnd = ev.endTime || ev.end_time || '11:00';
+              const eventCategory = ev.category || 'meeting';
+              const eventDesc = ev.description || ev.desc || '';
+              const eventColor = ev.color || 'indigo';
+
+              createCalendarEvent({
+                title: eventTitle,
+                date: eventDate,
+                startTime: eventStart,
+                endTime: eventEnd,
+                category: eventCategory,
+                description: eventDesc,
+                attendees: eventAttendees,
+                isAiExtracted: true,
+                addedToCalendar: true,
+                color: eventColor
+              });
+              toast.success(`Calendar event created: ${eventTitle}`);
+              break;
+            }
+            case 'create_task': {
+              const t = action.task || action;
+              const taskTitle = t.title || t.name || 'New Task';
+              const taskDesc = t.description || t.desc || '';
+              const taskPriority = t.priority || 'medium';
+              const taskDueDate = t.dueDate || t.due_date || new Date().toISOString().split('T')[0];
+              const taskTags = t.tags || [];
+              const assigneeVal = t.assigneeId || t.assignee_id || t.assignee;
+              
+              const taskAssignee = allUsers.find(u => 
+                u.id === assigneeVal || 
+                u.email === assigneeVal || 
+                u.name === assigneeVal ||
+                (typeof assigneeVal === 'object' && (assigneeVal?.id === u.id || assigneeVal?.email === u.email || assigneeVal?.name === u.name))
+              ) || user;
+
+              addTask({
+                title: taskTitle,
+                description: taskDesc,
+                status: 'todo',
+                priority: taskPriority,
+                assignee: taskAssignee as any,
+                dueDate: taskDueDate,
+                tags: taskTags,
+                subtasks: []
+              });
+              toast.success(`Workspace task created: ${taskTitle}`);
+              break;
+            }
+            case 'send_email': {
+              const em = action.email || action;
+              const emailTo = em.to || em.email || em.recipient || '';
+              const emailToName = em.toName || em.to_name || em.recipientName || em.recipient_name || '';
+              const emailSubject = em.subject || em.sub || 'Follow-up from Nexus AI';
+              const emailBody = em.body || em.content || em.message || '';
+
+              if (emailTo) {
+                addEmail({
+                  to: emailTo,
+                  toName: emailToName || emailTo.split('@')[0],
+                  from: user?.email || '',
+                  fromName: user?.name || '',
+                  subject: emailSubject,
+                  body: emailBody,
+                  status: 'sent',
+                  aiGenerated: true
+                });
+                toast.success(`Confirmation email sent to ${emailToName || emailTo}`);
+              }
+              break;
+            }
+          }
+        }
+      }
 
       // Extract citation files for rendering chips
       const sources = activeDocs

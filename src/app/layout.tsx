@@ -9,6 +9,7 @@ import { AppLayout } from "@/components/layout/app-layout";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 import Script from "next/script";
+import { GoogleAnalytics } from "@next/third-parties/google";
 
 import { Suspense } from "react";
 
@@ -71,18 +72,7 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className={`${inter.variable} ${fraunces.variable} min-h-screen flex flex-col font-sans`}>
         {/* Google Analytics */}
-        <Script
-          src="https://www.googletagmanager.com/gtag/js?id=G-NEXUS12345"
-          strategy="afterInteractive"
-        />
-        <Script id="google-analytics" strategy="afterInteractive">
-          {`
-            window.dataLayer = window.dataLayer || [];
-            function gtag(){dataLayer.push(arguments);}
-            gtag('js', new Date());
-            gtag('config', 'G-NEXUS12345');
-          `}
-        </Script>
+        <GoogleAnalytics gaId="G-HP8QV5HP7B" />
 
         {/* Microsoft Clarity */}
         <Script id="microsoft-clarity" strategy="afterInteractive">

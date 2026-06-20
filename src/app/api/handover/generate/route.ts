@@ -1,13 +1,15 @@
 import { NextResponse } from 'next/server';
+import { callLLM, parseRobustJson } from '@/lib/ai';
 
 export async function POST(req: Request) {
   try {
     const { userId, userName, userRole, tasks, emails, documents, messages } = await req.json();
 
-    const apiKey = process.env.GEMINI_API_KEY;
+    const openRouterApiKey = process.env.OPENROUTER_API_KEY;
+    const geminiApiKey = process.env.GEMINI_API_KEY;
 
     // Check if it's the John Smith mockup profile or if we want to run a mock fallback
-    const isMock = !apiKey || userName?.toLowerCase().includes('john') || userName?.toLowerCase().includes('smith') || (tasks?.length === 0 && emails?.length === 0);
+    const isMock = (!openRouterApiKey && !geminiApiKey) || userName?.toLowerCase().includes('john') || userName?.toLowerCase().includes('smith') || (tasks?.length === 0 && emails?.length === 0);
 
     if (isMock) {
       // Return high-fidelity preset handover structured data to wow the user instantly
@@ -239,32 +241,20 @@ Return EXACTLY a JSON object matching this schema. Do not return any extra markd
       }
     ];
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        contents,
-        system_instruction: {
-          parts: [{ text: systemPrompt }]
-        },
-        generationConfig: {
-          temperature: 0.2,
-          responseMimeType: "application/json"
+    const jsonString = await callLLM(
+      [
+        {
+          role: 'user',
+          content: `Here is the workspace activity data for ${userName} (${userRole}):\n\n${contextText}\n\nPlease analyze and generate the structured handover JSON.`
         }
-      })
-    });
-
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data?.error?.message || 'Gemini Handover generation failed');
-    }
-
-    const jsonString = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    const parsedData = JSON.parse(jsonString.trim());
+      ],
+      {
+        systemPrompt,
+        temperature: 0.2,
+        jsonMode: true
+      }
+    );
+    const parsedData = parseRobustJson(jsonString);
 
     // Inject server-side metadata fields
     const completedHandover = {

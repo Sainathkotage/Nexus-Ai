@@ -2,10 +2,11 @@ import { NextResponse } from 'next/server';
 import { createSupabaseServerClient, createSupabaseAdminClient } from '@/lib/supabase/server';
 import { getTodayAiUsage, isAdminRole } from '@/lib/permissions';
 import { detectPromptInjection } from '@/lib/security';
+import { callLLM, parseRobustJson } from '@/lib/ai';
 
 export async function POST(req: Request) {
   try {
-    const { messages, documentContext, workspaceId } = await req.json();
+    const { messages, documentContext, workspaceId, users, currentUser, currentDate } = await req.json();
 
     if (!messages || !Array.isArray(messages)) {
       return NextResponse.json({ error: 'Invalid messages format' }, { status: 400 });
@@ -23,14 +24,56 @@ export async function POST(req: Request) {
     }
 
 
-    const systemPrompt = `You are Nexus AI, an advanced AI Chief of Staff. You help users manage their workspace, analyze documents, and organize tasks. Provide concise, helpful, and professional responses formatted in markdown.
+    const systemPrompt = `You are Nexus AI, an advanced AI Chief of Staff. You help users manage their workspace, analyze documents, organize tasks, and schedule meetings.
     
+Current local date/time context: ${currentDate || new Date().toISOString()}
+Current authenticated user: ${JSON.stringify(currentUser || null)}
+List of all workspace members: ${JSON.stringify(users || [])}
+
+    You must respond with a JSON object following this schema:
+{
+  "text": "Your main natural language response to the user. Format in markdown. Be professional and helpful.",
+  "actions": [
+    {
+      "type": "create_calendar_event" | "create_task" | "send_email",
+      // ... action specific properties listed below ...
+    }
+  ]
+}
+
+Supported actions:
+1. create_calendar_event (use "type": "create_calendar_event"):
+   - title: Title of the meeting.
+   - date: Date string (YYYY-MM-DD). If the user says "tomorrow", calculate it based on the current local date/time context.
+   - startTime: Time string (HH:MM).
+   - endTime: Time string (HH:MM), default to 30 mins or 1 hour after startTime.
+   - category: Must be "meeting" or "other".
+   - description: Description of the meeting.
+   - attendeeIds: Array of user IDs attending.
+   - color: A theme color (e.g., "indigo", "emerald", "purple", "amber").
+
+2. create_task:
+   - title: Task title.
+   - description: Task description.
+   - priority: "high", "medium", or "low".
+   - assigneeId: User ID of the assignee. Default to the current user's ID if not specified.
+   - dueDate: Date string (YYYY-MM-DD).
+   - tags: Array of tags.
+
+3. send_email:
+   - to: Recipient's email address.
+   - toName: Recipient's name.
+   - subject: Subject line.
+   - body: Professional email body text.
+
+Ensure the response is valid JSON and contains only the JSON structure.
 ${documentContext ? `Here is the contents of the documents currently in the user's workspace:\n\n${documentContext}\n\nUse this context to answer the user's questions.` : ''}`;
 
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
+    const openRouterApiKey = process.env.OPENROUTER_API_KEY;
+    const geminiApiKey = process.env.GEMINI_API_KEY;
+    if (!openRouterApiKey && !geminiApiKey) {
       return NextResponse.json(
-        { error: 'Gemini API key is not configured. Please add GEMINI_API_KEY in .env.local.' },
+        { error: 'AI API key is not configured. Please add OPENROUTER_API_KEY or GEMINI_API_KEY in .env.local.' },
         { status: 500 }
       );
     }
@@ -47,75 +90,25 @@ ${documentContext ? `Here is the contents of the documents currently in the user
       }
     }
 
-    // Convert standard chat message format to Gemini's REST format
-    const contents = messages.map((msg: any) => ({
-      role: msg.role === 'assistant' ? 'model' : 'user',
-      parts: [{ text: msg.content }]
-    }));
+    try {
+      const aiResponse = await callLLM(messages, {
+        systemPrompt,
+        temperature: 0.7,
+        jsonMode: true
+      });
+      
+      const parsed = parseRobustJson(aiResponse) || {};
+      const text = parsed.text || aiResponse;
+      const actions = parsed.actions || [];
+      return NextResponse.json({ text, actions });
 
-    // The Gemini REST URL
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
-
-    let response: Response | null = null;
-    let data: any = null;
-    let attempt = 0;
-    const maxAttempts = 3;
-    let delay = 1000;
-
-    while (attempt < maxAttempts) {
-      try {
-        response = await fetch(url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            contents,
-            system_instruction: {
-              parts: [{ text: systemPrompt }]
-            },
-            generationConfig: {
-              temperature: 0.7,
-            }
-          })
-        });
-
-        data = await response.json();
-
-        if (response.ok) {
-          break;
-        }
-
-        // Retry on rate limits, service overload, or internal errors
-        const isRetriable = [429, 503, 500].includes(response.status) || 
-                            (data?.error?.message && String(data.error.message).toLowerCase().includes('demand'));
-                            
-        if (!isRetriable || attempt === maxAttempts - 1) {
-          break;
-        }
-
-        console.warn(`Gemini Chat API returned status ${response.status}. Retrying in ${delay}ms... (Attempt ${attempt + 1}/${maxAttempts})`);
-      } catch (err) {
-        if (attempt === maxAttempts - 1) throw err;
-        console.warn(`Fetch error in Gemini chat request. Retrying in ${delay}ms... (Attempt ${attempt + 1}/${maxAttempts})`);
-      }
-
-      await new Promise(resolve => setTimeout(resolve, delay));
-      attempt++;
-      delay *= 2; // Exponential backoff
-    }
-
-    if (!response || !response.ok) {
-      console.error('Gemini API Response Error:', data);
+    } catch (err: any) {
+      console.error('LLM Call Error (chat):', err);
       return NextResponse.json(
-        { error: data?.error?.message || 'Failed to generate response from Gemini API due to high demand.' },
-        { status: response ? response.status : 503 }
+        { error: err?.message || 'Failed to generate response from AI provider.' },
+        { status: 502 }
       );
     }
-
-    const aiResponse = data.candidates?.[0]?.content?.parts?.[0]?.text || 'I am unable to process that right now.';
-
-    return NextResponse.json({ text: aiResponse });
   } catch (error: any) {
     console.error('Gemini API Route Error:', error);
     return NextResponse.json(

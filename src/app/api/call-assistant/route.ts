@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { detectPromptInjection } from '@/lib/security';
+import { callLLM, parseRobustJson } from '@/lib/ai';
 
 export async function POST(req: Request) {
   try {
@@ -14,10 +15,11 @@ export async function POST(req: Request) {
     }
 
 
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
+    const openRouterApiKey = process.env.OPENROUTER_API_KEY;
+    const geminiApiKey = process.env.GEMINI_API_KEY;
+    if (!openRouterApiKey && !geminiApiKey) {
       return NextResponse.json(
-        { error: 'Gemini API key is not configured.' },
+        { error: 'AI API key is not configured.' },
         { status: 500 }
       );
     }
@@ -64,44 +66,27 @@ You must respond with a JSON object following this schema:
 
 Ensure the response is valid JSON and contains only the JSON structure.`;
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: 'user',
-            parts: [{ text: `User Command: "${command}"` }]
-          }
-        ],
-        system_instruction: {
-          parts: [{ text: systemPrompt }]
-        },
-        generationConfig: {
-          temperature: 0.1,
-          responseMimeType: 'application/json'
+    const jsonText = await callLLM(
+      [
+        {
+          role: 'user',
+          content: `User Command: "${command}"`
         }
-      })
-    });
+      ],
+      {
+        systemPrompt,
+        temperature: 0.1,
+        jsonMode: true
+      }
+    );
 
-    const data = await response.json();
-
-    if (!response.ok) {
-      console.error('Gemini API Error:', data);
-      return NextResponse.json({ error: 'Failed to process command' }, { status: 502 });
-    }
-
-    const jsonText = data.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!jsonText) {
-      throw new Error('Empty response from Gemini model');
+      throw new Error('Empty response from AI model');
     }
 
-    const result = JSON.parse(jsonText);
+    const result = parseRobustJson(jsonText);
     return NextResponse.json(result);
+
 
   } catch (error: any) {
     console.error('Call Assistant Error:', error);

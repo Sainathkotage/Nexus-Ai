@@ -69,11 +69,11 @@ export function Footer() {
             © 2026 Aixentrix, Inc. Crafted with care in Nagpur, India.
           </p>
           <div className="flex items-center gap-4 text-xs text-ink-500 font-sans">
-            <a href="#" className="hover:text-accent-600 transition-colors">Twitter</a>
+            <a href="https://x.com/AixentrixNexus" target="_blank" rel="noopener noreferrer" className="hover:text-accent-600 transition-colors">Twitter</a>
             <span className="text-ink-300">·</span>
-            <a href="#" className="hover:text-accent-600 transition-colors">GitHub</a>
+            <a href="https://github.com/Sainathkotage/Nexus-Ai" target="_blank" rel="noopener noreferrer" className="hover:text-accent-600 transition-colors">GitHub</a>
             <span className="text-ink-300">·</span>
-            <a href="#" className="hover:text-accent-600 transition-colors">LinkedIn</a>
+            <a href="https://www.linkedin.com/in/sainathkotage/" target="_blank" rel="noopener noreferrer" className="hover:text-accent-600 transition-colors">LinkedIn</a>
             <span className="text-ink-300">·</span>
             <a href="#" className="hover:text-accent-600 transition-colors">Discord</a>
           </div>

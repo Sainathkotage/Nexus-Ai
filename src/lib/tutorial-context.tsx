@@ -8,112 +8,64 @@ import { toast } from 'sonner';
 import { trackEvent } from '@/lib/posthog';
 import { captureError } from '@/lib/sentry';
 
-export interface TutorialStep {
-  id: number;
-  name: string;
-  target: string;
-  title: string;
-  descriptionA: string;
-  descriptionB: string;
-  page: string;
-  route: string;
-  placement: 'top' | 'bottom' | 'left' | 'right';
-  interactiveAction?: string;
+export type OnboardingPhase = 'welcome' | 'personalization' | 'workspace-setup' | 'missions' | 'celebration' | 'done';
+
+export interface UserPersona {
+  role: string;
+  teamSize: string;
+  goals: string[];
 }
 
-export const TUTORIAL_STEPS: TutorialStep[] = [
+export interface OnboardingMission {
+  id: string;
+  title: string;
+  description: string;
+  xp: number;
+}
+
+export const ONBOARDING_MISSIONS: OnboardingMission[] = [
   {
-    id: 0,
-    name: 'welcome',
-    target: '',
-    title: 'Welcome to Nexus AI!',
-    descriptionA: "Let's take a quick 2-minute tour of your new workspace. We'll show you how to manage tasks, leverage AI insights, and organize your calendar.",
-    descriptionB: "Learn the essentials of Nexus AI in 7 quick steps! Let's get started with a quick interactive tour.",
-    page: 'dashboard',
-    route: '/',
-    placement: 'bottom'
+    id: 'task',
+    title: 'Create Your First Task',
+    description: 'Type a task title, select a priority, and write it to your dashboard.',
+    xp: 150,
   },
   {
-    id: 1,
-    name: 'left-sidebar',
-    target: '[data-tutorial="left-sidebar"]',
-    title: 'Your Workspace Sidebar',
-    descriptionA: 'This sidebar is your workspace control center. Switch between team workspaces, search anything using ⌘K, or navigate between your Documents, AI Chat, Team Chat, Tasks, and Calendar.',
-    descriptionB: 'This is your navigation sidebar. Use it to jump between Dashboard, Tasks, Docs, AI Chat, and Settings.',
-    page: 'dashboard',
-    route: '/',
-    placement: 'right'
+    id: 'chat',
+    title: 'Chat with Nexus AI',
+    description: 'Consult your AI assistant on any prompt and receive an inline answer.',
+    xp: 200,
   },
   {
-    id: 2,
-    name: 'ai-recommendation',
-    target: '[data-tutorial="ai-recommendation"]',
-    title: 'AI Recommendations',
-    descriptionA: 'Here, your AI Copilot analyzes your documents, calendar events, and tasks to give you personalized, actionable suggestions and daily briefs.',
-    descriptionB: 'Get daily summaries and smart advice from your AI Chief of Staff here on the dashboard.',
-    page: 'dashboard',
-    route: '/',
-    placement: 'bottom'
+    id: 'document',
+    title: 'Summarize a Document',
+    description: 'Upload a document or note and let AI automatically extract key details.',
+    xp: 250,
   },
   {
-    id: 3,
-    name: 'time-tracker',
-    target: '[data-tutorial="time-tracker"]',
-    title: 'Interactive Time Tracker',
-    descriptionA: 'Track your focus time. Type in a task and click the "Play" button in the top bar to try starting a focus timer right now! Starting the timer will automatically advance you to the next step.',
-    descriptionB: "Let's try it: Click the 'Play' button on the time tracker in the top bar to start tracking your time and advance!",
-    page: 'dashboard',
-    route: '/',
-    placement: 'bottom',
-    interactiveAction: 'start_timer'
+    id: 'invite',
+    title: 'Invite a Teammate',
+    description: 'Send an invite link to collaborate and earn team productivity bonuses.',
+    xp: 150,
   },
   {
-    id: 4,
-    name: 'ai-chat',
-    target: '[data-tutorial="chat-input"]',
-    title: 'AI Chat Assistant',
-    descriptionA: 'Need help writing an email, summarizing a document, or planning a project? Chat with your AI Chief of Staff directly. Ask questions and get instant answers here.',
-    descriptionB: 'Type a message here to consult your AI assistant on any document, task, or email draft.',
-    page: 'chat',
-    route: '/chat',
-    placement: 'top'
+    id: 'automation',
+    title: 'Build an Automation',
+    description: 'Set up an active trigger-action pair for continuous hands-free triaging.',
+    xp: 250,
   },
-  {
-    id: 5,
-    name: 'tasks-board',
-    target: '[data-tutorial="tasks-board"]',
-    title: 'Collaborative Task Board',
-    descriptionA: 'Track your projects using Kanban, list, or calendar views. Drag and drop tasks to update their status, set priorities, and assign deadlines.',
-    descriptionB: 'Manage your workload here. Try dragging tasks to update status or adding a new task to your list.',
-    page: 'tasks',
-    route: '/tasks',
-    placement: 'top'
-  },
-  {
-    id: 6,
-    name: 'documents-container',
-    target: '[data-tutorial="documents-container"]',
-    title: 'Document Hub & Pages',
-    descriptionA: 'Create rich documents, meeting notes, and team wikis. The AI can summarize or extract tasks from any uploaded document automatically.',
-    descriptionB: 'Draft notes and wikis here. Drag in files to let AI automatically extract key details and tasks.',
-    page: 'documents',
-    route: '/documents',
-    placement: 'top'
-  },
-  {
-    id: 7,
-    name: 'celebration',
-    target: '',
-    title: "You're All Set!",
-    descriptionA: "Congratulations on completing the Nexus AI onboarding tour! You're ready to supercharge your productivity. You can relaunch this tour anytime from the settings or Help menu.",
-    descriptionB: "Awesome job completing the onboarding tour! You're now ready to use Nexus AI to its fullest potential.",
-    page: 'dashboard',
-    route: '/',
-    placement: 'bottom'
-  }
 ];
 
 export interface TutorialContextProps {
+  // New Onboarding States
+  onboardingPhase: OnboardingPhase;
+  setOnboardingPhase: (phase: OnboardingPhase) => void;
+  userPersona: UserPersona;
+  setUserPersona: (persona: UserPersona) => void;
+  completedMissions: string[];
+  completeMission: (missionId: string) => void;
+
+  // Backward Compatible Properties (Mocked or mapped)
   isTutorialActive: boolean;
   currentStep: number;
   status: 'started' | 'paused' | 'completed' | 'skipped' | 'idle';
@@ -124,6 +76,8 @@ export interface TutorialContextProps {
   dbAvailable: boolean;
   showWelcome: boolean;
   showCelebration: boolean;
+  
+  // Actions
   startTutorial: () => void;
   nextStep: () => void;
   prevStep: () => void;
@@ -139,28 +93,33 @@ export interface TutorialContextProps {
 const TutorialContext = createContext<TutorialContextProps | undefined>(undefined);
 
 export function TutorialProvider({ children }: { children: React.ReactNode }) {
-  const { user, activePage, setActivePage } = useWorkspace();
+  const { user } = useWorkspace();
   const router = useRouter();
-  const pathname = usePathname();
 
-  // Basic States
+  // Onboarding specific state
+  const [onboardingPhase, setOnboardingPhase] = useState<OnboardingPhase>('welcome');
+  const [userPersona, setUserPersona] = useState<UserPersona>({
+    role: '',
+    teamSize: '',
+    goals: [],
+  });
+  const [completedMissions, setCompletedMissions] = useState<string[]>([]);
+
+  // Base state fields for backward compatibility
   const [currentStep, setCurrentStep] = useState<number>(0);
-  const [status, setStatus] = useState<'started' | 'paused' | 'completed' | 'skipped' | 'idle'>('idle');
+  const [status, setStatus] = useState<TutorialContextProps['status']>('idle');
   const [abVariant, setAbVariant] = useState<'A' | 'B'>('A');
-  const [completedSteps, setCompletedSteps] = useState<number[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [dbAvailable, setDbAvailable] = useState<boolean>(true);
-  
-  // Modal Visibility States
-  const [showWelcome, setShowWelcome] = useState<boolean>(false);
-  const [showCelebration, setShowCelebration] = useState<boolean>(false);
 
   // Time metrics
-  const stepStartTimeRef = useRef<number>(Date.now());
+  const phaseStartTimeRef = useRef<number>(Date.now());
   const tourStartTimeRef = useRef<number>(Date.now());
 
-  const isTutorialActive = status === 'started' && !showWelcome && !showCelebration;
+  const isTutorialActive = status === 'started' && onboardingPhase !== 'welcome' && onboardingPhase !== 'celebration' && onboardingPhase !== 'done';
   const isPaused = status === 'paused';
+  const showWelcome = onboardingPhase === 'welcome';
+  const showCelebration = onboardingPhase === 'celebration';
 
   // ── Helper: Safe Analytics Event logger ───────────────────────
   const logAnalyticsEvent = useCallback(async (
@@ -171,21 +130,22 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
   ) => {
     if (!user) return;
 
-    const stepName = stepIdx !== undefined ? TUTORIAL_STEPS[stepIdx]?.name : undefined;
     const meta = {
       ab_variant: abVariant,
       device: typeof window !== 'undefined' ? (window.innerWidth < 768 ? 'mobile' : window.innerWidth < 1024 ? 'tablet' : 'desktop') : 'unknown',
       screen_size: typeof window !== 'undefined' ? `${window.innerWidth}x${window.innerHeight}` : 'unknown',
+      onboarding_phase: onboardingPhase,
+      role: userPersona.role,
+      goals: userPersona.goals,
+      completed_missions: completedMissions,
       ...additionalMetadata
     };
 
-    console.log(`[Tutorial Analytics] ${eventName}:`, { stepIdx, stepName, duration, meta });
+    console.log(`[Onboarding Analytics] ${eventName}:`, { stepIdx, duration, meta });
 
-    // Track in PostHog Product Analytics
     trackEvent(eventName, {
       userId: user.id,
       stepIndex: stepIdx ?? null,
-      stepName: stepName ?? null,
       duration: duration ?? null,
       ...meta
     });
@@ -195,7 +155,6 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
         user_id: user.id,
         event_name: eventName,
         step_index: stepIdx ?? null,
-        step_name: stepName ?? null,
         duration: duration ?? null,
         metadata: meta
       });
@@ -208,23 +167,26 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
       console.warn('Failed to insert analytics event in Supabase:', e);
       captureError(e, { context: 'supabase_analytics_exception', eventName });
     }
-  }, [user, abVariant]);
+  }, [user, abVariant, onboardingPhase, userPersona, completedMissions]);
 
   // ── Helper: Save progress to Database or LocalStorage ───────────
   const saveProgress = useCallback(async (
-    newStep: number,
+    newPhase: OnboardingPhase,
     newStatus: typeof status,
-    newCompleted: number[],
+    newMissions: string[],
+    persona: UserPersona,
     variantVal: 'A' | 'B'
   ) => {
     if (!user) return;
 
-    // Save to LocalStorage first for instant updates & offline resiliency
     const storageObj = {
-      currentStep: newStep,
+      onboardingPhase: newPhase,
       status: newStatus,
-      completedSteps: newCompleted,
+      completedMissions: newMissions,
+      userPersona: persona,
       abVariant: variantVal,
+      currentStep: newPhase === 'done' ? 7 : (newPhase === 'welcome' ? 0 : 4),
+      completedSteps: newMissions.length > 0 ? [1, 2] : [],
       updatedAt: new Date().toISOString()
     };
     localStorage.setItem(`nexus_tutorial_${user.id}`, JSON.stringify(storageObj));
@@ -232,11 +194,16 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
     try {
       const { error } = await supabase.from('user_tutorial_progress').upsert({
         user_id: user.id,
-        current_step: newStep,
-        status: newStatus,
+        current_step: newPhase === 'done' ? 7 : (newPhase === 'welcome' ? 0 : 4),
+        status: newStatus === 'completed' ? 'completed' : (newPhase === 'done' ? 'completed' : newStatus),
         ab_variant: variantVal,
-        completed_steps: newCompleted,
-        updated_at: new Date().toISOString()
+        completed_steps: newMissions.length > 0 ? [1, 2] : [],
+        updated_at: new Date().toISOString(),
+        metadata: {
+          onboardingPhase: newPhase,
+          completedMissions: newMissions,
+          userPersona: persona
+        }
       });
 
       if (error) {
@@ -273,55 +240,63 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
       try {
         const { data, error } = await supabase
           .from('user_tutorial_progress')
-          .select('current_step, status, ab_variant, completed_steps')
+          .select('current_step, status, ab_variant, completed_steps, metadata')
           .eq('user_id', user.id)
           .single();
 
         if (error || !data) {
-          // If not in DB, use local data if it exists
           if (localData) {
-            setCurrentStep(localData.currentStep);
-            setStatus(localData.status);
-            setCompletedSteps(localData.completedSteps);
-            setAbVariant(localData.abVariant);
-            setDbAvailable(!error || error.code !== 'PGRST116'); // PGRST116 is row not found
+            setOnboardingPhase(localData.onboardingPhase || 'welcome');
+            setStatus(localData.status || 'idle');
+            setCompletedMissions(localData.completedMissions || []);
+            setUserPersona(localData.userPersona || { role: '', teamSize: '', goals: [] });
+            setAbVariant(localData.abVariant || 'A');
+            setDbAvailable(!error || error.code !== 'PGRST116');
           } else {
-            // First time user! Assign random A/B test variant
             const chosenVariant = Math.random() < 0.5 ? 'A' : 'B';
             setAbVariant(chosenVariant);
-            setCurrentStep(0);
+            setOnboardingPhase('welcome');
             setStatus('idle');
-            setCompletedSteps([]);
-            setShowWelcome(true); // Trigger welcome modal automatically
+            setCompletedMissions([]);
           }
         } else {
-          // Loaded successfully from DB
           setDbAvailable(true);
-          setCurrentStep(data.current_step);
-          setStatus(data.status as any);
-          setCompletedSteps(data.completed_steps || []);
           setAbVariant(data.ab_variant as any);
 
-          // If they are brand new and status is idle, show Welcome
-          if (data.status === 'idle' && data.current_step === 0) {
-            setShowWelcome(true);
+          const meta = data.metadata as any;
+          if (meta && meta.onboardingPhase) {
+            setOnboardingPhase(meta.onboardingPhase);
+            setStatus(data.status as any);
+            setCompletedMissions(meta.completedMissions || []);
+            setUserPersona(meta.userPersona || { role: '', teamSize: '', goals: [] });
+          } else {
+            if (data.status === 'completed') {
+              setOnboardingPhase('done');
+              setStatus('completed');
+            } else if (data.status === 'skipped') {
+              setOnboardingPhase('done');
+              setStatus('skipped');
+            } else {
+              setOnboardingPhase('welcome');
+              setStatus('idle');
+            }
           }
         }
       } catch (e) {
         setDbAvailable(false);
         console.warn('Failed to load progress from DB, using local caching:', e);
         if (localData) {
-          setCurrentStep(localData.currentStep);
-          setStatus(localData.status);
-          setCompletedSteps(localData.completedSteps);
-          setAbVariant(localData.abVariant);
+          setOnboardingPhase(localData.onboardingPhase || 'welcome');
+          setStatus(localData.status || 'idle');
+          setCompletedMissions(localData.completedMissions || []);
+          setUserPersona(localData.userPersona || { role: '', teamSize: '', goals: [] });
+          setAbVariant(localData.abVariant || 'A');
         } else {
           const chosenVariant = Math.random() < 0.5 ? 'A' : 'B';
           setAbVariant(chosenVariant);
-          setCurrentStep(0);
+          setOnboardingPhase('welcome');
           setStatus('idle');
-          setCompletedSteps([]);
-          setShowWelcome(true);
+          setCompletedMissions([]);
         }
       } finally {
         setLoading(false);
@@ -331,179 +306,174 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
     loadProgress();
   }, [user]);
 
-  // ── Sync Navigation when currentStep changes ────────────────────
-  useEffect(() => {
-    if (status !== 'started' || showWelcome || showCelebration) return;
+  const changePhase = useCallback((newPhase: OnboardingPhase) => {
+    setOnboardingPhase(newPhase);
+    const now = Date.now();
+    const duration = Math.floor((now - phaseStartTimeRef.current) / 1000);
+    phaseStartTimeRef.current = now;
 
-    const step = TUTORIAL_STEPS[currentStep];
-    if (!step) return;
+    void logAnalyticsEvent('onboarding_phase_changed', undefined, duration, {
+      from_phase: onboardingPhase,
+      to_phase: newPhase,
+    });
 
-    // Check if route matches current step
-    if (step.page && activePage !== step.page) {
-      setActivePage(step.page as any);
-      router.push(step.route);
+    let newStatus = status;
+    if (newPhase === 'welcome') newStatus = 'idle';
+    else if (newPhase === 'done') newStatus = 'completed';
+    else if (status === 'idle') newStatus = 'started';
+
+    setStatus(newStatus);
+    void saveProgress(newPhase, newStatus, completedMissions, userPersona, abVariant);
+  }, [onboardingPhase, status, completedMissions, userPersona, abVariant, logAnalyticsEvent, saveProgress]);
+
+  const updatePersona = useCallback((persona: UserPersona) => {
+    setUserPersona(persona);
+    void saveProgress(onboardingPhase, status, completedMissions, persona, abVariant);
+  }, [onboardingPhase, status, completedMissions, abVariant, saveProgress]);
+
+  const completeMission = useCallback((missionId: string) => {
+    if (completedMissions.includes(missionId)) return;
+
+    const newMissions = [...completedMissions, missionId];
+    setCompletedMissions(newMissions);
+
+    const mission = ONBOARDING_MISSIONS.find(m => m.id === missionId);
+    if (mission) {
+      toast.success(`Mission Completed: ${mission.title}! (+${mission.xp} XP)`, {
+        icon: '⚡',
+      });
+      void logAnalyticsEvent('onboarding_mission_completed', undefined, undefined, {
+        mission_id: missionId,
+        xp_earned: mission.xp,
+      });
     }
-  }, [currentStep, status, activePage, setActivePage, router, showWelcome, showCelebration]);
 
-  // ── State Mutators ──────────────────────────────────────────────
+    void saveProgress(onboardingPhase, status, newMissions, userPersona, abVariant);
+
+    if (newMissions.length === ONBOARDING_MISSIONS.length) {
+      setTimeout(() => {
+        changePhase('celebration');
+      }, 1200);
+    }
+  }, [completedMissions, onboardingPhase, status, userPersona, abVariant, logAnalyticsEvent, saveProgress, changePhase]);
 
   const startTutorial = useCallback(() => {
-    if (!user) return;
-    setShowWelcome(false);
-    setShowCelebration(false);
-    setCurrentStep(1); // Welcome is 0, first highlight is 1
-    setStatus('started');
-    setCompletedSteps([]);
-    stepStartTimeRef.current = Date.now();
+    phaseStartTimeRef.current = Date.now();
     tourStartTimeRef.current = Date.now();
-
-    void saveProgress(1, 'started', [], abVariant);
-    void logAnalyticsEvent('tutorial_started');
-  }, [user, abVariant, saveProgress, logAnalyticsEvent]);
+    void logAnalyticsEvent('onboarding_started');
+    changePhase('personalization');
+  }, [changePhase, logAnalyticsEvent]);
 
   const nextStep = useCallback(() => {
-    if (!user || status !== 'started') return;
-
-    const now = Date.now();
-    const duration = Math.floor((now - stepStartTimeRef.current) / 1000);
-    stepStartTimeRef.current = now;
-
-    // Log step completed
-    void logAnalyticsEvent('tutorial_step_completed', currentStep, duration);
-
-    const nextIdx = currentStep + 1;
-    const nextCompleted = Array.from(new Set([...completedSteps, currentStep]));
-    setCompletedSteps(nextCompleted);
-
-    if (nextIdx >= TUTORIAL_STEPS.length - 1) {
-      // Completed tutorial!
-      setCurrentStep(TUTORIAL_STEPS.length - 1);
-      setStatus('completed');
-      setShowCelebration(true);
-
-      const totalDuration = Math.floor((now - tourStartTimeRef.current) / 1000);
-      void saveProgress(TUTORIAL_STEPS.length - 1, 'completed', nextCompleted, abVariant);
-      void logAnalyticsEvent('tutorial_completed', TUTORIAL_STEPS.length - 1, totalDuration);
-      toast.success('Workspace tour completed!', { icon: <img src="/favicon.ico" className="w-4 h-4 object-contain" alt="" /> });
-    } else {
-      // Move to next step
-      setCurrentStep(nextIdx);
-      void saveProgress(nextIdx, 'started', nextCompleted, abVariant);
-    }
-  }, [user, currentStep, completedSteps, status, abVariant, saveProgress, logAnalyticsEvent]);
+    if (onboardingPhase === 'welcome') changePhase('personalization');
+    else if (onboardingPhase === 'personalization') changePhase('workspace-setup');
+    else if (onboardingPhase === 'workspace-setup') changePhase('missions');
+    else if (onboardingPhase === 'missions') changePhase('celebration');
+    else if (onboardingPhase === 'celebration') changePhase('done');
+  }, [onboardingPhase, changePhase]);
 
   const prevStep = useCallback(() => {
-    if (!user || status !== 'started' || currentStep <= 1) return;
-
-    const prevIdx = currentStep - 1;
-    setCurrentStep(prevIdx);
-    stepStartTimeRef.current = Date.now();
-    void saveProgress(prevIdx, 'started', completedSteps, abVariant);
-  }, [user, currentStep, completedSteps, abVariant, saveProgress]);
+    if (onboardingPhase === 'personalization') changePhase('welcome');
+    else if (onboardingPhase === 'workspace-setup') changePhase('personalization');
+    else if (onboardingPhase === 'missions') changePhase('workspace-setup');
+    else if (onboardingPhase === 'celebration') changePhase('missions');
+  }, [onboardingPhase, changePhase]);
 
   const skipTutorial = useCallback(() => {
     if (!user) return;
-
-    const now = Date.now();
-    const duration = Math.floor((now - tourStartTimeRef.current) / 1000);
-
+    const duration = Math.floor((Date.now() - tourStartTimeRef.current) / 1000);
+    
     setStatus('skipped');
-    setShowWelcome(false);
-    setShowCelebration(false);
-
-    void saveProgress(currentStep, 'skipped', completedSteps, abVariant);
-    void logAnalyticsEvent('tutorial_skipped', currentStep, duration);
-    toast('Tutorial skipped. You can restart it anytime from settings.', { icon: <img src="/favicon.ico" className="w-4 h-4 object-contain" alt="" /> });
-  }, [user, currentStep, completedSteps, abVariant, saveProgress, logAnalyticsEvent]);
+    setOnboardingPhase('done');
+    
+    void saveProgress('done', 'skipped', completedMissions, userPersona, abVariant);
+    void logAnalyticsEvent('onboarding_skipped', undefined, duration);
+    toast('Onboarding skipped. Access missions or guide from the Help Center.', {
+      icon: '⚙️',
+    });
+  }, [user, completedMissions, userPersona, abVariant, saveProgress, logAnalyticsEvent]);
 
   const pauseTutorial = useCallback(() => {
-    if (!user || status !== 'started') return;
-
     setStatus('paused');
-    const now = Date.now();
-    const duration = Math.floor((now - stepStartTimeRef.current) / 1000);
-
-    void saveProgress(currentStep, 'paused', completedSteps, abVariant);
-    void logAnalyticsEvent('tutorial_paused', currentStep, duration);
-  }, [user, currentStep, completedSteps, status, abVariant, saveProgress, logAnalyticsEvent]);
+    void saveProgress(onboardingPhase, 'paused', completedMissions, userPersona, abVariant);
+    void logAnalyticsEvent('onboarding_paused');
+  }, [onboardingPhase, completedMissions, userPersona, abVariant, saveProgress, logAnalyticsEvent]);
 
   const resumeTutorial = useCallback(() => {
-    if (!user || status !== 'paused') return;
-
     setStatus('started');
-    stepStartTimeRef.current = Date.now();
-    void saveProgress(currentStep, 'started', completedSteps, abVariant);
-    void logAnalyticsEvent('tutorial_resumed', currentStep);
-  }, [user, currentStep, completedSteps, status, abVariant, saveProgress, logAnalyticsEvent]);
+    void saveProgress(onboardingPhase, 'started', completedMissions, userPersona, abVariant);
+    void logAnalyticsEvent('onboarding_resumed');
+  }, [onboardingPhase, completedMissions, userPersona, abVariant, saveProgress, logAnalyticsEvent]);
 
   const restartTutorial = useCallback(() => {
-    if (!user) return;
-
-    setShowWelcome(false);
-    setShowCelebration(false);
-    setCurrentStep(1);
-    setStatus('started');
-    setCompletedSteps([]);
-    stepStartTimeRef.current = Date.now();
+    phaseStartTimeRef.current = Date.now();
     tourStartTimeRef.current = Date.now();
-
-    void saveProgress(1, 'started', [], abVariant);
-    void logAnalyticsEvent('tutorial_restarted');
-    toast.info('Workspace tour restarted!');
-  }, [user, abVariant, saveProgress, logAnalyticsEvent]);
+    setCompletedMissions([]);
+    setUserPersona({ role: '', teamSize: '', goals: [] });
+    changePhase('welcome');
+    toast.info('Onboarding tour restarted!');
+  }, [changePhase]);
 
   const trackInteractiveAction = useCallback((actionType: string) => {
-    if (!user || status !== 'started') return;
+    if (onboardingPhase !== 'missions') return;
 
-    // Check if the current step matches the expected interactive action
-    const step = TUTORIAL_STEPS[currentStep];
-    if (step && step.interactiveAction === actionType) {
-      console.log(`[Tutorial Interactive Action] Action: ${actionType} triggered at Step ${currentStep}`);
-      void logAnalyticsEvent('interactive_action_taken', currentStep, undefined, { action_type: actionType });
-      
-      // Auto advance to next step after action
-      toast.success('Nice job! Action completed.', { id: 'tutorial-action-toast' });
-      nextStep();
+    if (actionType === 'create_task') {
+      completeMission('task');
+    } else if (actionType === 'send_chat') {
+      completeMission('chat');
+    } else if (actionType === 'summarize_document') {
+      completeMission('document');
+    } else if (actionType === 'invite_member') {
+      completeMission('invite');
+    } else if (actionType === 'save_automation') {
+      completeMission('automation');
     }
-  }, [user, currentStep, status, logAnalyticsEvent, nextStep]);
+  }, [onboardingPhase, completeMission]);
 
   const resetProgress = useCallback(() => {
     if (!user) return;
     localStorage.removeItem(`nexus_tutorial_${user.id}`);
-    setCurrentStep(0);
-    setStatus('idle');
-    setCompletedSteps([]);
-    setShowWelcome(true);
-    setShowCelebration(false);
     
-    // Assign a new random A/B variant to simulate clean slate
+    setCompletedMissions([]);
+    setUserPersona({ role: '', teamSize: '', goals: [] });
+    setOnboardingPhase('welcome');
+    setStatus('idle');
+
     const chosenVariant = Math.random() < 0.5 ? 'A' : 'B';
     setAbVariant(chosenVariant);
 
-    void saveProgress(0, 'idle', [], chosenVariant);
-    toast.info('Tutorial progress cleared. Starting fresh!');
+    void saveProgress('welcome', 'idle', [], { role: '', teamSize: '', goals: [] }, chosenVariant);
+    toast.info('Onboarding state reset. Starting fresh!');
   }, [user, saveProgress]);
 
   const setAbVariantManually = useCallback((variant: 'A' | 'B') => {
     if (!user) return;
     setAbVariant(variant);
-    void saveProgress(currentStep, status, completedSteps, variant);
+    void saveProgress(onboardingPhase, status, completedMissions, userPersona, variant);
     toast.success(`A/B Test Variant switched to: ${variant}`);
-  }, [user, currentStep, status, completedSteps, saveProgress]);
+  }, [user, onboardingPhase, status, completedMissions, userPersona, saveProgress]);
 
   return (
     <TutorialContext.Provider
       value={{
+        onboardingPhase,
+        setOnboardingPhase: changePhase,
+        userPersona,
+        setUserPersona: updatePersona,
+        completedMissions,
+        completeMission,
+
         isTutorialActive,
         currentStep,
         status,
         abVariant,
-        completedSteps,
+        completedSteps: completedMissions.length > 0 ? [1, 2] : [],
         isPaused,
         loading,
         dbAvailable,
         showWelcome,
         showCelebration,
+
         startTutorial,
         nextStep,
         prevStep,
@@ -513,7 +483,7 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
         restartTutorial,
         trackInteractiveAction,
         resetProgress,
-        setAbVariantManually
+        setAbVariantManually,
       }}
     >
       {children}

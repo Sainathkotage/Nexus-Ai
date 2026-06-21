@@ -254,7 +254,7 @@ export async function sendWelcomeEmail(to: string, data: {
     </div>
     
     <div class="footer">
-      <p>If you have any questions, reach out to our team at support@nexus-ai.com.</p>
+      <p>If you have any questions, reach out to our team at info.aixentrix@gmail.com.</p>
     </div>
   </div>
 </body>

@@ -239,9 +239,85 @@ export default function TasksPage() {
       {/* Primary Workspace Panels */}
       <div className="flex-1 overflow-hidden p-4 md:p-6">
         <AnimatePresence mode="wait">
-          
-          {/* BOARD VIEW */}
-          {view === 'board' && (
+          {tasks.length === 0 ? (
+            <motion.div
+              key="empty-state"
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.98 }}
+              className="h-full flex flex-col items-center justify-center text-center p-8 bg-card border border-border/80 rounded-2xl max-w-xl mx-auto shadow-sm select-none"
+            >
+              <div className="relative mb-6">
+                <div className="w-14 h-14 rounded-2xl bg-indigo-500/10 dark:bg-indigo-500/20 flex items-center justify-center text-indigo-600 dark:text-indigo-400 border border-indigo-500/10">
+                  <CheckSquare className="w-6 h-6 animate-pulse" />
+                </div>
+                <div className="absolute -inset-1 rounded-2xl bg-indigo-500/10 blur-md -z-10 animate-pulse" />
+              </div>
+
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2 leading-tight">
+                No Tasks Created Yet
+              </h3>
+              
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-8 max-w-sm leading-relaxed">
+                Let your AI Chief of Staff help you map your priorities. Type a task title below to instantly register it, or click a suggestion.
+              </p>
+
+              {/* Suggestions */}
+              <div className="flex flex-col gap-2.5 w-full mb-8 text-left">
+                <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">AI Suggestions</span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      addTask({ title: 'Schedule project kickoff sync', status: 'todo', priority: 'medium', dueDate: new Date().toISOString().split('T')[0] });
+                      toast.success('Suggested task added!');
+                    }}
+                    className="p-3 border border-border bg-background hover:bg-muted/40 rounded-xl text-left font-sans transition-colors cursor-pointer text-slate-700 dark:text-slate-300"
+                  >
+                    • Schedule project kickoff sync
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      addTask({ title: 'Review sprint deliverables', status: 'todo', priority: 'high', dueDate: new Date().toISOString().split('T')[0] });
+                      toast.success('Suggested task added!');
+                    }}
+                    className="p-3 border border-border bg-background hover:bg-muted/40 rounded-xl text-left font-sans transition-colors cursor-pointer text-slate-700 dark:text-slate-300"
+                  >
+                    • Review sprint deliverables
+                  </button>
+                </div>
+              </div>
+
+              {/* Fast task creation input */}
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const form = e.currentTarget;
+                  const input = form.elements.namedItem('taskTitle') as HTMLInputElement;
+                  if (input.value.trim()) {
+                    addTask({ title: input.value.trim(), status: 'todo', priority: 'medium', dueDate: new Date().toISOString().split('T')[0] });
+                    input.value = '';
+                    toast.success('Task created!');
+                  }
+                }}
+                className="w-full flex gap-2"
+              >
+                <input
+                  name="taskTitle"
+                  type="text"
+                  placeholder="Create task instantly (e.g. Draft Q3 overview)..."
+                  className="flex-1 bg-background border border-border rounded-xl px-3.5 py-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 text-foreground"
+                />
+                <Button type="submit" className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 rounded-xl border-0 cursor-pointer font-bold flex items-center justify-center shrink-0">
+                  <Plus className="w-4 h-4 mr-1 text-white" /> Add
+                </Button>
+              </form>
+            </motion.div>
+          ) : (
+            <>
+              {/* BOARD VIEW */}
+              {view === 'board' && (
             <motion.div 
               key="board" 
               initial={{ opacity: 0, y: 10 }}
@@ -725,7 +801,8 @@ export default function TasksPage() {
               </div>
             </motion.div>
           )}
-
+          </>
+          )}
         </AnimatePresence>
       </div>
 

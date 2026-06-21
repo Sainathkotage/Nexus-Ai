@@ -258,18 +258,67 @@ export default function DocumentsPage() {
       {/* Content */}
       <div className="flex-1 overflow-auto p-6 md:p-8">
         {filteredDocuments.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-center py-16">
-            <div className="w-12 h-12 rounded-xl bg-muted flex items-center justify-center mb-4">
-              <FileText className="w-6 h-6 text-muted-foreground" />
+          <div className="flex flex-col items-center justify-center h-full text-center py-16 max-w-xl mx-auto select-none">
+            <div className="relative mb-6">
+              <div className="w-14 h-14 rounded-2xl bg-indigo-500/10 dark:bg-indigo-500/20 flex items-center justify-center text-indigo-600 dark:text-indigo-400 border border-indigo-500/10">
+                <FileText className="w-6 h-6 animate-pulse" />
+              </div>
+              <div className="absolute -inset-1 rounded-2xl bg-indigo-500/10 blur-md -z-10 animate-pulse" />
             </div>
-            <h3 className="text-base font-medium mb-1">No documents found</h3>
-            <p className="text-sm text-muted-foreground mb-4">Upload your first document to get started</p>
-            {!isGuest ? (
-              <Button onClick={() => setUploadOpen(true)} variant="outline" size="sm" className="gap-2">
-                <Plus className="w-3.5 h-3.5" /> Upload Document
-              </Button>
-            ) : (
-              <p className="text-xs text-muted-foreground font-medium">Ask a team admin to upload documents to this workspace.</p>
+            
+            <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2 leading-tight">No Documents Found</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-8 max-w-sm leading-relaxed">
+              Consolidate your knowledge base. Select an action below to draft a new note or ask Nexus to summarize.
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full text-left text-xs mb-8">
+              <button
+                type="button"
+                onClick={() => {
+                  addDocument({
+                    title: `Meeting Notes — ${format(new Date(), 'MMM d, yyyy')}`,
+                    type: 'meeting',
+                    size: 1024,
+                    summary: 'Minutes of meeting sync. Priorities discussed: Q3 goals realignment and sprint task assignees.',
+                    content: 'Topic: Weekly Sync\n\nAttending: Team\n\nDecisions:\n1. Realign goals for Q3\n2. Add sprint tasks for designers.',
+                    tags: ['Meeting', 'Sync'],
+                    processingStatus: 'completed'
+                  });
+                  toast.success('Meeting note created!');
+                }}
+                className="p-4 border border-border bg-card hover:bg-muted/40 rounded-xl text-left transition-all hover:-translate-y-0.5 shadow-sm font-sans flex flex-col gap-1.5 cursor-pointer text-foreground"
+              >
+                <span className="font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5" /> Start a meeting note
+                </span>
+                <span className="text-[10px] text-slate-400">Instantly draft a structured template.</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setUploadOpen(true)}
+                className="p-4 border border-border bg-card hover:bg-muted/40 rounded-xl text-left transition-all hover:-translate-y-0.5 shadow-sm font-sans flex flex-col gap-1.5 cursor-pointer text-foreground"
+              >
+                <span className="font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5">
+                  <Plus className="w-3.5 h-3.5" /> Upload a PDF / Text file
+                </span>
+                <span className="text-[10px] text-slate-400">Analyze contracts, memos, or spec sheets.</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleGeneratePlan}
+                className="p-4 border border-border bg-card hover:bg-muted/40 rounded-xl text-left transition-all hover:-translate-y-0.5 shadow-sm font-sans flex flex-col gap-1.5 cursor-pointer sm:col-span-2 text-foreground"
+              >
+                <span className="font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5" /> Ask Nexus to draft guidelines
+                </span>
+                <span className="text-[10px] text-slate-400 font-sans">Draft a complete strategy and product wiki guidelines using AI.</span>
+              </button>
+            </div>
+            
+            {isGuest && (
+              <p className="text-[10px] text-muted-foreground font-medium">Ask a team admin to upload documents to this workspace.</p>
             )}
           </div>
         ) : (

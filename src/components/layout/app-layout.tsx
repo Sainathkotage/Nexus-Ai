@@ -6,9 +6,7 @@ import { RightSidebar } from './right-sidebar';
 import { TopBar } from './top-bar';
 import { CommandPalette } from './command-palette';
 import { useWorkspace } from '@/lib/store';
-import { TutorialWelcome } from '@/components/ui/tutorial-welcome';
-import { TutorialSpotlight } from '@/components/ui/tutorial-spotlight';
-import { TutorialCelebration } from '@/components/ui/tutorial-celebration';
+import { OnboardingOverlay } from '@/components/ui/onboarding-overlay';
 import { HelpCenter } from '@/components/ui/help-center';
 import { LoginScreen } from './login-screen';
 import { GuestAutoJoin } from './guest-auto-join';
@@ -167,9 +165,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       <CustomContextMenu />
 
       {/* Onboarding Tutorial System Overlays */}
-      <TutorialWelcome />
-      <TutorialSpotlight />
-      <TutorialCelebration />
+      <OnboardingOverlay />
       <HelpCenter />
 
       {/* Global Email Client Redirection Dialog */}

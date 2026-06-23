@@ -57,7 +57,16 @@ export function UploadZone({ open, onOpenChange }: UploadZoneProps) {
         body: formData,
       });
 
-      if (!res.ok) throw new Error('Upload failed');
+      if (!res.ok) {
+        let errorMsg = 'Upload failed';
+        try {
+          const errData = await res.json();
+          if (errData && errData.error) {
+            errorMsg = errData.error;
+          }
+        } catch (_) {}
+        throw new Error(errorMsg);
+      }
       
       const data = await res.json();
       const dbRecord = data.dbRecord;
@@ -104,10 +113,10 @@ export function UploadZone({ open, onOpenChange }: UploadZoneProps) {
         onOpenChange(false);
       }, 1200);
 
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
       setIsUploading(false);
-      await alert('Upload failed. Please try again.');
+      await alert(error?.message || 'Upload failed. Please try again.');
     }
   };
 

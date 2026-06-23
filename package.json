@@ -6,8 +6,8 @@
     "dev": "concurrently \"npm:dev:*\"",
     "dev:next": "next dev",
     "dev:server": "npm run start --prefix server",
-    "build": "next build",
-    "build:strict": "npm run lint && next build",
+    "build": "next build --webpack",
+    "build:strict": "npm run lint && next build --webpack",
     "start": "next start",
     "lint": "eslint"
   },

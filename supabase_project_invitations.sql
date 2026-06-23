@@ -59,6 +59,8 @@ RETURNS BOOLEAN AS $$
   );
 $$ LANGUAGE sql SECURITY DEFINER STABLE;
 
+ALTER FUNCTION public.is_project_member(UUID, UUID) OWNER TO postgres;
+
 CREATE OR REPLACE FUNCTION public.is_project_admin(project_id_to_check UUID, user_id_to_check UUID)
 RETURNS BOOLEAN AS $$
   SELECT EXISTS (
@@ -68,6 +70,8 @@ RETURNS BOOLEAN AS $$
       AND role = 'admin'
   );
 $$ LANGUAGE sql SECURITY DEFINER STABLE;
+
+ALTER FUNCTION public.is_project_admin(UUID, UUID) OWNER TO postgres;
 
 -- 4. Create Row Level Security Policies
 

@@ -288,6 +288,19 @@ CREATE TABLE IF NOT EXISTS public.team_messages (
   timestamp TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
+-- Enable RLS on team_messages
+ALTER TABLE public.team_messages ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Allow users to read their own team messages" ON public.team_messages
+  FOR SELECT TO authenticated USING (
+    auth.uid()::text = sender_id OR auth.uid()::text = receiver_id
+  );
+
+CREATE POLICY "Allow users to insert their own team messages" ON public.team_messages
+  FOR INSERT TO authenticated WITH CHECK (
+    auth.uid()::text = sender_id
+  );
+
 -- Create a table for friend links added with the Name#Number format
 CREATE TABLE IF NOT EXISTS public.user_friends (
   user_id TEXT NOT NULL,

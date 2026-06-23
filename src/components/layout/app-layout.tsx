@@ -65,7 +65,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       const inviteQuery = inviteCode ? `inviteCode=${inviteCode}` : '';
 
       if (!user && !hasAuthParam && !hasInviteParam && !isAuthCallbackOrInvite) {
-        const marketingUrl = process.env.NEXT_PUBLIC_MARKETING_URL || 'http://localhost:4321';
+        const marketingUrl = process.env.NEXT_PUBLIC_MARKETING_URL || 'https://aixentrix.com';
         const query = inviteQuery ? `?${inviteQuery}` : '';
         window.location.href = `${marketingUrl}${query}`;
       }

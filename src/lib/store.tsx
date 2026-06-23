@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect, useRef, useMemo } from 'react';
 import {
   PageId, DocumentFile, Task, TaskStatus, CalendarEvent,
   Email, EmailStatus, ChatMessage, Conversation, AIInsight,
@@ -705,6 +705,84 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [isTimerRunning, setIsTimerRunning] = useState(false);
   const [timerElapsed, setTimerElapsed] = useState(0);
 
+  // Dynamically filter workspace items client-side to prevent cross-workspace leak and BOLA / IDOR
+  const filteredDocuments = useMemo(() => {
+    if (!user) return [];
+    return documents.filter(doc => {
+      // Show if uploaded by current user
+      if (doc.uploadedBy?.id === user.id || doc.uploadedBy?.email?.toLowerCase() === user.email?.toLowerCase()) return true;
+      // Or if uploaded by a member of the active workspace
+      if (workspace) {
+        return workspaceMembers.some(m => m.workspaceId === workspace.id && m.userId === doc.uploadedBy?.id);
+      }
+      return false;
+    });
+  }, [documents, user, workspace, workspaceMembers]);
+
+  const filteredTasks = useMemo(() => {
+    if (!user) return [];
+    return tasks.filter(task => {
+      // If task assignee is current user, always show
+      if (task.assignee?.id === user.id || task.assignee?.email?.toLowerCase() === user.email?.toLowerCase()) return true;
+      // If assignee is a member of the active workspace
+      if (workspace && task.assignee) {
+        return workspaceMembers.some(m => m.workspaceId === workspace.id && m.userId === task.assignee?.id);
+      }
+      // If unassigned task, check if it's from a document we can see
+      if (!task.assignee && task.sourceDocument?.id) {
+        return filteredDocuments.some(d => d.id === task.sourceDocument?.id);
+      }
+      return false;
+    });
+  }, [tasks, user, workspace, workspaceMembers, filteredDocuments]);
+
+  const filteredCalendarEvents = useMemo(() => {
+    if (!user) return [];
+    return calendarEvents.filter(ev => {
+      // Show if current user is an attendee
+      if (ev.attendees?.some((att: any) => att.id === user.id || att.email?.toLowerCase() === user.email?.toLowerCase())) return true;
+      // Or if any attendee is a member of the active workspace
+      if (workspace) {
+        return ev.attendees?.some((att: any) => 
+          workspaceMembers.some(m => m.workspaceId === workspace.id && m.userId === att.id)
+        );
+      }
+      return false;
+    });
+  }, [calendarEvents, user, workspace, workspaceMembers]);
+
+  const filteredEmails = useMemo(() => {
+    if (!user) return [];
+    const userEmail = user.email?.toLowerCase() || '';
+    return emails.filter(email => {
+      const toEmail = email.to?.toLowerCase() || '';
+      const fromEmail = email.from?.toLowerCase() || '';
+      // Show if sent to or from the current user
+      if (toEmail.includes(userEmail) || fromEmail.includes(userEmail)) return true;
+      // Or if they belong to any teammate in the active workspace
+      if (workspace) {
+        return workspaceMembers.some(m => {
+          const memberProfile = allUsers.find(p => p.id === m.userId);
+          if (!memberProfile || !memberProfile.email) return false;
+          const memberEmail = memberProfile.email.toLowerCase();
+          return m.workspaceId === workspace.id && (toEmail.includes(memberEmail) || fromEmail.includes(memberEmail));
+        });
+      }
+      return false;
+    });
+  }, [emails, user, workspace, workspaceMembers, allUsers]);
+
+  const filteredConversations = useMemo(() => {
+    if (!user) return [];
+    return conversations.filter(c => {
+      // Scoped conversations have the workspace ID in the ID itself, or are default/uncategorized
+      if (workspace) {
+        return c.id.includes(workspace.id) || (!c.id.includes('ws-') && c.id.startsWith('conv-'));
+      }
+      return true;
+    });
+  }, [conversations, user, workspace]);
+
   const appendAuditLog = useCallback((actor: Person, action: string, target: string, workspaceId?: string) => {
     const activeWorkspaceId = workspaceId || workspace?.id || `ws-${actor.id}`;
     const entry: AuditLogRecord = {
@@ -838,7 +916,39 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // Time Tracker Running Effect
+  // Load workspace-specific deals and AI Inbox items from localStorage when active workspace changes
+  useEffect(() => {
+    if (!workspace) return;
+
+    // Workspace-specific deals
+    const storedDeals = localStorage.getItem(`nexus_deals_${workspace.id}`);
+    if (storedDeals) {
+      setDeals(JSON.parse(storedDeals));
+    } else {
+      const globalDeals = localStorage.getItem('nexus_deals');
+      if (globalDeals) {
+        setDeals(JSON.parse(globalDeals));
+        localStorage.setItem(`nexus_deals_${workspace.id}`, globalDeals);
+      } else {
+        setDeals(SEED_DEALS);
+      }
+    }
+
+    // Workspace-specific AI Inbox
+    const storedAiInbox = localStorage.getItem(`nexus_ai_inbox_${workspace.id}`);
+    if (storedAiInbox) {
+      setAiInbox(JSON.parse(storedAiInbox));
+    } else {
+      const globalAiInbox = localStorage.getItem('nexus_ai_inbox');
+      if (globalAiInbox) {
+        setAiInbox(JSON.parse(globalAiInbox));
+        localStorage.setItem(`nexus_ai_inbox_${workspace.id}`, globalAiInbox);
+      } else {
+        setAiInbox(SEED_AI_INBOX);
+      }
+    }
+  }, [workspace]);
+
   useEffect(() => {
     let interval: any = null;
     if (isTimerRunning) {
@@ -1467,7 +1577,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       });
 
       // 3. Unreplied incoming emails
-      emails.forEach(email => {
+      filteredEmails.forEach(email => {
         if (email.status !== 'received') return;
         const emailExists = hasItem('email', item => item.actionData?.emailId === email.id);
         if (!emailExists) {
@@ -1491,7 +1601,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       });
 
       // 4. Calendar events -> meeting task extractions
-      calendarEvents.forEach(event => {
+      filteredCalendarEvents.forEach(event => {
         if (event.category !== 'meeting') return;
         const meetingExists = hasItem('meeting', item => item.actionData?.eventId === event.id);
         if (!meetingExists) {
@@ -1517,12 +1627,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       });
 
       if (updated) {
-        localStorage.setItem('nexus_ai_inbox', JSON.stringify(currentInbox));
+        const key = workspace?.id ? `nexus_ai_inbox_${workspace.id}` : 'nexus_ai_inbox';
+        localStorage.setItem(key, JSON.stringify(currentInbox));
         return currentInbox;
       }
       return prev;
     });
-  }, [deals, emails, calendarEvents, isAppLoading]);
+  }, [deals, filteredEmails, filteredCalendarEvents, isAppLoading, workspace]);
 
   // Realtime subscription for direct messages
   useEffect(() => {
@@ -2873,28 +2984,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setWorkspace(null);
     setMyWorkspaces([]);
     setWorkspaceMembers([]);
-
     if (typeof window !== 'undefined') {
-      localStorage.removeItem('nexus_user');
-      localStorage.removeItem('nexus_user_status');
-      localStorage.removeItem('nexus_documents');
-      localStorage.removeItem('nexus_tasks');
-      localStorage.removeItem('nexus_calendarEvents');
-      localStorage.removeItem('nexus_emails');
-      localStorage.removeItem('nexus_conversations');
-      localStorage.removeItem('nexus_aiInsights');
-      localStorage.removeItem('nexus_roles');
-      localStorage.removeItem('nexus_login_activities');
-      localStorage.removeItem('nexus_theme_config');
-      localStorage.removeItem('nexus_notifications');
-      localStorage.removeItem('nexus_deals');
-      localStorage.removeItem('nexus_ai_inbox');
-      localStorage.removeItem('nexus_workspace');
-      localStorage.removeItem('nexus_workspace_members');
-      localStorage.removeItem('nexus_workspace_invites');
-      localStorage.removeItem('nexus_audit_logs');
-      localStorage.removeItem('nexus_feedback_items');
-      localStorage.removeItem('nexus_ai_usage');
+      Object.keys(localStorage).forEach(key => {
+        if (key.startsWith('nexus_')) {
+          localStorage.removeItem(key);
+        }
+      });
     }
   }, []);
 
@@ -4235,31 +4330,35 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const updateDealStage = useCallback(async (dealId: string, stage: Deal['stage']) => {
     setDeals(prev => {
       const updated = prev.map(d => d.id === dealId ? { ...d, stage } : d);
-      localStorage.setItem('nexus_deals', JSON.stringify(updated));
+      const key = workspace?.id ? `nexus_deals_${workspace.id}` : 'nexus_deals';
+      localStorage.setItem(key, JSON.stringify(updated));
       return updated;
     });
-  }, []);
+  }, [workspace]);
 
   const addDeal = useCallback(async (deal: Deal) => {
     setDeals(prev => {
       const updated = [...prev, deal];
-      localStorage.setItem('nexus_deals', JSON.stringify(updated));
+      const key = workspace?.id ? `nexus_deals_${workspace.id}` : 'nexus_deals';
+      localStorage.setItem(key, JSON.stringify(updated));
       return updated;
     });
-  }, []);
+  }, [workspace]);
 
   const deleteDeal = useCallback(async (dealId: string) => {
     setDeals(prev => {
       const updated = prev.filter(d => d.id !== dealId);
-      localStorage.setItem('nexus_deals', JSON.stringify(updated));
+      const key = workspace?.id ? `nexus_deals_${workspace.id}` : 'nexus_deals';
+      localStorage.setItem(key, JSON.stringify(updated));
       return updated;
     });
-  }, []);
+  }, [workspace]);
 
   const syncDeals = useCallback((newDeals: Deal[]) => {
     setDeals(newDeals);
-    localStorage.setItem('nexus_deals', JSON.stringify(newDeals));
-  }, []);
+    const key = workspace?.id ? `nexus_deals_${workspace.id}` : 'nexus_deals';
+    localStorage.setItem(key, JSON.stringify(newDeals));
+  }, [workspace]);
 
   const addAiInboxItem = useCallback((item: Omit<AiInboxItem, 'id' | 'createdAt' | 'status'>) => {
     const newItem: AiInboxItem = {
@@ -4270,18 +4369,20 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     };
     setAiInbox(prev => {
       const next = [newItem, ...prev];
-      localStorage.setItem('nexus_ai_inbox', JSON.stringify(next));
+      const key = workspace?.id ? `nexus_ai_inbox_${workspace.id}` : 'nexus_ai_inbox';
+      localStorage.setItem(key, JSON.stringify(next));
       return next;
     });
-  }, []);
+  }, [workspace]);
 
   const completeAiInboxItem = useCallback((id: string) => {
     setAiInbox(prev => {
       const next = prev.map(item => item.id === id ? { ...item, status: 'completed' as const } : item);
-      localStorage.setItem('nexus_ai_inbox', JSON.stringify(next));
+      const key = workspace?.id ? `nexus_ai_inbox_${workspace.id}` : 'nexus_ai_inbox';
+      localStorage.setItem(key, JSON.stringify(next));
       return next;
     });
-  }, []);
+  }, [workspace]);
 
   const startTimer = useCallback((taskName: string) => {
     setActiveTimerTask(taskName || 'Unspecified Task');
@@ -4551,7 +4652,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   // ── Chat Actions ───────────────────────────────────────────
   const createConversation = useCallback((title: string): string => {
-    const id = `conv-${Date.now()}`;
+    const workspacePrefix = workspace?.id ? `${workspace.id}-` : '';
+    const id = `conv-${workspacePrefix}${Date.now()}`;
     const newConvo: Conversation = {
       id,
       title,
@@ -4585,7 +4687,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     })();
 
     return id;
-  }, []);
+  }, [workspace]);
 
   const deleteConversation = useCallback(async (conversationId: string) => {
     setConversations(prev => {
@@ -4668,15 +4770,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+
+
   const value: WorkspaceState = {
     activePage, setActivePage,
     leftSidebarOpen, toggleLeftSidebar,
     rightSidebarOpen, toggleRightSidebar,
     isOnline,
     isAppLoading,
-    documents, addDocument, deleteDocument, selectedDocumentId, setSelectedDocumentId,
-    tasks, addTask, deleteTask, moveTask, updateTask, taskView, setTaskView, selectedTaskId, setSelectedTaskId,
-    calendarEvents, selectedDate, setSelectedDate, addEventToCalendar, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent,
+    documents: filteredDocuments, addDocument, deleteDocument, selectedDocumentId, setSelectedDocumentId,
+    tasks: filteredTasks, addTask, deleteTask, moveTask, updateTask, taskView, setTaskView, selectedTaskId, setSelectedTaskId,
+    calendarEvents: filteredCalendarEvents, selectedDate, setSelectedDate, addEventToCalendar, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent,
     user, userStatus, allUsers, friendIds, canManageTeamMembers,
     workspace, setWorkspace, myWorkspaces, workspaceMembers, workspaceInvites, joinRequests, auditLogs, feedbackItems, aiUsage,
     createInviteLink, submitFeedback, trackAiUsage,
@@ -4689,10 +4793,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     loginActivities,
     deals, updateDealStage, addDeal, deleteDeal, selectedDealId, setSelectedDealId, syncDeals,
     activeTimerTask, isTimerRunning, timerElapsed, startTimer, pauseTimer, resetTimer, logTimer,
-    emails, addEmail, editEmail, deleteEmail, updateEmailStatus,
+    emails: filteredEmails, addEmail, editEmail, deleteEmail, updateEmailStatus,
     inboundEmailAddress, isSyncingEmails, syncInboundEmails,
     emailRedirect, setEmailRedirect,
-    conversations, activeConversationId, setActiveConversationId, addMessage, createConversation, deleteConversation,
+    conversations: filteredConversations, activeConversationId, setActiveConversationId, addMessage, createConversation, deleteConversation,
     insights,
     theme, toggleTheme,
     themeConfig, setThemeConfig,

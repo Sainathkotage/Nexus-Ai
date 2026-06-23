@@ -26,21 +26,36 @@ export default function WhiteboardPage() {
   // Set active page
   useEffect(() => {
     setActivePage('whiteboard');
-    
-    // Load initial elements on mount from localStorage
-    const saved = localStorage.getItem('nexus_whiteboard_elements');
+  }, [setActivePage]);
+
+  // Load initial elements when workspace is loaded/ready or changed
+  useEffect(() => {
+    if (!workspace) return;
+
+    const saved = localStorage.getItem(`nexus_whiteboard_elements_${workspace.id}`);
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
         setInitialElements(parsed);
         elementsRef.current = parsed;
         lastBroadcastRef.current = saved;
+        if (excalidrawAPI) {
+          excalidrawAPI.updateScene({ elements: parsed });
+        }
       } catch (e) {
         console.error('Failed to parse whiteboard elements', e);
       }
+    } else {
+      // Reset whiteboard for this workspace if no saved elements exist
+      setInitialElements([]);
+      elementsRef.current = [];
+      lastBroadcastRef.current = '';
+      if (excalidrawAPI) {
+        excalidrawAPI.updateScene({ elements: [] });
+      }
     }
     setIsInitialized(true);
-  }, [setActivePage]);
+  }, [workspace, excalidrawAPI]);
 
   // Sync elements ref for real-time listener access
   const updateElementsRef = (elements: any[]) => {
@@ -64,7 +79,7 @@ export default function WhiteboardPage() {
               elements: payload.elements
             });
             updateElementsRef(payload.elements);
-            localStorage.setItem('nexus_whiteboard_elements', JSON.stringify(payload.elements));
+            localStorage.setItem(`nexus_whiteboard_elements_${workspace.id}`, JSON.stringify(payload.elements));
             lastBroadcastRef.current = JSON.stringify(payload.elements);
           }
         }
@@ -116,7 +131,11 @@ export default function WhiteboardPage() {
   const onChange = (elements: readonly any[]) => {
     updateElementsRef(elements as any[]);
     const serialize = JSON.stringify(elements);
-    localStorage.setItem('nexus_whiteboard_elements', serialize);
+    if (workspace) {
+      localStorage.setItem(`nexus_whiteboard_elements_${workspace.id}`, serialize);
+    } else {
+      localStorage.setItem('nexus_whiteboard_elements', serialize);
+    }
 
     // Debounce broadcasting to Supabase to prevent flooding the channel
     if (debounceTimeoutRef.current) {

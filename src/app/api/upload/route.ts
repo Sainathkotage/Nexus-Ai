@@ -101,9 +101,11 @@ export async function POST(req: Request) {
       .from('documents')
       .getPublicUrl(fileName);
 
+    const visibility = String(formData.get('visibility') || 'shared');
+
     const supabaseAuth = await createSupabaseServerClient();
     const { data: { user: authUser } } = await supabaseAuth.auth.getUser();
-    const uploadedBy = authUser
+    const baseUser = authUser
       ? {
           id: authUser.id,
           name: authUser.user_metadata?.username ?? authUser.email?.split('@')[0] ?? 'User',
@@ -120,6 +122,11 @@ export async function POST(req: Request) {
             role: formUserRole || 'Member',
           }
       : { id: 'anonymous', name: 'User', email: '', avatar: '', role: 'Member' };
+
+    const uploadedBy = {
+      ...baseUser,
+      visibility
+    };
 
     const docId = `doc-${Date.now()}`;
     const dbPayload = {

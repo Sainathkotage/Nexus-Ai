@@ -42,6 +42,7 @@ export interface DocumentFile {
   processingStatus: 'processing' | 'completed' | 'failed';
   content: string;
   pageCount?: number;
+  visibility?: 'private' | 'shared';
 }
 
 export interface ExtractedTask {

@@ -11,6 +11,7 @@ import {
   Copy, Heart, Sparkles
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { cn, getAvatarStyle } from '@/lib/utils';
 import { toast } from 'sonner';
 import {
@@ -90,9 +91,19 @@ export default function SettingsPage() {
     allUsers,
     deleteAccount,
     logout,
+    isSlackConnected,
+    isNotionConnected,
+    connectSlack,
+    connectNotion,
+    disconnectSlack,
+    disconnectNotion,
   } = useWorkspace();
   const { confirm, prompt } = usePopup();
   const [activeSection, setActiveSection] = useState('general');
+  const [integrationModal, setIntegrationModal] = useState<{
+    open: boolean;
+    type: 'slack' | 'notion' | null;
+  }>({ open: false, type: null });
 
   const {
     restartTutorial,
@@ -108,6 +119,7 @@ export default function SettingsPage() {
     { id: 'account', label: 'Account', icon: User },
     { id: 'appearance', label: 'Appearance', icon: Palette },
     { id: 'notifications', label: 'Notifications', icon: Bell },
+    { id: 'integrations', label: 'Integrations', icon: Plug },
     { id: 'tutorial', label: 'Onboarding & Tour', icon: HelpCircle },
     ...(canManageTeamMembers ? [
       { id: 'security', label: 'Security & SSO', icon: Shield },
@@ -1595,6 +1607,160 @@ export default function SettingsPage() {
                 <span>Audit streams sync immutable records dynamically with database transaction journals.</span>
               </div>
             </section>
+          )}
+
+          {/* Integrations Section */}
+          {activeSection === 'integrations' && (
+            <div className="space-y-8 animate-fadeIn text-xs">
+              <section className="flex flex-col gap-5">
+                <div>
+                  <h2 className="text-base font-semibold mb-1">Workspace Integrations</h2>
+                  <p className="text-sm text-muted-foreground">Connect your external tools to synchronize communication channels and documents with Nexus AI.</p>
+                </div>
+                <div className="h-px bg-border" />
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Slack Card */}
+                  <div className="p-5 border border-black/[0.06] dark:border-white/[0.08] rounded-2xl bg-black/[0.01] dark:bg-white/[0.01] flex flex-col justify-between gap-6 shadow-sm">
+                    <div className="flex flex-col gap-2.5">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-orange-500/10 flex items-center justify-center border border-orange-500/20 shrink-0">
+                          <img src="https://www.google.com/s2/favicons?domain=slack.com&sz=64" className="w-6 h-6 object-contain" alt="Slack" />
+                        </div>
+                        <div className="flex flex-col flex-1">
+                          <span className="text-xs font-bold text-foreground">Slack Connection</span>
+                          <span className="text-[9px] text-muted-foreground">Sync channels and export conversations</span>
+                        </div>
+                      </div>
+                      <p className="text-[10.5px] text-muted-foreground leading-relaxed mt-1">
+                        Connect Slack to fetch public messages, draft responses using Nexus AI, and sync project specifications.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center justify-between mt-2 border-t border-border pt-4">
+                      <div className="flex items-center gap-1.5">
+                        <span className={cn(
+                          "w-2 h-2 rounded-full",
+                          isSlackConnected ? "bg-green-500" : "bg-muted-foreground/30"
+                        )} />
+                        <span className="text-[10px] font-semibold text-muted-foreground">
+                          {isSlackConnected ? "Connected" : "Disconnected"}
+                        </span>
+                      </div>
+
+                      {isSlackConnected ? (
+                        <Button
+                          variant="outline"
+                          type="button"
+                          onClick={() => disconnectSlack()}
+                          className="border-red-500/20 text-red-500 hover:bg-red-500/10 hover:text-red-400 font-medium rounded-full h-7 text-[10px] px-3.5 cursor-pointer"
+                        >
+                          Disconnect
+                        </Button>
+                      ) : (
+                        <Button
+                          type="button"
+                          onClick={() => setIntegrationModal({ open: true, type: 'slack' })}
+                          className="bg-foreground text-background hover:opacity-90 font-medium rounded-full h-7 text-[10px] px-3.5 cursor-pointer"
+                        >
+                          Connect
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Notion Card */}
+                  <div className="p-5 border border-black/[0.06] dark:border-white/[0.08] rounded-2xl bg-black/[0.01] dark:bg-white/[0.01] flex flex-col justify-between gap-6 shadow-sm">
+                    <div className="flex flex-col gap-2.5">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-slate-900/10 dark:bg-white/10 flex items-center justify-center border border-slate-500/20 shrink-0">
+                          <img src="https://www.google.com/s2/favicons?domain=notion.so&sz=64" className="w-6 h-6 object-contain" alt="Notion" />
+                        </div>
+                        <div className="flex flex-col flex-1">
+                          <span className="text-xs font-bold text-foreground">Notion Workspace</span>
+                          <span className="text-[9px] text-muted-foreground">Synchronize knowledge pages & wikis</span>
+                        </div>
+                      </div>
+                      <p className="text-[10.5px] text-muted-foreground leading-relaxed mt-1">
+                        Connect Notion to extract wikis, specifications, meeting notes, and sync updates directly to your Document hub.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center justify-between mt-2 border-t border-border pt-4">
+                      <div className="flex items-center gap-1.5">
+                        <span className={cn(
+                          "w-2 h-2 rounded-full",
+                          isNotionConnected ? "bg-green-500" : "bg-muted-foreground/30"
+                        )} />
+                        <span className="text-[10px] font-semibold text-muted-foreground">
+                          {isNotionConnected ? "Connected" : "Disconnected"}
+                        </span>
+                      </div>
+
+                      {isNotionConnected ? (
+                        <Button
+                          variant="outline"
+                          type="button"
+                          onClick={() => disconnectNotion()}
+                          className="border-red-500/20 text-red-500 hover:bg-red-500/10 hover:text-red-400 font-medium rounded-full h-7 text-[10px] px-3.5 cursor-pointer"
+                        >
+                          Disconnect
+                        </Button>
+                      ) : (
+                        <Button
+                          type="button"
+                          onClick={() => setIntegrationModal({ open: true, type: 'notion' })}
+                          className="bg-foreground text-background hover:opacity-90 font-medium rounded-full h-7 text-[10px] px-3.5 cursor-pointer"
+                        >
+                          Connect
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              {/* Import Prompt Dialog */}
+              <Dialog open={integrationModal.open} onOpenChange={(open) => !open && setIntegrationModal({ open: false, type: null })}>
+                <DialogContent className="sm:max-w-md bg-background border border-border shadow-lg rounded-xl text-xs p-6 flex flex-col gap-4">
+                  <DialogHeader>
+                    <DialogTitle className="text-sm font-bold flex items-center gap-2 text-foreground">
+                      <Plug className="w-5 h-5 text-indigo-500" />
+                      Connect to {integrationModal.type === 'slack' ? 'Slack' : 'Notion'}
+                    </DialogTitle>
+                    <DialogDescription className="text-xs text-muted-foreground leading-relaxed mt-1">
+                      Do you want to import the documents and files uploaded in your {integrationModal.type === 'slack' ? 'Slack channels' : 'Notion pages'} to Nexus AI as well?
+                    </DialogDescription>
+                  </DialogHeader>
+
+                  <DialogFooter className="flex flex-col sm:flex-row gap-2 mt-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        if (integrationModal.type === 'slack') connectSlack(false);
+                        if (integrationModal.type === 'notion') connectNotion(false);
+                        setIntegrationModal({ open: false, type: null });
+                      }}
+                      className="text-[11px] font-semibold h-8 rounded-full border-border hover:bg-muted/40 transition-colors cursor-pointer"
+                    >
+                      No, Skip Import
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={() => {
+                        if (integrationModal.type === 'slack') connectSlack(true);
+                        if (integrationModal.type === 'notion') connectNotion(true);
+                        setIntegrationModal({ open: false, type: null });
+                      }}
+                      className="text-[11px] font-semibold h-8 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white transition-colors cursor-pointer"
+                    >
+                      Yes, Import Documents
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </div>
           )}
 
           {/* Onboarding & Tutorial Settings Section */}

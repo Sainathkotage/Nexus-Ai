@@ -9,7 +9,7 @@ import { motion } from 'motion/react';
 import { useWorkspace } from '@/lib/store';
 import { DocumentFile } from '@/types';
 import { usePopup } from '@/lib/popup-context';
-import { getDocumentFavicon } from '@/lib/utils';
+import { cn, getDocumentFavicon } from '@/lib/utils';
 
 interface UploadZoneProps {
   open: boolean;
@@ -20,6 +20,7 @@ export function UploadZone({ open, onOpenChange }: UploadZoneProps) {
   const [isUploading, setIsUploading] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [visibility, setVisibility] = useState<'private' | 'shared'>('shared');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { addDocument, user } = useWorkspace();
   const { alert } = usePopup();
@@ -43,6 +44,7 @@ export function UploadZone({ open, onOpenChange }: UploadZoneProps) {
     try {
       const formData = new FormData();
       formData.append('file', file);
+      formData.append('visibility', visibility);
       if (user) {
         formData.append('userId', user.id);
         formData.append('userName', user.name);
@@ -90,6 +92,7 @@ export function UploadZone({ open, onOpenChange }: UploadZoneProps) {
         thumbnail: dbRecord.thumbnail || getDocumentFavicon(dbRecord.title),
         processingStatus: dbRecord.processing_status || 'processing',
         content: dbRecord.content || data.text,
+        visibility: visibility,
       };
       
       addDocument(newDoc);
@@ -131,6 +134,40 @@ export function UploadZone({ open, onOpenChange }: UploadZoneProps) {
               Nexus AI will extract text and analyze your document.
             </DialogDescription>
           </DialogHeader>
+
+          {/* Visibility Toggle Switch */}
+          <div className="flex items-center justify-between border border-border p-3 rounded-lg mb-4 bg-muted/20">
+            <div className="flex flex-col gap-0.5 select-none">
+              <span className="text-xs font-semibold text-foreground">Document Access</span>
+              <span className="text-[10px] text-muted-foreground">Decide who can view this document</span>
+            </div>
+            <div className="flex bg-muted p-0.5 rounded-md border border-border">
+              <button
+                type="button"
+                onClick={() => setVisibility('shared')}
+                className={cn(
+                  "px-2.5 py-1 text-[10px] font-bold rounded-sm transition-all cursor-pointer",
+                  visibility === 'shared' 
+                    ? "bg-background text-foreground shadow-sm" 
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                Shared
+              </button>
+              <button
+                type="button"
+                onClick={() => setVisibility('private')}
+                className={cn(
+                  "px-2.5 py-1 text-[10px] font-bold rounded-sm transition-all cursor-pointer",
+                  visibility === 'private' 
+                    ? "bg-background text-foreground shadow-sm" 
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                Private
+              </button>
+            </div>
+          </div>
 
           <input 
             type="file" 

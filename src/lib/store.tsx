@@ -181,7 +181,8 @@ const mapDbDoc = (dbDoc: any): DocumentFile => ({
   tags: dbDoc.tags || [],
   thumbnail: dbDoc.thumbnail || 'https://www.google.com/s2/favicons?domain=docs.google.com&sz=32',
   processingStatus: dbDoc.processing_status || 'completed',
-  content: dbDoc.content || ''
+  content: dbDoc.content || '',
+  visibility: dbDoc.uploaded_by?.visibility || 'shared'
 });
 
 const mapDbTask = (dbTask: any): Task => ({
@@ -579,6 +580,14 @@ interface WorkspaceState {
   deleteAccount: () => Promise<{ success: boolean; error?: string }>;
   meetings: MeetingRecord[];
   saveMeetingRecord: (meeting: MeetingRecord) => void;
+
+  // Integrations State & Actions
+  isSlackConnected: boolean;
+  isNotionConnected: boolean;
+  connectSlack: (importDocs: boolean) => void;
+  connectNotion: (importDocs: boolean) => void;
+  disconnectSlack: () => void;
+  disconnectNotion: () => void;
 }
 
 const WorkspaceContext = createContext<WorkspaceState | undefined>(undefined);
@@ -709,6 +718,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const filteredDocuments = useMemo(() => {
     if (!user) return [];
     return documents.filter(doc => {
+      // Check privacy visibility
+      const isPrivate = doc.visibility === 'private' || doc.uploadedBy?.visibility === 'private';
+      if (isPrivate) {
+        return doc.uploadedBy?.id === user.id || doc.uploadedBy?.email?.toLowerCase() === user.email?.toLowerCase();
+      }
       // Show if uploaded by current user
       if (doc.uploadedBy?.id === user.id || doc.uploadedBy?.email?.toLowerCase() === user.email?.toLowerCase()) return true;
       // Or if uploaded by a member of the active workspace
@@ -782,6 +796,19 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       return true;
     });
   }, [conversations, user, workspace]);
+
+  // Integrations State & Actions
+  const [isSlackConnected, setIsSlackConnected] = useState(false);
+  const [isNotionConnected, setIsNotionConnected] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setIsSlackConnected(localStorage.getItem('nexus_integration_slack') === 'true');
+      setIsNotionConnected(localStorage.getItem('nexus_integration_notion') === 'true');
+    }
+  }, []);
+
+
 
   const appendAuditLog = useCallback((actor: Person, action: string, target: string, workspaceId?: string) => {
     const activeWorkspaceId = workspaceId || workspace?.id || `ws-${actor.id}`;
@@ -4770,6 +4797,70 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const connectSlack = useCallback((importDocs: boolean) => {
+    setIsSlackConnected(true);
+    localStorage.setItem('nexus_integration_slack', 'true');
+    if (importDocs) {
+      addDocument({
+        title: 'slack-general-export.txt',
+        type: 'txt',
+        size: '12 KB',
+        summary: 'Slack channel export containing team sync chat, design reviews, and sprint status logs.',
+        content: '[09:15] Sainath: Added the new onboarding flow yesterday.\n[09:17] Raj: Verified typechecking and build passes.\n[09:20] Sainath: Great work team! Let\'s proceed to push updates.',
+        tags: ['slack', 'imported', 'sync'],
+        thumbnail: 'https://www.google.com/s2/favicons?domain=slack.com&sz=32',
+        processingStatus: 'completed',
+        visibility: 'shared'
+      });
+      toast.success('Slack documents imported successfully!');
+    } else {
+      toast.success('Slack connected!');
+    }
+  }, [addDocument]);
+
+  const connectNotion = useCallback((importDocs: boolean) => {
+    setIsNotionConnected(true);
+    localStorage.setItem('nexus_integration_notion', 'true');
+    if (importDocs) {
+      addDocument({
+        title: 'Notion Product Wiki.txt',
+        type: 'txt',
+        size: '28 KB',
+        summary: 'Notion workspace page details on Nexus AI Chief of Staff product specification, system rules, and design guidelines.',
+        content: '# Product Specification: Nexus AI Chief of Staff\n\n## Vision\nAn AI Chief of Staff that combines the simplicity of Notion, polish of Linear, and friendliness of Duolingo.\n\n## Core Pillars\n1. Premium responsive workspace dashboard\n2. Realtime collaborative whiteboard\n3. Workspace-scoped data isolation\n4. AI-driven task and schedule management',
+        tags: ['notion', 'imported', 'spec-wiki'],
+        thumbnail: 'https://www.google.com/s2/favicons?domain=notion.so&sz=32',
+        processingStatus: 'completed',
+        visibility: 'shared'
+      });
+      toast.success('Notion documents imported successfully!');
+    } else {
+      toast.success('Notion connected!');
+    }
+  }, [addDocument]);
+
+  const disconnectSlack = useCallback(() => {
+    setIsSlackConnected(false);
+    localStorage.removeItem('nexus_integration_slack');
+    setDocuments(prev => {
+      const next = prev.filter(d => !d.tags?.includes('slack'));
+      localStorage.setItem('nexus_documents', JSON.stringify(next));
+      return next;
+    });
+    toast.success('Slack disconnected.');
+  }, []);
+
+  const disconnectNotion = useCallback(() => {
+    setIsNotionConnected(false);
+    localStorage.removeItem('nexus_integration_notion');
+    setDocuments(prev => {
+      const next = prev.filter(d => !d.tags?.includes('notion'));
+      localStorage.setItem('nexus_documents', JSON.stringify(next));
+      return next;
+    });
+    toast.success('Notion disconnected.');
+  }, []);
+
 
 
   const value: WorkspaceState = {
@@ -4812,6 +4903,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     removeWorkspaceMember, banWorkspaceMember, unbanWorkspaceMember, deleteWorkspace,
     updateProfile, deleteAccount,
     meetings, saveMeetingRecord,
+    isSlackConnected, isNotionConnected, connectSlack, connectNotion, disconnectSlack, disconnectNotion,
   };
 
   return (

@@ -132,3 +132,23 @@ ON CONFLICT (id) DO UPDATE SET
     auth_type = EXCLUDED.auth_type,
     supported_triggers = EXCLUDED.supported_triggers,
     supported_actions = EXCLUDED.supported_actions;
+
+-- Add workspace_id column to public.tasks to enable workspace task isolation
+ALTER TABLE public.tasks 
+  ADD COLUMN IF NOT EXISTS workspace_id TEXT REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+-- Backfill workspace_id for existing tasks using their source document's workspace_id
+UPDATE public.tasks t
+SET workspace_id = d.workspace_id
+FROM public.documents d
+WHERE t.source_document->>'id' = d.id;
+
+-- For any remaining manual tasks, default to a workspace the assignee is a member of
+UPDATE public.tasks t
+SET workspace_id = (
+  SELECT workspace_id 
+  FROM public.workspace_members 
+  WHERE user_id = t.assignee->>'id'
+  LIMIT 1
+)
+WHERE workspace_id IS NULL;

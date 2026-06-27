@@ -196,6 +196,7 @@ const mapDbTask = (dbTask: any): Task => ({
   dueDate: dbTask.due_date || '',
   tags: dbTask.tags || [],
   sourceDocument: dbTask.source_document || null,
+  workspaceId: dbTask.workspace_id || '',
   subtasks: dbTask.subtasks || [],
   createdAt: dbTask.created_at,
   updatedAt: dbTask.updated_at
@@ -772,18 +773,29 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, [documents, user, workspace, workspaceMembers]);
 
   const filteredTasks = useMemo(() => {
-    if (!user) return [];
+    if (!user || !workspace) return [];
     return tasks.filter(task => {
-      // If task assignee is current user, always show
-      if (task.assignee?.id === user.id || task.assignee?.email?.toLowerCase() === user.email?.toLowerCase()) return true;
-      // If assignee is a member of the active workspace
-      if (workspace && task.assignee) {
-        return workspaceMembers.some(m => m.workspaceId === workspace.id && m.userId === task.assignee?.id);
+      // 1. If task has a specific workspaceId, enforce strict match
+      if (task.workspaceId) {
+        return task.workspaceId === workspace.id;
       }
-      // If unassigned task, check if it's from a document we can see
-      if (!task.assignee && task.sourceDocument?.id) {
+
+      // 2. If task has a source document, check if that document belongs to the active workspace
+      if (task.sourceDocument?.id) {
         return filteredDocuments.some(d => d.id === task.sourceDocument?.id);
       }
+
+      // 3. Fallback for manual/old tasks: check if assignee is a member of the active workspace AND if it is assigned to the current user
+      const isAssigneeMe = task.assignee?.id === user.id || task.assignee?.email?.toLowerCase() === user.email?.toLowerCase();
+      if (isAssigneeMe) {
+        return workspaceMembers.some(m => m.workspaceId === workspace.id && m.userId === user.id);
+      }
+
+      // 4. If assignee is a member of the active workspace
+      if (task.assignee) {
+        return workspaceMembers.some(m => m.workspaceId === workspace.id && m.userId === task.assignee?.id);
+      }
+
       return false;
     });
   }, [tasks, user, workspace, workspaceMembers, filteredDocuments]);
@@ -2394,6 +2406,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     const newTask: Task = 'id' in task ? task : {
       ...task,
       id: `task-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      workspaceId: workspace?.id || '',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -2415,6 +2428,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         due_date: newTask.dueDate || null,
         tags: newTask.tags,
         source_document: newTask.sourceDocument,
+        workspace_id: newTask.workspaceId || workspace?.id || null,
         subtasks: newTask.subtasks,
         created_at: newTask.createdAt,
         updated_at: newTask.updatedAt
@@ -2427,7 +2441,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       console.warn('Sync failed: addTask', e);
       setIsOnline(false);
     }
-  }, []);
+  }, [workspace]);
 
   const deleteTask = useCallback(async (taskId: string) => {
     setTasks(prev => {

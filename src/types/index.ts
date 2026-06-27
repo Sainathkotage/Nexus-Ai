@@ -79,6 +79,7 @@ export interface Task {
     id: string;
     title: string;
   };
+  workspaceId?: string;
   createdAt: string;
   updatedAt: string;
   subtasks: { id: string; text: string; completed: boolean }[];

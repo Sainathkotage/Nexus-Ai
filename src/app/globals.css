@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap');
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
@@ -7,10 +8,10 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: -apple-system, "SF Pro Display", "SF Pro Text", var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Plus Jakarta Sans", -apple-system, sans-serif;
   --font-serif: var(--font-fraunces), ui-serif, Georgia, serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
-  --font-heading: -apple-system, "SF Pro Display", "SF Pro Text", var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-heading: "Outfit", -apple-system, sans-serif;
   --color-cream-50: #f8f3e8;
   --color-cream-100: #f2ebd9;
   --color-cream-200: #e8dfc5;
@@ -23,7 +24,7 @@
   --color-ink-500: #776a58;
   --color-ink-400: #9a8d78;
   --color-ink-300: #b8ab94;
-  --color-accent-500: #c2410c;
+  --color-accent-500: #b45309;
   --color-accent-600: #9a3412;
   --color-sepia-100: #ebe0c7;
   --color-sepia-200: #dccfa9;
@@ -62,75 +63,75 @@
   --radius-xl: 24px;
 }
 
-/* ── Apple-Inspired Glass Light Theme ──────────────────────────── */
+/* ── Bespoke Alabaster Light Theme ──────────────────────────── */
 :root {
-  --background: #f4f5f6; /* Off-white backdrop */
-  --foreground: #1d1d1f; /* SF Pro Text Dark */
-  --card: rgba(255, 255, 255, 0.6); /* Translucent White */
-  --card-foreground: #1d1d1f;
-  --popover: rgba(255, 255, 255, 0.8);
-  --popover-foreground: #1d1d1f;
-  --primary: #0A84FF; /* Apple Blue */
+  --background: #faf9f6; /* Warm Alabaster */
+  --foreground: #1c1917; /* Ink Charcoal */
+  --card: rgba(255, 255, 255, 0.75); /* Rich opaque warm white */
+  --card-foreground: #1c1917;
+  --popover: rgba(255, 255, 255, 0.9);
+  --popover-foreground: #1c1917;
+  --primary: #b45309; /* Burnished Amber-700 */
   --primary-foreground: #ffffff;
-  --secondary: rgba(0, 0, 0, 0.04);
-  --secondary-foreground: #1d1d1f;
-  --muted: rgba(0, 0, 0, 0.04);
-  --muted-foreground: #86868b;
-  --accent: rgba(10, 132, 255, 0.1);
-  --accent-foreground: #0A84FF;
-  --destructive: #ff453a; /* Apple Red */
-  --border: rgba(0, 0, 0, 0.08);
-  --input: rgba(0, 0, 0, 0.04);
-  --ring: rgba(10, 132, 255, 0.3);
-  --chart-1: #0A84FF;
-  --chart-2: #86868b;
-  --chart-3: #30b0c7;
-  --chart-4: #ff453a;
-  --chart-5: #af52de;
+  --secondary: rgba(161, 98, 7, 0.04);
+  --secondary-foreground: #1c1917;
+  --muted: rgba(161, 98, 7, 0.05);
+  --muted-foreground: #78716c; /* Soft warm stone */
+  --accent: rgba(180, 83, 9, 0.08); /* Amber-700 accent tint */
+  --accent-foreground: #b45309;
+  --destructive: #dc2626; /* Deep Red */
+  --border: rgba(161, 98, 7, 0.1); /* Subtle warm amber-tinted border */
+  --input: rgba(161, 98, 7, 0.05);
+  --ring: rgba(180, 83, 9, 0.25);
+  --chart-1: #b45309;
+  --chart-2: #d97706;
+  --chart-3: #14b8a6;
+  --chart-4: #dc2626;
+  --chart-5: #6366f1;
   --radius: 1rem;
-  --sidebar: rgba(255, 255, 255, 0.4);
-  --sidebar-foreground: #1d1d1f;
-  --sidebar-primary: #0A84FF;
+  --sidebar: rgba(250, 249, 246, 0.6);
+  --sidebar-foreground: #1c1917;
+  --sidebar-primary: #b45309;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: rgba(0, 0, 0, 0.04);
-  --sidebar-accent-foreground: #1d1d1f;
-  --sidebar-border: rgba(0, 0, 0, 0.06);
-  --sidebar-ring: rgba(10, 132, 255, 0.3);
+  --sidebar-accent: rgba(180, 83, 9, 0.06);
+  --sidebar-accent-foreground: #1c1917;
+  --sidebar-border: rgba(161, 98, 7, 0.08);
+  --sidebar-ring: rgba(180, 83, 9, 0.2);
 }
 
-/* ── Apple-Inspired Glass Dark Theme ───────────────────────────── */
+/* ── Bespoke Obsidian Dark Theme ───────────────────────────── */
 .dark {
-  --background: #000000; /* Deep black */
-  --foreground: #f5f5f7; /* SF Pro Text Light */
-  --card: rgba(24, 24, 27, 0.55); /* Translucent zinc-900 */
-  --card-foreground: #f5f5f7;
-  --popover: rgba(28, 28, 30, 0.8);
-  --popover-foreground: #f5f5f7;
-  --primary: #0A84FF;
+  --background: #121110; /* Obsidian Warm Charcoal */
+  --foreground: #faf9f6; /* Warm Alabaster */
+  --card: rgba(28, 25, 23, 0.6); /* Warm stone zinc translucent */
+  --card-foreground: #faf9f6;
+  --popover: rgba(28, 25, 23, 0.85);
+  --popover-foreground: #faf9f6;
+  --primary: #d97706; /* Burnished Amber-600 */
   --primary-foreground: #ffffff;
-  --secondary: rgba(255, 255, 255, 0.06);
-  --secondary-foreground: #f5f5f7;
-  --muted: rgba(255, 255, 255, 0.06);
-  --muted-foreground: #86868b;
-  --accent: rgba(10, 132, 255, 0.15);
-  --accent-foreground: #0A84FF;
-  --destructive: #ff453a;
-  --border: rgba(255, 255, 255, 0.08);
-  --input: rgba(255, 255, 255, 0.06);
-  --ring: rgba(10, 132, 255, 0.4);
-  --chart-1: #0A84FF;
-  --chart-2: #86868b;
-  --chart-3: #30b0c7;
-  --chart-4: #ff453a;
-  --chart-5: #af52de;
-  --sidebar: rgba(24, 24, 27, 0.4);
-  --sidebar-foreground: #f5f5f7;
-  --sidebar-primary: #0A84FF;
+  --secondary: rgba(217, 119, 6, 0.06);
+  --secondary-foreground: #faf9f6;
+  --muted: rgba(217, 119, 6, 0.06);
+  --muted-foreground: #a8a29e;
+  --accent: rgba(217, 119, 6, 0.15);
+  --accent-foreground: #d97706;
+  --destructive: #ef4444;
+  --border: rgba(217, 119, 6, 0.12); /* Obsidian warm borders */
+  --input: rgba(217, 119, 6, 0.08);
+  --ring: rgba(217, 119, 6, 0.35);
+  --chart-1: #d97706;
+  --chart-2: #f59e0b;
+  --chart-3: #14b8a6;
+  --chart-4: #ef4444;
+  --chart-5: #6366f1;
+  --sidebar: rgba(28, 25, 23, 0.55);
+  --sidebar-foreground: #faf9f6;
+  --sidebar-primary: #d97706;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: rgba(255, 255, 255, 0.06);
-  --sidebar-accent-foreground: #f5f5f7;
-  --sidebar-border: rgba(255, 255, 255, 0.06);
-  --sidebar-ring: rgba(10, 132, 255, 0.4);
+  --sidebar-accent: rgba(217, 119, 6, 0.08);
+  --sidebar-accent-foreground: #faf9f6;
+  --sidebar-border: rgba(217, 119, 6, 0.1);
+  --sidebar-ring: rgba(217, 119, 6, 0.3);
 }
 
 /* ── Base ──────────────────────────────────────────────── */
@@ -171,15 +172,15 @@
   background: rgba(255, 255, 255, 0.24);
 }
 
-/* ── Apple-style Hover ───────────────────────────────── */
+/* ── Premium Easing Hover ───────────────────────────────── */
 .notion-hover {
-  transition: background 150ms cubic-bezier(0.25, 1, 0.5, 1);
+  transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 .notion-hover:hover {
-  background: rgba(0, 0, 0, 0.04);
+  background: rgba(180, 83, 9, 0.04);
 }
 .dark .notion-hover:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(217, 119, 6, 0.08);
 }
 
 /* ── Focus Visible ────────────────────────────────────── */
@@ -188,15 +189,15 @@
   transition: box-shadow 150ms cubic-bezier(0.25, 1, 0.5, 1);
 }
 .focus-ring:focus-visible {
-  box-shadow: 0 0 0 2px var(--background), 0 0 0 4px rgba(10, 132, 255, 0.4);
+  box-shadow: 0 0 0 2px var(--background), 0 0 0 4px rgba(180, 83, 9, 0.4);
 }
 .dark .focus-ring:focus-visible {
-  box-shadow: 0 0 0 2px var(--background), 0 0 0 4px rgba(10, 132, 255, 0.5);
+  box-shadow: 0 0 0 2px var(--background), 0 0 0 4px rgba(217, 119, 6, 0.55);
 }
 
 /* ── Layered Soft Shadows ──────────────────────────────── */
 .shadow-notion {
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 8px 32px rgba(28, 25, 23, 0.06), 0 2px 4px rgba(28, 25, 23, 0.03);
 }
 .dark .shadow-notion {
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25), 0 1px 2px rgba(0, 0, 0, 0.15);

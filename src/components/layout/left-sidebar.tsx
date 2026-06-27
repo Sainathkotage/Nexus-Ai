@@ -171,10 +171,10 @@ export function LeftSidebar({ onOpenSearch }: LeftSidebarProps) {
             href={item.id === 'dashboard' ? '/' : `/${item.id}`}
             onClick={() => handleNavClick(item.id)}
             className={cn(
-              "flex items-center gap-2.5 px-3 py-1.5 rounded-full transition-apple text-sm w-full text-left relative",
+              "flex items-center gap-2.5 px-3.5 py-2 rounded-lg text-sm w-full text-left relative transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)]",
               activePage === item.id 
-                ? "bg-accent text-primary font-semibold" 
-                : "text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5"
+                ? "bg-accent/60 text-primary font-bold border-l-2 border-primary rounded-l-none pl-3" 
+                : "text-muted-foreground hover:bg-accent/20 hover:text-foreground"
             )}
           >
             <item.icon className="w-4 h-4 shrink-0" />
@@ -196,10 +196,10 @@ export function LeftSidebar({ onOpenSearch }: LeftSidebarProps) {
           href="/settings"
           onClick={() => handleNavClick('settings')}
           className={cn(
-            "flex items-center gap-2.5 px-2 py-1.5 rounded-md transition-colors text-sm w-full text-left",
+            "flex items-center gap-2.5 px-3.5 py-2 rounded-lg text-sm w-full text-left relative transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)]",
             activePage === 'settings'
-              ? "bg-accent text-foreground font-medium" 
-              : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+              ? "bg-accent/60 text-primary font-bold border-l-2 border-primary rounded-l-none pl-3" 
+              : "text-muted-foreground hover:bg-accent/20 hover:text-foreground"
           )}
         >
           <Settings className="w-4 h-4 shrink-0" />

@@ -31,10 +31,11 @@ const COLUMNS: { id: TaskStatus; title: string; color: string }[] = [
   { id: 'done', title: 'Done', color: 'border-t-emerald-500' }];
 
 const priorityColors: Record<Priority, string> = {
-  low: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
-  medium: 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-  high: 'bg-orange-50 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
-  urgent: 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400' };
+  low: 'border border-stone-200 text-stone-600 bg-stone-50/50 dark:border-stone-800 dark:text-stone-400 dark:bg-stone-900/20',
+  medium: 'border border-amber-200 text-amber-700 bg-amber-50/40 dark:border-amber-900/20 dark:text-amber-500 dark:bg-amber-950/15',
+  high: 'border border-orange-200 text-orange-700 bg-orange-50/40 dark:border-orange-900/20 dark:text-orange-500 dark:bg-orange-950/15',
+  urgent: 'border border-red-200 text-red-700 bg-red-50/40 dark:border-red-900/20 dark:text-red-500 dark:bg-red-950/15'
+};
 
 export default function TasksPage() {
   const { 
@@ -368,7 +369,7 @@ export default function TasksPage() {
                           onClick={() => setSelectedTask(task)}
                           data-context-type="task"
                           data-context-id={task.id}
-                          className="bg-card border border-border hover:border-primary/20 rounded-lg p-3 hover:shadow-sm cursor-grab active:cursor-grabbing transition-all flex flex-col gap-2 relative group"
+                          className="bg-card border border-border/80 hover:border-primary/45 hover:scale-[1.015] hover:shadow-md rounded-xl p-3.5 cursor-grab active:cursor-grabbing transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] flex flex-col gap-2 relative group shadow-sm"
                         >
                           <div className="flex items-start justify-between gap-1">
                             <h4 className="font-medium text-xs text-foreground leading-snug break-words flex-1">{task.title}</h4>
@@ -490,10 +491,10 @@ export default function TasksPage() {
                       className="hover:bg-muted/30 cursor-pointer transition-colors"
                     >
                       <td className="p-3">
-                        <span className={cn("inline-block w-2.5 h-2.5 rounded-full", 
+                        <span className={cn("inline-block w-2 h-2 rounded-full", 
                           task.priority === 'urgent' ? 'bg-red-500' :
                           task.priority === 'high' ? 'bg-orange-500' :
-                          task.priority === 'medium' ? 'bg-blue-500' : 'bg-zinc-400'
+                          task.priority === 'medium' ? 'bg-amber-500' : 'bg-stone-400'
                         )} />
                       </td>
                       <td className="p-3 font-medium text-foreground">
@@ -677,8 +678,8 @@ export default function TasksPage() {
                                       "h-4 w-full cursor-pointer hover:opacity-90 transition-all rounded",
                                       task.priority === 'urgent' ? 'bg-red-500/80 border border-red-500' :
                                       task.priority === 'high' ? 'bg-orange-500/80 border border-orange-500' :
-                                      task.priority === 'medium' ? 'bg-blue-500/80 border border-blue-500' :
-                                      'bg-zinc-400/80 border border-zinc-400'
+                                      task.priority === 'medium' ? 'bg-amber-500/80 border border-amber-500' :
+                                      'bg-stone-400/80 border border-stone-400'
                                     )}
                                     title={`${task.title} (Due: ${task.dueDate})`}
                                   />

@@ -24,6 +24,10 @@ export function CustomContextMenu() {
 
   useEffect(() => {
     const handleContextMenu = (e: MouseEvent) => {
+      if (typeof window !== 'undefined' && window.location.pathname.startsWith('/whiteboard')) {
+        return;
+      }
+      
       // Find closest element with data-context-type attribute
       let target = e.target as HTMLElement | null;
       let foundContext = null;

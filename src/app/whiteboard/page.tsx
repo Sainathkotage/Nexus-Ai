@@ -23,8 +23,16 @@ export default function WhiteboardPage() {
   const lastBroadcastRef = useRef<string>('');
   const debounceTimeoutRef = useRef<any>(null);
 
-  // Set active page
-  
+  // Disable global right click in whiteboard page
+  useEffect(() => {
+    const handleContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+    };
+    document.addEventListener('contextmenu', handleContextMenu);
+    return () => {
+      document.removeEventListener('contextmenu', handleContextMenu);
+    };
+  }, []);
 
   // Load initial elements when workspace is loaded/ready or changed
   useEffect(() => {

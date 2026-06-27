@@ -102,6 +102,7 @@ export async function POST(req: Request) {
       .getPublicUrl(fileName);
 
     const visibility = String(formData.get('visibility') || 'shared');
+    const formWorkspaceId = String(formData.get('workspaceId') || '');
 
     const supabaseAuth = await createSupabaseServerClient();
     const { data: { user: authUser } } = await supabaseAuth.auth.getUser();
@@ -125,7 +126,8 @@ export async function POST(req: Request) {
 
     const uploadedBy = {
       ...baseUser,
-      visibility
+      visibility,
+      workspaceId: formWorkspaceId
     };
 
     const docId = `doc-${Date.now()}`;

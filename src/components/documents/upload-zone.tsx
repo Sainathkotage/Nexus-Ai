@@ -22,7 +22,7 @@ export function UploadZone({ open, onOpenChange }: UploadZoneProps) {
   const [dragOver, setDragOver] = useState(false);
   const [visibility, setVisibility] = useState<'private' | 'shared'>('shared');
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { addDocument, user } = useWorkspace();
+  const { addDocument, user, workspace } = useWorkspace();
   const { alert } = usePopup();
 
   const processFile = async (file: File) => {
@@ -45,6 +45,9 @@ export function UploadZone({ open, onOpenChange }: UploadZoneProps) {
       const formData = new FormData();
       formData.append('file', file);
       formData.append('visibility', visibility);
+      if (workspace) {
+        formData.append('workspaceId', workspace.id);
+      }
       if (user) {
         formData.append('userId', user.id);
         formData.append('userName', user.name);
@@ -102,6 +105,7 @@ export function UploadZone({ open, onOpenChange }: UploadZoneProps) {
         processingStatus: dbRecord.processing_status || 'processing',
         content: dbRecord.content || data.text,
         visibility: visibility,
+        workspaceId: dbRecord.uploaded_by?.workspaceId || dbRecord.uploaded_by?.workspace_id || workspace?.id || '',
       };
       
       addDocument(newDoc);

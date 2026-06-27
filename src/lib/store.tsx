@@ -182,7 +182,8 @@ const mapDbDoc = (dbDoc: any): DocumentFile => ({
   thumbnail: dbDoc.thumbnail || 'https://www.google.com/s2/favicons?domain=docs.google.com&sz=32',
   processingStatus: dbDoc.processing_status || 'completed',
   content: dbDoc.content || '',
-  visibility: dbDoc.uploaded_by?.visibility || 'shared'
+  visibility: dbDoc.uploaded_by?.visibility || 'shared',
+  workspaceId: dbDoc.uploaded_by?.workspaceId || dbDoc.uploaded_by?.workspace_id || ''
 });
 
 const mapDbTask = (dbTask: any): Task => ({
@@ -400,7 +401,7 @@ interface WorkspaceState {
 
   // Documents
   documents: DocumentFile[];
-  addDocument: (doc: Omit<DocumentFile, 'id' | 'uploadedAt' | 'uploadedBy'> | DocumentFile) => void;
+  addDocument: (doc: (Partial<DocumentFile> & Pick<DocumentFile, 'title' | 'type' | 'size'>) | DocumentFile) => void;
   deleteDocument: (id: string) => void;
   selectedDocumentId: string | null;
   setSelectedDocumentId: (id: string | null) => void;
@@ -752,20 +753,21 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   // Dynamically filter workspace items client-side to prevent cross-workspace leak and BOLA / IDOR
   const filteredDocuments = useMemo(() => {
-    if (!user) return [];
+    if (!user || !workspace) return [];
     return documents.filter(doc => {
+      // Check if it belongs to the current workspace
+      const docWorkspaceId = doc.workspaceId || (doc.uploadedBy as any)?.workspaceId || (doc.uploadedBy as any)?.workspace_id;
+      if (docWorkspaceId && docWorkspaceId !== workspace.id) return false;
+
       // Check privacy visibility
-      const isPrivate = doc.visibility === 'private' || doc.uploadedBy?.visibility === 'private';
+      const isPrivate = doc.visibility === 'private' || (doc.uploadedBy as any)?.visibility === 'private';
       if (isPrivate) {
         return doc.uploadedBy?.id === user.id || doc.uploadedBy?.email?.toLowerCase() === user.email?.toLowerCase();
       }
       // Show if uploaded by current user
       if (doc.uploadedBy?.id === user.id || doc.uploadedBy?.email?.toLowerCase() === user.email?.toLowerCase()) return true;
       // Or if uploaded by a member of the active workspace
-      if (workspace) {
-        return workspaceMembers.some(m => m.workspaceId === workspace.id && m.userId === doc.uploadedBy?.id);
-      }
-      return false;
+      return workspaceMembers.some(m => m.workspaceId === workspace.id && m.userId === doc.uploadedBy?.id);
     });
   }, [documents, user, workspace, workspaceMembers]);
 
@@ -2479,14 +2481,20 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // ── Document Actions ───────────────────────────────────────
-  const addDocument = useCallback(async (doc: Omit<DocumentFile, 'id' | 'uploadedAt' | 'uploadedBy'> | DocumentFile) => {
+  const addDocument = useCallback(async (doc: (Partial<DocumentFile> & Pick<DocumentFile, 'title' | 'type' | 'size'>) | DocumentFile) => {
+    const docWorkspaceId = (doc as any).workspaceId || (doc as any).uploadedBy?.workspaceId || (doc as any).uploadedBy?.workspace_id || workspace?.id || '';
+    const uploadedByObj = (doc as any).uploadedBy || user || { id: 'unknown', name: 'User', email: '', avatar: '', role: 'Member' };
+
     const newDocument: DocumentFile = {
       id: (doc as any).id || `doc-${Date.now()}`,
       title: doc.title,
       type: doc.type,
       size: doc.size,
       uploadedAt: (doc as any).uploadedAt || new Date().toISOString(),
-      uploadedBy: (doc as any).uploadedBy || user || { id: 'unknown', name: 'User', email: '', avatar: '', role: 'Member' },
+      uploadedBy: {
+        ...uploadedByObj,
+        workspaceId: docWorkspaceId
+      },
       summary: doc.summary || 'Summary pending analysis.',
       keyPoints: doc.keyPoints || [],
       extractedTasks: doc.extractedTasks || [],
@@ -2497,6 +2505,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       thumbnail: doc.thumbnail || 'https://www.google.com/s2/favicons?domain=docs.google.com&sz=32',
       processingStatus: doc.processingStatus || 'completed',
       content: doc.content || '',
+      workspaceId: docWorkspaceId,
     };
 
     setDocuments(prev => {
@@ -2539,7 +2548,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         });
       });
     }
-  }, [addTask, createCalendarEvent, user]);
+  }, [addTask, createCalendarEvent, user, workspace]);
 
   const deleteDocument = useCallback(async (id: string) => {
     setDocuments(prev => {

@@ -43,6 +43,7 @@ export interface DocumentFile {
   content: string;
   pageCount?: number;
   visibility?: 'private' | 'shared';
+  workspaceId?: string;
 }
 
 export interface ExtractedTask {

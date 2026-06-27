@@ -81,10 +81,11 @@ export default function CallsDashboard() {
         date: meetingDate,
         startTime,
         endTime,
-        category: 'work',
+        category: 'meeting',
         attendees: [],
         color: '#a855f7', // Purple category color
-        addedToCalendar: true
+        addedToCalendar: true,
+        isAiExtracted: false
       });
 
       toast.success('Video meeting scheduled and added to calendar!');

@@ -11,6 +11,8 @@ import {
 } from 'lucide-react';
 import CallDiagnostics from '@/components/chat/call-diagnostics';
 import { cn } from '@/lib/utils';
+import { supabase } from '@/lib/supabase';
+import { AnimatePresence } from 'motion/react';
 
 // Public STUN and free TURN servers configuration
 const iceConfig = {
@@ -37,7 +39,7 @@ export default function MeetingRoom() {
   const searchParams = useSearchParams();
   const router = useRouter();
   
-  const { user, supabase, allUsers } = useWorkspace();
+  const { user, allUsers } = useWorkspace();
   
   // Media streams state
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
@@ -173,7 +175,7 @@ export default function MeetingRoom() {
     roomChannelRef.current = roomChannel;
 
     roomChannel
-      .on('broadcast', { event: 'signal' }, async ({ payload }) => {
+      .on('broadcast', { event: 'signal' }, async ({ payload }: { payload: any }) => {
         // Ignore signals targeted to other peers
         if (payload.targetUserId && payload.targetUserId !== user.id) return;
         
@@ -241,7 +243,7 @@ export default function MeetingRoom() {
             break;
         }
       })
-      .subscribe((status) => {
+      .subscribe((status: string) => {
         if (status === 'SUBSCRIBED') {
           // Tell everyone in the room we just joined
           roomChannel.send({
@@ -446,7 +448,7 @@ export default function MeetingRoom() {
       // Start Screen Capture
       try {
         const screenStream = await navigator.mediaDevices.getDisplayMedia({
-          video: { cursor: 'always' },
+          video: { cursor: 'always' } as any,
           audio: false
         });
         const screenTrack = screenStream.getVideoTracks()[0];

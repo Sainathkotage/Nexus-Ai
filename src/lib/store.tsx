@@ -589,6 +589,10 @@ interface WorkspaceState {
   connectNotion: (importDocs: boolean) => void;
   disconnectSlack: () => void;
   disconnectNotion: () => void;
+
+  // AI Model Selection State & Actions
+  selectedModelId: string;
+  setSelectedModelId: (modelId: string) => void;
 }
 
 const WorkspaceContext = createContext<WorkspaceState | undefined>(undefined);
@@ -711,6 +715,25 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // Custom Status & DND
   const [customStatus, setCustomStatusState] = useState('');
   const [dnd, setDndState] = useState(false);
+
+  // AI Model Selection State
+  const [selectedModelId, setSelectedModelIdState] = useState<string>('google/gemini-2.5-flash:free');
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('nexus_selected_model_id');
+      if (stored) {
+        setSelectedModelIdState(stored);
+      }
+    }
+  }, []);
+
+  const setSelectedModelId = useCallback((modelId: string) => {
+    setSelectedModelIdState(modelId);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('nexus_selected_model_id', modelId);
+    }
+  }, []);
 
   // Channels State
   const [channels, setChannels] = useState<Channel[]>([]);
@@ -5037,6 +5060,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     updateProfile, deleteAccount,
     meetings, saveMeetingRecord,
     isSlackConnected, isNotionConnected, connectSlack, connectNotion, disconnectSlack, disconnectNotion,
+    selectedModelId, setSelectedModelId,
   };
 
   const timerValue = useMemo(() => ({

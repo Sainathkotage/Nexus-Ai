@@ -14,6 +14,7 @@ import { cn } from '@/lib/utils';
 import { ChatMessage } from '@/components/chat/chat-message';
 import { SuggestedPrompts } from '@/components/chat/suggested-prompts';
 import { toast } from 'sonner';
+import { ModelSelector } from '@/components/ui/model-selector';
 
 export default function ChatPage() {
   const { 
@@ -30,7 +31,9 @@ export default function ChatPage() {
     allUsers,
     createCalendarEvent,
     addTask,
-    addEmail
+    addEmail,
+    selectedModelId,
+    setSelectedModelId
   } = useWorkspace();
   const { confirm } = usePopup();
   
@@ -152,7 +155,8 @@ export default function ChatPage() {
           workspaceId: workspace?.id,
           users: allUsers,
           currentUser: user ? { id: user.id, name: user.name, email: user.email } : null,
-          currentDate: new Date().toISOString()
+          currentDate: new Date().toISOString(),
+          modelId: selectedModelId
         }) });
 
       if (!response.ok) {
@@ -493,8 +497,15 @@ export default function ChatPage() {
             </Button>
             <h2 className="font-semibold text-sm leading-none">{activeConversation?.title || 'Nexus AI Workspace Assistant'}</h2>
           </div>
-          <div className="text-[10px] text-muted-foreground font-semibold bg-muted/40 px-2.5 py-1 rounded-full border border-border/40">
-            Context sources active: {userDocuments.filter(d => selectedDocs[d.id]).length}
+          <div className="flex items-center gap-2">
+            <ModelSelector 
+              selectedModelId={selectedModelId}
+              onModelChange={setSelectedModelId}
+              className="mr-1"
+            />
+            <div className="text-[10px] text-muted-foreground font-semibold bg-muted/40 px-2.5 py-1 rounded-full border border-border/40">
+              Context sources active: {userDocuments.filter(d => selectedDocs[d.id]).length}
+            </div>
           </div>
         </div>
 

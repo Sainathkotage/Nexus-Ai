@@ -1140,7 +1140,7 @@ export default function TeamChatPage() {
               setActiveCallPartnerId(fromUserId);
               setCallState({
                 isActive: true,
-                type: 'audio',
+                type: payload.callType || 'audio',
                 status: 'ringing',
                 friend: caller });
               toast.info(`Incoming secure call from ${caller.name}`);
@@ -2443,6 +2443,7 @@ export default function TeamChatPage() {
             targetUserId: activeFriend.id,
             fromUserId: user.id,
             signalType: 'offer',
+            callType: type,
             data: optimizedOffer
           }
         });

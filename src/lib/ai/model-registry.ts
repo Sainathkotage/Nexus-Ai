@@ -13,7 +13,7 @@ export interface AIModel {
 export const FREE_MODELS_REGISTRY: AIModel[] = [
   {
     id: 'google/gemini-2.5-flash:free',
-    name: 'Gemini 2.5 Flash (Free)',
+    name: 'Nexus Pro',
     provider: 'Google',
     contextLength: 1048576,
     inputCostPerToken: 0.0,
@@ -23,7 +23,7 @@ export const FREE_MODELS_REGISTRY: AIModel[] = [
   },
   {
     id: 'meta-llama/llama-3-8b-instruct:free',
-    name: 'Llama 3 8B Instruct (Free)',
+    name: 'Nexus Lite',
     provider: 'Meta',
     contextLength: 8192,
     inputCostPerToken: 0.0,
@@ -33,7 +33,7 @@ export const FREE_MODELS_REGISTRY: AIModel[] = [
   },
   {
     id: 'qwen/qwen-2.5-72b-instruct:free',
-    name: 'Qwen 2.5 72B Instruct (Free)',
+    name: 'Nexus Think',
     provider: 'Alibaba',
     contextLength: 32768,
     inputCostPerToken: 0.0,
@@ -43,7 +43,7 @@ export const FREE_MODELS_REGISTRY: AIModel[] = [
   },
   {
     id: 'deepseek/deepseek-chat:free',
-    name: 'DeepSeek Chat (Free)',
+    name: 'Nexus',
     provider: 'DeepSeek',
     contextLength: 64000,
     inputCostPerToken: 0.0,

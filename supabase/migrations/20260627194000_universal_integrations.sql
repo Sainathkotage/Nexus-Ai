@@ -139,7 +139,7 @@ ALTER TABLE public.tasks
 
 -- Backfill workspace_id for existing tasks using their source document's workspace_id
 UPDATE public.tasks t
-SET workspace_id = d.workspace_id
+SET workspace_id = d.uploaded_by->>'workspaceId'
 FROM public.documents d
 WHERE t.source_document->>'id' = d.id;
 

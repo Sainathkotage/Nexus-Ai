@@ -192,23 +192,29 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem(`nexus_tutorial_${user.id}`, JSON.stringify(storageObj));
 
     try {
-      const { error } = await supabase.from('user_tutorial_progress').upsert({
-        user_id: user.id,
-        current_step: newPhase === 'done' ? 7 : (newPhase === 'welcome' ? 0 : 4),
-        status: newStatus === 'completed' ? 'completed' : (newPhase === 'done' ? 'completed' : newStatus),
-        ab_variant: variantVal,
-        completed_steps: newMissions.length > 0 ? [1, 2] : [],
-        updated_at: new Date().toISOString(),
-        metadata: {
-          onboardingPhase: newPhase,
-          completedMissions: newMissions,
-          userPersona: persona
-        }
-      });
+      // First, get the current notification_settings value to preserve other settings
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('notification_settings')
+        .eq('id', user.id)
+        .single();
+
+      const currentSettings = profile?.notification_settings || {};
+      const updatedSettings = {
+        ...currentSettings,
+        onboarding_progress: storageObj
+      };
+
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          notification_settings: updatedSettings
+        })
+        .eq('id', user.id);
 
       if (error) {
         setDbAvailable(false);
-        console.warn('Supabase progress upsert failed, falling back to LocalStorage:', error.message);
+        console.warn('Supabase progress update failed, falling back to LocalStorage:', error.message);
       } else {
         setDbAvailable(true);
       }
@@ -239,9 +245,9 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
 
       try {
         const { data, error } = await supabase
-          .from('user_tutorial_progress')
-          .select('current_step, status, ab_variant, completed_steps, metadata')
-          .eq('user_id', user.id)
+          .from('profiles')
+          .select('notification_settings')
+          .eq('id', user.id)
           .single();
 
         if (error || !data) {
@@ -261,25 +267,25 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
           }
         } else {
           setDbAvailable(true);
-          setAbVariant(data.ab_variant as any);
-
-          const meta = data.metadata as any;
-          if (meta && meta.onboardingPhase) {
-            setOnboardingPhase(meta.onboardingPhase);
-            setStatus(data.status as any);
-            setCompletedMissions(meta.completedMissions || []);
-            setUserPersona(meta.userPersona || { role: '', teamSize: '', goals: [] });
+          const progress = data.notification_settings?.onboarding_progress;
+          if (progress) {
+            setOnboardingPhase(progress.onboardingPhase || 'welcome');
+            setStatus(progress.status || 'idle');
+            setCompletedMissions(progress.completedMissions || []);
+            setUserPersona(progress.userPersona || { role: '', teamSize: '', goals: [] });
+            setAbVariant(progress.abVariant || 'A');
+          } else if (localData) {
+            setOnboardingPhase(localData.onboardingPhase || 'welcome');
+            setStatus(localData.status || 'idle');
+            setCompletedMissions(localData.completedMissions || []);
+            setUserPersona(localData.userPersona || { role: '', teamSize: '', goals: [] });
+            setAbVariant(localData.abVariant || 'A');
           } else {
-            if (data.status === 'completed') {
-              setOnboardingPhase('done');
-              setStatus('completed');
-            } else if (data.status === 'skipped') {
-              setOnboardingPhase('done');
-              setStatus('skipped');
-            } else {
-              setOnboardingPhase('welcome');
-              setStatus('idle');
-            }
+            const chosenVariant = Math.random() < 0.5 ? 'A' : 'B';
+            setAbVariant(chosenVariant);
+            setOnboardingPhase('welcome');
+            setStatus('idle');
+            setCompletedMissions([]);
           }
         }
       } catch (e) {

@@ -1,5 +1,16 @@
--- Connector metadata table
-CREATE TABLE IF NOT EXISTS public.connectors (
+-- Drop existing tables to clean up any half-created or incompatible schemas from previous attempts
+DROP TABLE IF EXISTS public.sync_jobs CASCADE;
+DROP TABLE IF EXISTS public.execution_logs CASCADE;
+DROP TABLE IF EXISTS public.workflows CASCADE;
+DROP TABLE IF EXISTS public.credentials CASCADE;
+DROP TABLE IF EXISTS public.workspace_integrations CASCADE;
+DROP TABLE IF EXISTS public.connectors CASCADE;
+
+-- Drop integrations schema if it exists from the first attempt
+DROP SCHEMA IF EXISTS integrations CASCADE;
+
+-- 1. Connector metadata table
+CREATE TABLE public.connectors (
     id VARCHAR(64) PRIMARY KEY,
     name VARCHAR(128) NOT NULL,
     category VARCHAR(64) NOT NULL,
@@ -12,8 +23,8 @@ CREATE TABLE IF NOT EXISTS public.connectors (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Installed integrations in workspaces (workspace_id matches text workspaces.id)
-CREATE TABLE IF NOT EXISTS public.workspace_integrations (
+-- 2. Installed integrations in workspaces (workspace_id matches text workspaces.id)
+CREATE TABLE public.workspace_integrations (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     workspace_id TEXT REFERENCES public.workspaces(id) ON DELETE CASCADE,
     connector_id VARCHAR(64) REFERENCES public.connectors(id),
@@ -23,8 +34,8 @@ CREATE TABLE IF NOT EXISTS public.workspace_integrations (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Encrypted credentials store
-CREATE TABLE IF NOT EXISTS public.credentials (
+-- 3. Encrypted credentials store
+CREATE TABLE public.credentials (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     integration_id UUID REFERENCES public.workspace_integrations(id) ON DELETE CASCADE,
     encrypted_data TEXT NOT NULL, -- AES-256 encrypted OAuth tokens / keys
@@ -35,8 +46,8 @@ CREATE TABLE IF NOT EXISTS public.credentials (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Event Workflows
-CREATE TABLE IF NOT EXISTS public.workflows (
+-- 4. Event Workflows
+CREATE TABLE public.workflows (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     workspace_id TEXT REFERENCES public.workspaces(id) ON DELETE CASCADE,
     name VARCHAR(128) NOT NULL,
@@ -47,8 +58,8 @@ CREATE TABLE IF NOT EXISTS public.workflows (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Workflow Execution Logs
-CREATE TABLE IF NOT EXISTS public.execution_logs (
+-- 5. Workflow Execution Logs
+CREATE TABLE public.execution_logs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     workflow_id UUID REFERENCES public.workflows(id) ON DELETE CASCADE,
     status VARCHAR(32) NOT NULL, -- 'success' | 'failed' | 'running'
@@ -58,8 +69,8 @@ CREATE TABLE IF NOT EXISTS public.execution_logs (
     completed_at TIMESTAMPTZ
 );
 
--- Sync status logs for background indexing
-CREATE TABLE IF NOT EXISTS public.sync_jobs (
+-- 6. Sync status logs for background indexing
+CREATE TABLE public.sync_jobs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     integration_id UUID REFERENCES public.workspace_integrations(id) ON DELETE CASCADE,
     job_type VARCHAR(64) NOT NULL,
@@ -69,12 +80,12 @@ CREATE TABLE IF NOT EXISTS public.sync_jobs (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Indexes for performance
-CREATE INDEX IF NOT EXISTS idx_workspace_integrations_ws ON public.workspace_integrations(workspace_id);
-CREATE INDEX IF NOT EXISTS idx_credentials_integration ON public.credentials(integration_id);
-CREATE INDEX IF NOT EXISTS idx_workflows_workspace ON public.workflows(workspace_id);
-CREATE INDEX IF NOT EXISTS idx_execution_logs_workflow ON public.execution_logs(workflow_id);
-CREATE INDEX IF NOT EXISTS idx_sync_jobs_integration ON public.sync_jobs(integration_id);
+-- 7. Indexes for performance
+CREATE INDEX idx_workspace_integrations_ws ON public.workspace_integrations(workspace_id);
+CREATE INDEX idx_credentials_integration ON public.credentials(integration_id);
+CREATE INDEX idx_workflows_workspace ON public.workflows(workspace_id);
+CREATE INDEX idx_execution_logs_workflow ON public.execution_logs(workflow_id);
+CREATE INDEX idx_sync_jobs_integration ON public.sync_jobs(integration_id);
 
 -- Enable RLS
 ALTER TABLE public.workspace_integrations ENABLE ROW LEVEL SECURITY;

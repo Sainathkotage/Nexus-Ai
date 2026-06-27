@@ -183,7 +183,7 @@ const mapDbDoc = (dbDoc: any): DocumentFile => ({
   processingStatus: dbDoc.processing_status || 'completed',
   content: dbDoc.content || '',
   visibility: dbDoc.uploaded_by?.visibility || 'shared',
-  workspaceId: dbDoc.uploaded_by?.workspaceId || dbDoc.uploaded_by?.workspace_id || ''
+  workspaceId: dbDoc.workspace_id || dbDoc.workspaceId || dbDoc.uploaded_by?.workspaceId || dbDoc.uploaded_by?.workspace_id || ''
 });
 
 const mapDbTask = (dbTask: any): Task => ({

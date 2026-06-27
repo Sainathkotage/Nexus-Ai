@@ -24,11 +24,32 @@ export async function POST(req: Request) {
     }
 
 
+    // Fetch active integrations for the workspace
+    let activeIntegrationsText = '';
+    if (workspaceId) {
+      try {
+        const supabaseAdmin = createSupabaseAdminClient();
+        const { data: integrations } = await supabaseAdmin
+          .from('workspace_integrations')
+          .select('connector_id, status')
+          .eq('workspace_id', workspaceId)
+          .eq('status', 'active');
+        
+        if (integrations && integrations.length > 0) {
+          const list = integrations.map(i => i.connector_id).join(', ');
+          activeIntegrationsText = `Active workspace integrations connected: [${list}]. Synced context files (like Notion pages, Slack chats, GitHub PRs) are available in the documents list. You can read, analyze, and summarize them directly.`;
+        }
+      } catch (err) {
+        console.warn('Failed to fetch workspace integrations for system prompt:', err);
+      }
+    }
+
     const systemPrompt = `You are Nexus AI, an advanced AI Chief of Staff. You help users manage their workspace, analyze documents, organize tasks, and schedule meetings.
     
 Current local date/time context: ${currentDate || new Date().toISOString()}
 Current authenticated user: ${JSON.stringify(currentUser || null)}
 List of all workspace members: ${JSON.stringify(users || [])}
+${activeIntegrationsText ? `\n${activeIntegrationsText}\n` : ''}
 
     You must respond with a JSON object following this schema:
 {

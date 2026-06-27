@@ -97,6 +97,12 @@ export default function SettingsPage() {
   const { confirm, prompt } = usePopup();
   const [activeSection, setActiveSection] = useState('general');
   const [installedIntegrations, setInstalledIntegrations] = useState<any[]>([]);
+  const [syncJobs, setSyncJobs] = useState<any[]>([]);
+  const [workflows, setWorkflows] = useState<any[]>([]);
+  const [isCreatingWorkflow, setIsCreatingWorkflow] = useState(false);
+  const [newWorkflowName, setNewWorkflowName] = useState('');
+  const [newWorkflowTrigger, setNewWorkflowTrigger] = useState('slack:message_received');
+  const [newWorkflowAction, setNewWorkflowAction] = useState('nexus:create_task');
   const [isLoadingIntegrations, setIsLoadingIntegrations] = useState(false);
   const [syncingStates, setSyncingStates] = useState<Record<string, boolean>>({});
   const [customTokenModal, setCustomTokenModal] = useState<{ open: boolean; connectorId: string | null }>({ open: false, connectorId: null });
@@ -294,6 +300,26 @@ export default function SettingsPage() {
         .eq('workspace_id', workspace.id);
       if (error) throw error;
       setInstalledIntegrations(data || []);
+
+      if (data && data.length > 0) {
+        const integrationIds = data.map(i => i.id);
+        const { data: jobs } = await supabase
+          .from('sync_jobs')
+          .select('*')
+          .in('integration_id', integrationIds)
+          .order('created_at', { ascending: false })
+          .limit(10);
+        setSyncJobs(jobs || []);
+      } else {
+        setSyncJobs([]);
+      }
+
+      const { data: wfs } = await supabase
+        .from('workflows')
+        .select('*')
+        .eq('workspace_id', workspace.id)
+        .order('created_at', { ascending: false });
+      setWorkflows(wfs || []);
     } catch (e: any) {
       console.error('[FetchIntegrations Error]:', e);
     } finally {
@@ -374,6 +400,73 @@ export default function SettingsPage() {
       fetchIntegrations();
     } catch (e: any) {
       toast.error(e.message || 'Failed to disconnect');
+    }
+  };
+
+  const handleCreateWorkflow = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!workspace || !newWorkflowName.trim()) return;
+    try {
+      const triggerParts = newWorkflowTrigger.split(':');
+      const actionParts = newWorkflowAction.split(':');
+      const { error } = await supabase
+        .from('workflows')
+        .insert({
+          workspace_id: workspace.id,
+          name: newWorkflowName,
+          trigger_config: {
+            connector_id: triggerParts[0],
+            event_type: triggerParts[1]
+          },
+          actions_config: [
+            {
+              connector_id: actionParts[0],
+              action_type: actionParts[1]
+            }
+          ],
+          is_active: true
+        });
+
+      if (error) throw error;
+      toast.success('Workflow created successfully!');
+      setNewWorkflowName('');
+      setIsCreatingWorkflow(false);
+      fetchIntegrations();
+    } catch (e: any) {
+      console.error(e);
+      toast.error(e.message || 'Failed to create workflow');
+    }
+  };
+
+  const handleToggleWorkflow = async (workflowId: string, currentActive: boolean) => {
+    try {
+      const { error } = await supabase
+        .from('workflows')
+        .update({ is_active: !currentActive })
+        .eq('id', workflowId);
+      if (error) throw error;
+      toast.success(`Workflow ${!currentActive ? 'enabled' : 'disabled'} successfully!`);
+      fetchIntegrations();
+    } catch (e: any) {
+      console.error(e);
+      toast.error(e.message || 'Failed to update workflow');
+    }
+  };
+
+  const handleDeleteWorkflow = async (workflowId: string) => {
+    const confirmDelete = await confirm('Are you sure you want to delete this workflow?', 'Delete Workflow');
+    if (!confirmDelete) return;
+    try {
+      const { error } = await supabase
+        .from('workflows')
+        .delete()
+        .eq('id', workflowId);
+      if (error) throw error;
+      toast.success('Workflow deleted successfully!');
+      fetchIntegrations();
+    } catch (e: any) {
+      console.error(e);
+      toast.error(e.message || 'Failed to delete workflow');
     }
   };
 
@@ -1860,6 +1953,175 @@ export default function SettingsPage() {
                     )}
                   </div>
                 </div>
+              </section>
+              
+              {/* Workflows & Automations Section */}
+              <div className="h-px bg-border my-6" />
+              <section className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <h3 className="text-sm font-semibold text-foreground">Workflows & Automations</h3>
+                    <p className="text-[10.5px] text-muted-foreground">Trigger workspace tasks, notifications, or calendar schedules from connector events.</p>
+                  </div>
+                  <Button
+                    type="button"
+                    onClick={() => setIsCreatingWorkflow(!isCreatingWorkflow)}
+                    className="bg-foreground text-background hover:opacity-90 font-medium rounded-full h-7 text-[10px] px-3.5 flex items-center gap-1 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    {isCreatingWorkflow ? 'Cancel' : 'Create Workflow'}
+                  </Button>
+                </div>
+
+                {/* Workflow creation inline form */}
+                {isCreatingWorkflow && (
+                  <form onSubmit={handleCreateWorkflow} className="p-5 border border-border bg-black/[0.01] dark:bg-white/[0.01] rounded-2xl flex flex-col gap-4 max-w-lg">
+                    <h4 className="text-xs font-bold text-foreground">New Event Workflow</h4>
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[10px] font-semibold text-muted-foreground uppercase">Workflow Name</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Sync GitHub PRs to Task list"
+                        value={newWorkflowName}
+                        onChange={(e) => setNewWorkflowName(e.target.value)}
+                        className="bg-transparent border border-border rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-foreground"
+                        required
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-[10px] font-semibold text-muted-foreground uppercase">When (Trigger Event)</label>
+                        <select
+                          value={newWorkflowTrigger}
+                          onChange={(e) => setNewWorkflowTrigger(e.target.value)}
+                          className="bg-background border border-border rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-foreground text-foreground"
+                        >
+                          <option value="slack:message_received">Slack: Message Received</option>
+                          <option value="github:push">GitHub: Commit Pushed</option>
+                          <option value="github:pull_request">GitHub: PR Opened</option>
+                          <option value="notion:page_added">Notion: Database Page Added</option>
+                        </select>
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-[10px] font-semibold text-muted-foreground uppercase">Then (Action)</label>
+                        <select
+                          value={newWorkflowAction}
+                          onChange={(e) => setNewWorkflowAction(e.target.value)}
+                          className="bg-background border border-border rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-foreground text-foreground"
+                        >
+                          <option value="nexus:create_task">Nexus: Create Workspace Task</option>
+                          <option value="nexus:send_email">Nexus: Send Email Notification</option>
+                          <option value="slack:send_message">Slack: Post to General Channel</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div className="flex justify-end gap-2 mt-2">
+                      <Button
+                        type="submit"
+                        className="bg-foreground text-background hover:opacity-90 font-semibold rounded-full h-8 px-4 text-[10px] cursor-pointer"
+                      >
+                        Create Workflow
+                      </Button>
+                    </div>
+                  </form>
+                )}
+
+                {/* List of current workflows */}
+                {workflows.length === 0 ? (
+                  <div className="p-6 border border-dashed border-border rounded-2xl text-center text-muted-foreground text-[10.5px]">
+                    No active workflows configured. Link your connectors to automate event tasks.
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {workflows.map((wf) => {
+                      const triggerText = wf.trigger_config?.connector_id + ': ' + wf.trigger_config?.event_type;
+                      const actionText = wf.actions_config?.[0]?.connector_id + ': ' + wf.actions_config?.[0]?.action_type;
+
+                      return (
+                        <div key={wf.id} className="p-4 border border-border rounded-2xl bg-black/[0.01] dark:bg-white/[0.01] flex items-center justify-between gap-4 shadow-sm">
+                          <div className="flex flex-col gap-1">
+                            <span className="text-xs font-bold text-foreground">{wf.name}</span>
+                            <span className="text-[10px] text-muted-foreground">
+                              Trigger: <strong className="text-foreground uppercase tracking-wide">{triggerText}</strong> &rarr; Action: <strong className="text-foreground uppercase tracking-wide">{actionText}</strong>
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <button
+                              type="button"
+                              onClick={() => handleToggleWorkflow(wf.id, wf.is_active)}
+                              className={cn(
+                                "h-6 px-3 rounded-full text-[9px] font-bold uppercase transition-colors cursor-pointer",
+                                wf.is_active 
+                                  ? "bg-green-500/10 text-green-500 border border-green-500/20 hover:bg-green-500/20" 
+                                  : "bg-muted text-muted-foreground border border-border hover:bg-muted/80"
+                              )}
+                            >
+                              {wf.is_active ? 'Active' : 'Paused'}
+                            </button>
+                            <Button
+                              variant="outline"
+                              type="button"
+                              onClick={() => handleDeleteWorkflow(wf.id)}
+                              className="border-border text-muted-foreground hover:text-red-500 rounded-full w-7 h-7 p-0 cursor-pointer flex items-center justify-center"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+
+              {/* Sync History & Execution Logs Section */}
+              <div className="h-px bg-border my-6" />
+              <section className="space-y-4">
+                <div>
+                  <h3 className="text-sm font-semibold text-foreground">Sync History & Event Logs</h3>
+                  <p className="text-[10.5px] text-muted-foreground">Trace status logs for index updates, database ingestions, and automations execution history.</p>
+                </div>
+
+                {syncJobs.length === 0 ? (
+                  <div className="p-6 border border-dashed border-border rounded-2xl text-center text-muted-foreground text-[10.5px]">
+                    No sync jobs recorded. Connect and trigger sync to index data sources.
+                  </div>
+                ) : (
+                  <div className="border border-border rounded-2xl overflow-hidden bg-black/[0.01] dark:bg-white/[0.01]">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="border-b border-border bg-muted/40 text-[9px] font-bold uppercase text-muted-foreground">
+                          <th className="py-2.5 px-4">Job Details</th>
+                          <th className="py-2.5 px-4">Status</th>
+                          <th className="py-2.5 px-4">Last Sync</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {syncJobs.map((job) => {
+                          const statusColor = job.status === 'completed' ? 'bg-green-500/10 text-green-500 border-green-500/20' :
+                                              job.status === 'syncing' ? 'bg-amber-500/10 text-amber-500 border-amber-500/20' :
+                                              'bg-red-500/10 text-red-500 border-red-500/20';
+
+                          return (
+                            <tr key={job.id} className="border-b border-border/40 hover:bg-muted/20 text-[10.5px]">
+                              <td className="py-3 px-4 font-semibold text-foreground">
+                                {job.job_type === 'context_sync' ? 'Context Index Sync' : job.job_type}
+                              </td>
+                              <td className="py-3 px-4">
+                                <span className={cn("px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase border", statusColor)}>
+                                  {job.status}
+                                </span>
+                              </td>
+                              <td className="py-3 px-4 text-muted-foreground">
+                                {job.last_synced_at ? new Date(job.last_synced_at).toLocaleString() : 'Pending'}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </section>
 
               {/* Secure API Key / Secret Input Dialog */}

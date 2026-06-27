@@ -12,10 +12,10 @@ CREATE TABLE IF NOT EXISTS public.connectors (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Installed integrations in workspaces
+-- Installed integrations in workspaces (workspace_id matches text workspaces.id)
 CREATE TABLE IF NOT EXISTS public.workspace_integrations (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    workspace_id UUID REFERENCES public.workspaces(id) ON DELETE CASCADE,
+    workspace_id TEXT REFERENCES public.workspaces(id) ON DELETE CASCADE,
     connector_id VARCHAR(64) REFERENCES public.connectors(id),
     status VARCHAR(32) DEFAULT 'active', -- 'active' | 'suspended' | 'error'
     installed_by UUID REFERENCES public.profiles(id),
@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS public.credentials (
 -- Event Workflows
 CREATE TABLE IF NOT EXISTS public.workflows (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    workspace_id UUID REFERENCES public.workspaces(id) ON DELETE CASCADE,
+    workspace_id TEXT REFERENCES public.workspaces(id) ON DELETE CASCADE,
     name VARCHAR(128) NOT NULL,
     trigger_config JSONB NOT NULL, -- { connector_id, event_type, filters }
     actions_config JSONB NOT NULL, -- Array of actions and parameters

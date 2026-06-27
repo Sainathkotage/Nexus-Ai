@@ -13,6 +13,10 @@ import CallDiagnostics from '@/components/chat/call-diagnostics';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { AnimatePresence } from 'motion/react';
+import { WakeWordDetector } from '@/lib/wake-word';
+import { DeepgramTranscriber } from '@/lib/deepgram-transcriber';
+import { AiAssistantSidebar } from '@/components/calls/ai-assistant-sidebar';
+import { FloatingAiButton } from '@/components/calls/floating-ai-button';
 
 // Public STUN and free TURN servers configuration
 const iceConfig = {
@@ -40,6 +44,24 @@ export default function MeetingRoom() {
   const router = useRouter();
   
   const { user, allUsers } = useWorkspace();
+  
+  // AI Assistant States
+  const [isAiSidebarOpen, setIsAiSidebarOpen] = useState(false);
+  const [isAiSidebarPinned, setIsAiSidebarPinned] = useState(false);
+  const [isAiListening, setIsAiListening] = useState(false);
+  const [liveTranscripts, setLiveTranscripts] = useState<Array<{ senderName: string; text: string; timestamp: string }>>([]);
+  const [enableSTT, setEnableSTT] = useState(false);
+  const [autoSaveTranscripts, setAutoSaveTranscripts] = useState(false);
+  const [aiSidebarWidth, setAiSidebarWidth] = useState(450);
+
+  // States to bridge streaming speech queries to sidebar
+  const [aiSpokenQuery, setAiSpokenQuery] = useState('');
+  const [aiSpokenQuerySubmit, setAiSpokenQuerySubmit] = useState('');
+
+  const wakeWordDetectorRef = useRef<WakeWordDetector | null>(null);
+  const deepgramTranscriberRef = useRef<DeepgramTranscriber | null>(null);
+  const accumulatedSpeechRef = useRef<string>('');
+  const silenceTimeoutRef = useRef<any>(null);
   
   // Media streams state
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
@@ -141,6 +163,18 @@ export default function MeetingRoom() {
     });
     pcsRef.current = {};
 
+    // Stop wake word detector
+    if (wakeWordDetectorRef.current) {
+      wakeWordDetectorRef.current.stop();
+      wakeWordDetectorRef.current = null;
+    }
+
+    // Stop transcriber
+    if (deepgramTranscriberRef.current) {
+      deepgramTranscriberRef.current.stop();
+      deepgramTranscriberRef.current = null;
+    }
+
     // Remove Supabase Realtime channel
     if (roomChannelRef.current) {
       // Notify other peers we are leaving
@@ -156,6 +190,102 @@ export default function MeetingRoom() {
       supabase.removeChannel(roomChannelRef.current);
     }
   };
+
+  // 1.5. Wake Word Detector Lifecycle
+  useEffect(() => {
+    if (!user) return;
+
+    const detector = new WakeWordDetector(() => {
+      setIsAiSidebarOpen(true);
+      setIsAiListening(true);
+      toast.success('Nexus AI activated!');
+    });
+    wakeWordDetectorRef.current = detector;
+    detector.start();
+
+    return () => {
+      if (wakeWordDetectorRef.current) {
+        wakeWordDetectorRef.current.stop();
+        wakeWordDetectorRef.current = null;
+      }
+    };
+  }, [user]);
+
+  // 1.6. Speech-to-Text Transcription Lifecycle (Captions / AI query speech)
+  useEffect(() => {
+    if (!user) return;
+
+    if (enableSTT || isAiListening) {
+      if (!deepgramTranscriberRef.current) {
+        deepgramTranscriberRef.current = new DeepgramTranscriber(
+          (text, isFinal) => {
+            // Case A: AI assistant query speech capture
+            if (isAiListening) {
+              if (isFinal) {
+                accumulatedSpeechRef.current += ' ' + text;
+              }
+              const currentInput = (accumulatedSpeechRef.current + (isFinal ? '' : ' ' + text)).trim();
+              setAiSpokenQuery(currentInput);
+
+              // Silence-detection / VAD timer
+              if (silenceTimeoutRef.current) clearTimeout(silenceTimeoutRef.current);
+              silenceTimeoutRef.current = setTimeout(() => {
+                const finalQuery = accumulatedSpeechRef.current.trim();
+                if (finalQuery) {
+                  setAiSpokenQuerySubmit(finalQuery);
+                  // Reset submit state shortly after to allow consecutive identical inputs if needed
+                  setTimeout(() => setAiSpokenQuerySubmit(''), 100);
+                  accumulatedSpeechRef.current = '';
+                  setAiSpokenQuery('');
+                  setIsAiListening(false);
+                }
+              }, 2200); // 2.2 seconds of silence
+            }
+
+            // Case B: Live captioning of meeting
+            if (enableSTT && isFinal) {
+              const newChunk = {
+                senderName: user.name,
+                text,
+                timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+              };
+              setLiveTranscripts(prev => [...prev, newChunk]);
+
+              // Broadcast transcript chunk to other participants
+              if (roomChannelRef.current) {
+                roomChannelRef.current.send({
+                  type: 'broadcast',
+                  event: 'signal',
+                  payload: {
+                    signalType: 'transcript-chunk',
+                    meetingId: roomId,
+                    fromUserId: user.id,
+                    data: newChunk
+                  }
+                });
+              }
+            }
+          },
+          (err) => {
+            console.error('[Deepgram error]:', err);
+          },
+          (status) => {
+            console.log('[Deepgram status]:', status);
+          }
+        );
+        deepgramTranscriberRef.current.start();
+      }
+    } else {
+      if (deepgramTranscriberRef.current) {
+        deepgramTranscriberRef.current.stop();
+        deepgramTranscriberRef.current = null;
+      }
+    }
+
+    return () => {
+      if (silenceTimeoutRef.current) clearTimeout(silenceTimeoutRef.current);
+    };
+  }, [enableSTT, isAiListening, user]);
 
   // Copy Room Link to clipboard
   const handleCopyLink = () => {
@@ -182,6 +312,11 @@ export default function MeetingRoom() {
         const { signalType, fromUserId, data } = payload;
         
         switch (signalType) {
+          case 'transcript-chunk':
+            // Add peer's speech to meeting transcripts log
+            setLiveTranscripts(prev => [...prev, data]);
+            break;
+
           case 'meeting-join':
             // Another peer has joined our room
             const joinedUser = data.user;
@@ -577,7 +712,10 @@ export default function MeetingRoom() {
       <div className="flex flex-1 overflow-hidden min-h-0 relative">
         
         {/* Main Video View Grid */}
-        <div className={cn("grid flex-1 gap-4 p-6 overflow-y-auto align-middle justify-center", gridColumnsClass)}>
+        <div 
+          className={cn("grid flex-1 gap-4 p-6 overflow-y-auto align-middle justify-center transition-all duration-300", gridColumnsClass)}
+          style={{ marginRight: isAiSidebarOpen && isAiSidebarPinned ? `${aiSidebarWidth}px` : '0px' }}
+        >
           {gridStreams.map((item) => (
             <div key={item.id} className="relative aspect-video rounded-2xl overflow-hidden border border-white/5 bg-zinc-900 flex items-center justify-center shadow-2xl">
               {item.videoMuted ? (
@@ -616,12 +754,12 @@ export default function MeetingRoom() {
                 callType="video"
                 callStatus="connected"
                 onClose={() => setShowDiagnostics(false)}
-                transcripts={[]}
+                transcripts={liveTranscripts}
                 onSaveTranscript={() => {}}
-                enableSTT={false}
-                setEnableSTT={() => {}}
-                autoSaveTranscripts={false}
-                setAutoSaveTranscripts={() => {}}
+                enableSTT={enableSTT}
+                setEnableSTT={setEnableSTT}
+                autoSaveTranscripts={autoSaveTranscripts}
+                setAutoSaveTranscripts={setAutoSaveTranscripts}
               />
             </div>
           )}
@@ -678,6 +816,43 @@ export default function MeetingRoom() {
           <span>Leave Room</span>
         </Button>
       </div>
+
+      {/* Floating AI Button (only show if AI sidebar is closed) */}
+      {!isAiSidebarOpen && (
+        <FloatingAiButton 
+          onClick={() => {
+            setIsAiSidebarOpen(true);
+            setIsAiListening(true);
+            toast.success('Nexus AI listening...');
+          }} 
+          isActive={isAiListening} 
+        />
+      )}
+
+      {/* AI Assistant Sidebar */}
+      <AiAssistantSidebar 
+        isOpen={isAiSidebarOpen}
+        onClose={() => {
+          setIsAiSidebarOpen(false);
+          setIsAiListening(false);
+        }}
+        isPinned={isAiSidebarPinned}
+        onPinToggle={setIsAiSidebarPinned}
+        liveTranscript={liveTranscripts}
+        meetingTitle={roomId}
+        roomId={roomId}
+        isMicListening={isAiListening}
+        onMicToggle={() => {
+          setIsAiListening(prev => !prev);
+          if (!isAiListening) {
+            toast.success('Nexus AI listening...');
+          }
+        }}
+        spokenQuery={aiSpokenQuery}
+        spokenQuerySubmit={aiSpokenQuerySubmit}
+        width={aiSidebarWidth}
+        onWidthChange={setAiSidebarWidth}
+      />
 
     </div>
   );

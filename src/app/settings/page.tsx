@@ -338,10 +338,19 @@ export default function SettingsPage() {
   const handleTriggerSync = async (integrationId: string) => {
     setSyncingStates(prev => ({ ...prev, [integrationId]: true }));
     try {
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      toast.success('Workspace index synced successfully!');
-    } catch (e) {
-      toast.error('Sync failed');
+      const response = await fetch('/api/integrations/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ integrationId })
+      });
+      const resData = await response.json();
+      if (!response.ok) {
+        throw new Error(resData.error || 'Sync failed');
+      }
+      toast.success(`Workspace index synced successfully! Imported ${resData.docsSynced || 0} integration files.`);
+    } catch (e: any) {
+      console.error(e);
+      toast.error(e.message || 'Sync failed');
     } finally {
       setSyncingStates(prev => ({ ...prev, [integrationId]: false }));
     }

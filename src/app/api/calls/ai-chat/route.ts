@@ -5,7 +5,7 @@ export const runtime = 'edge';
 
 export async function POST(req: Request) {
   try {
-    const { messages, context, modelId } = await req.json();
+    const { messages, context } = await req.json();
 
     // Shield against prompt injection attacks
     const lastUserMessage = messages[messages.length - 1]?.content || '';
@@ -79,7 +79,7 @@ Role & Response Instructions:
                 'Content-Type': 'application/json',
               },
               body: JSON.stringify({
-                model: modelId || process.env.OPENROUTER_MODEL || 'google/gemini-2.5-flash',
+                model: process.env.OPENROUTER_MODEL || 'google/gemini-2.5-flash:free',
                 messages: formattedMessages,
                 stream: true,
                 temperature: 0.5

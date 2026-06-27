@@ -6,7 +6,7 @@ import { callLLM, parseRobustJson } from '@/lib/ai';
 
 export async function POST(req: Request) {
   try {
-    const { messages, documentContext, workspaceId, users, currentUser, currentDate, modelId } = await req.json();
+    const { messages, documentContext, workspaceId, users, currentUser, currentDate } = await req.json();
 
     if (!messages || !Array.isArray(messages)) {
       return NextResponse.json({ error: 'Invalid messages format' }, { status: 400 });
@@ -94,8 +94,7 @@ ${documentContext ? `Here is the contents of the documents currently in the user
       const aiResponse = await callLLM(messages, {
         systemPrompt,
         temperature: 0.7,
-        jsonMode: true,
-        model: modelId
+        jsonMode: true
       });
       
       const parsed = parseRobustJson(aiResponse) || {};

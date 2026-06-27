@@ -9,7 +9,6 @@ import {
 import { Button } from '@/components/ui/button';
 import { useWorkspace } from '@/lib/store';
 import { toast } from 'sonner';
-import { ModelSelector } from '@/components/ui/model-selector';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -48,7 +47,7 @@ export function AiAssistantSidebar({
   width,
   onWidthChange
 }: AiAssistantSidebarProps) {
-  const { user, workspace, documents, tasks, calendarEvents, addTask, selectedModelId, setSelectedModelId } = useWorkspace();
+  const { user, workspace, documents, tasks, calendarEvents, addTask } = useWorkspace();
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
@@ -191,8 +190,7 @@ Try asking me:
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: [...messages, newUserMessage],
-          context: contextPayload,
-          modelId: selectedModelId
+          context: contextPayload
         }),
         signal: controller.signal
       });
@@ -433,13 +431,6 @@ Workspace chat history cleared. Ready for your next command or question.`
           </div>
 
           <div className="flex items-center gap-1.5">
-            {/* AI Model Selector */}
-            <ModelSelector 
-              selectedModelId={selectedModelId}
-              onModelChange={setSelectedModelId}
-              className="mr-1"
-            />
-
             {/* TTS Toggle Button */}
             <Button
               size="icon"

@@ -234,7 +234,7 @@ export interface ActivityItem {
 }
 
 // --- Navigation ---
-export type PageId = 'dashboard' | 'documents' | 'chat' | 'tasks' | 'calendar' | 'emails' | 'settings' | 'team-chat' | 'whiteboard' | 'crm' | 'ai-inbox' | 'ai-handover';
+export type PageId = 'dashboard' | 'documents' | 'chat' | 'tasks' | 'calendar' | 'emails' | 'settings' | 'team-chat' | 'whiteboard' | 'crm' | 'ai-inbox' | 'ai-handover' | 'calls';
 
 // --- Enterprise Channels ---
 export interface Channel {

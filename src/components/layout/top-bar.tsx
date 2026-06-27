@@ -1,7 +1,10 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useWorkspace } from '@/lib/store';
+import { 
+  useWorkspaceTimer, useWorkspaceNavigation, useWorkspaceUser, useWorkspaceData, useWorkspaceActions 
+} from '@/lib/store';
+import { usePathname } from 'next/navigation';
 import { useTutorial } from '@/lib/tutorial-context';
 import { 
   PanelLeft, PanelRight, Search, Bell, Sun, Moon, 
@@ -13,26 +16,28 @@ import { cn } from '@/lib/utils';
 
 export function TopBar() {
   const { 
-    toggleLeftSidebar, 
-    toggleRightSidebar, 
-    theme, 
-    toggleTheme,
-    activePage,
-    leftSidebarOpen,
-    isOnline,
-    userStatus,
-    setUserStatus,
-    activeTimerTask,
-    isTimerRunning,
-    timerElapsed,
-    startTimer,
-    pauseTimer,
-    resetTimer,
-    logTimer,
-    notifications,
-    markNotificationsAsRead,
-    reviewJoinRequest
-  } = useWorkspace();
+    activeTimerTask, isTimerRunning, timerElapsed, startTimer, pauseTimer, resetTimer, logTimer 
+  } = useWorkspaceTimer();
+  const { 
+    toggleLeftSidebar, toggleRightSidebar, leftSidebarOpen 
+  } = useWorkspaceNavigation();
+  const { 
+    userStatus, setUserStatus 
+  } = useWorkspaceUser();
+  const { 
+    theme, isOnline, notifications 
+  } = useWorkspaceData();
+  const { 
+    toggleTheme, markNotificationsAsRead, reviewJoinRequest 
+  } = useWorkspaceActions();
+
+  const pathname = usePathname();
+
+  const activePage = React.useMemo(() => {
+    if (pathname === '/') return 'dashboard';
+    const firstSegment = pathname.split('/')[1];
+    return firstSegment || 'dashboard';
+  }, [pathname]);
 
   const { trackInteractiveAction } = useTutorial();
 
@@ -40,7 +45,7 @@ export function TopBar() {
   const [localTaskName, setLocalTaskName] = useState('');
   const [showNotifications, setShowNotifications] = useState(false);
 
-  const hasUnread = (notifications || []).some(n => !n.read);
+  const hasUnread = (notifications || []).some((n: any) => !n.read);
  
   useEffect(() => {
     const update = () => setTime(format(new Date(), 'h:mm a'));
@@ -212,7 +217,7 @@ export function TopBar() {
                 {(notifications || []).length === 0 ? (
                   <div className="text-center text-xs text-muted-foreground py-6">No new updates</div>
                 ) : (
-                  (notifications || []).map((notif) => (
+                  (notifications || []).map((notif: any) => (
                     <div 
                       key={notif.id}
                       className={cn(

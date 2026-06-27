@@ -18,7 +18,6 @@ import { format } from 'date-fns';
 
 export default function AiInboxPage() {
   const { 
-    setActivePage, 
     aiInbox, 
     completeAiInboxItem, 
     addEmail, 
@@ -34,9 +33,7 @@ export default function AiInboxPage() {
   // Editable email body
   const [editedBody, setEditedBody] = useState('');
 
-  useEffect(() => {
-    setActivePage('ai-inbox');
-  }, [setActivePage]);
+  
 
   // Filter items by tab
   const items = aiInbox.filter(item => {

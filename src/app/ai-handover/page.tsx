@@ -243,7 +243,6 @@ function RelationshipGraph({ nodes, links }: { nodes: GraphNode[]; links: GraphL
 
 export default function AIHandoverPage() {
   const { 
-    setActivePage, 
     allUsers, 
     tasks, 
     emails, 
@@ -281,7 +280,7 @@ export default function AIHandoverPage() {
   const [qaLoading, setQaLoading] = useState(false);
 
   useEffect(() => {
-    setActivePage('ai-handover');
+    
     
     // Load local storage states
     const cachedStatus = localStorage.getItem('nexus_handover_status');
@@ -293,7 +292,7 @@ export default function AIHandoverPage() {
     if (workspaceUsers.length > 0) {
       setSelectedUserId(workspaceUsers[0].id);
     }
-  }, [setActivePage, workspaceUsers]);
+  }, [workspaceUsers]);
 
   const selectedUser = workspaceUsers.find(u => u.id === selectedUserId);
 

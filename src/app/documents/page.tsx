@@ -17,7 +17,7 @@ const typeFilters = ['all', 'pdf', 'txt', 'meeting', 'research'] as const;
 
 export default function DocumentsPage() {
   const { 
-    setActivePage, documents, selectedDocumentId, setSelectedDocumentId, user,
+    documents, selectedDocumentId, setSelectedDocumentId, user,
     addTask, addDocument 
   } = useWorkspace();
 
@@ -122,9 +122,7 @@ export default function DocumentsPage() {
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const isGuest = user?.role === 'Guest';
 
-  useEffect(() => {
-    setActivePage('documents');
-  }, [setActivePage]);
+  
 
   useEffect(() => {
     if (selectedDocumentId === 'new') {

@@ -17,13 +17,11 @@ import { toast } from 'sonner';
 import {
   startRazorpayCheckout,
   openBillingManage,
-  updateSeatCount,
-} from '@/lib/billing/client';
+  updateSeatCount } from '@/lib/billing/client';
 import {
   BILLING_PLANS,
   planIdFromLabel,
-  type BillingPlanId,
-} from '@/lib/billing/plans';
+  type BillingPlanId } from '@/lib/billing/plans';
 import { parseSsoProvider } from '@/lib/enterprise/sso';
 
 const ORG_ID =
@@ -38,8 +36,7 @@ const STATIC_SECTIONS = [
   { id: 'notifications', label: 'Notifications', icon: Bell },
   { id: 'security', label: 'Security & SSO', icon: Shield },
   { id: 'billing', label: 'Plans & Billing', icon: CreditCard },
-  { id: 'audit', label: 'Audit Logs', icon: Terminal },
-];
+  { id: 'audit', label: 'Audit Logs', icon: Terminal }];
 
 function Toggle({ enabled, onToggle, disabled = false }: { enabled: boolean; onToggle: () => void; disabled?: boolean }) {
   return (
@@ -63,7 +60,6 @@ function Toggle({ enabled, onToggle, disabled = false }: { enabled: boolean; onT
 
 export default function SettingsPage() {
   const {
-    setActivePage,
     theme,
     toggleTheme,
     themeConfig,
@@ -96,8 +92,7 @@ export default function SettingsPage() {
     connectSlack,
     connectNotion,
     disconnectSlack,
-    disconnectNotion,
-  } = useWorkspace();
+    disconnectNotion } = useWorkspace();
   const { confirm, prompt } = usePopup();
   const [activeSection, setActiveSection] = useState('general');
   const [integrationModal, setIntegrationModal] = useState<{
@@ -124,9 +119,7 @@ export default function SettingsPage() {
     ...(canManageTeamMembers ? [
       { id: 'security', label: 'Security & SSO', icon: Shield },
       { id: 'billing', label: 'Plans & Billing', icon: CreditCard },
-      { id: 'audit', label: 'Audit Logs', icon: Terminal },
-    ] : []),
-  ];
+      { id: 'audit', label: 'Audit Logs', icon: Terminal }] : [])];
   
   // Workspace Info State
   const [workspaceName, setWorkspaceName] = useState('Nexus AI');
@@ -144,16 +137,14 @@ export default function SettingsPage() {
     readDrive: true,
     readEmails: true,
     autoSend: false,
-    vectorSearch: true,
-  });
+    vectorSearch: true });
 
   // Account State
   const [userProfile, setUserProfile] = useState({
     name: '',
     email: '',
     role: 'Member',
-    avatar: '',
-  });
+    avatar: '' });
 
   const [workspaceMembers, setWorkspaceMembers] = useState<
     { id: string; name: string; email: string; role: string; status: string }[]
@@ -170,8 +161,7 @@ export default function SettingsPage() {
     provider: 'Google Workspace',
     metadataUrl: '',
     domainMapping: '',
-    authProvisioning: true,
-  });
+    authProvisioning: true });
 
   // Billing Simulator State
   const [currentPlan, setCurrentPlan] = useState<'Starter' | 'Team Pro' | 'Enterprise'>('Team Pro');
@@ -184,20 +174,19 @@ export default function SettingsPage() {
     number: '',
     expiry: '',
     cvc: '',
-    name: '',
-  });
+    name: '' });
 
   const [auditLogs, setAuditLogs] = useState<
     { id: string; timestamp: string; actor: string; action: string; target: string; ip: string }[]
   >([]);
 
   useEffect(() => {
-    setActivePage('settings');
+    
     const params = new URLSearchParams(window.location.search);
     if (params.get('section') === 'billing' || params.get('billing')) {
       setActiveSection('billing');
     }
-  }, [setActivePage]);
+  }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -205,8 +194,7 @@ export default function SettingsPage() {
       name: user.name,
       email: user.email,
       role: user.role,
-      avatar: user.avatar || '',
-    });
+      avatar: user.avatar || '' });
     setCheckoutCard((c) => ({ ...c, name: user.name }));
     setWorkspaceUrl((prev) => prev || user.email.split('@')[1]?.replace(/\./g, '-') || 'my-workspace');
     setWorkspaceMembers((prev) => {
@@ -217,10 +205,8 @@ export default function SettingsPage() {
           name: user.name,
           email: user.email,
           role: 'Admin',
-          status: 'Active',
-        },
-        ...prev,
-      ];
+          status: 'Active' },
+        ...prev];
     });
   }, [user]);
 
@@ -233,8 +219,7 @@ export default function SettingsPage() {
         name: profile?.name || member.userId,
         email: profile?.email || '',
         role: member.role,
-        status: member.status === 'active' ? 'Active' : member.status,
-      };
+        status: member.status === 'active' ? 'Active' : member.status };
     }));
   }, [realWorkspaceMembers, user, allUsers]);
 
@@ -247,8 +232,7 @@ export default function SettingsPage() {
         actor: a.userName,
         action: 'Sign-in',
         target: `${a.userRole} · ${a.device}`,
-        ip: a.ipAddress,
-      }))
+        ip: a.ipAddress }))
     );
   }, [loginActivities]);
 
@@ -260,16 +244,14 @@ export default function SettingsPage() {
       actor: a.userName,
       action: 'Sign-in',
       target: `${a.userRole} - ${a.device}`,
-      ip: a.ipAddress,
-    }));
+      ip: a.ipAddress }));
     const workspaceLogs = realAuditLogs.slice(0, 30).map((a) => ({
       id: a.id,
       timestamp: a.timestamp,
       actor: a.actorName,
       action: a.action,
       target: a.target,
-      ip: 'workspace',
-    }));
+      ip: 'workspace' }));
     setAuditLogs([...workspaceLogs, ...loginLogs].slice(0, 40));
   }, [loginActivities, realAuditLogs]);
 
@@ -311,9 +293,7 @@ export default function SettingsPage() {
           provider: parseSsoProvider(next.provider),
           domain: next.domainMapping,
           metadataUrl: next.metadataUrl,
-          autoProvision: next.authProvisioning,
-        }),
-      });
+          autoProvision: next.authProvisioning }) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? 'Failed to save SSO');
       toast.success('SSO configuration saved to organization record.');
@@ -363,8 +343,7 @@ export default function SettingsPage() {
       name,
       email: newMemberEmail.trim(),
       role: newMemberRole,
-      status: 'Active',
-    };
+      status: 'Active' };
 
     setWorkspaceMembers(prev => {
       const updated = [...prev, newMember];
@@ -381,8 +360,7 @@ export default function SettingsPage() {
       actor: userProfile.name || 'You',
       action: 'Invite User Seat',
       target: `${newMember.name} (${newMember.role})`,
-      ip: '192.168.1.42',
-    };
+      ip: '192.168.1.42' };
     setAuditLogs(prev => [newAudit, ...prev]);
   };
 
@@ -458,8 +436,7 @@ export default function SettingsPage() {
         actor: userProfile.name || 'You',
         action: 'Upgrade Plan Subscription (Beta)',
         target: `${plan} (Beta Mode)`,
-        ip: '192.168.1.42',
-      };
+        ip: '192.168.1.42' };
       setAuditLogs(prev => [newAudit, ...prev]);
     }, 1000);
   };
@@ -486,8 +463,7 @@ export default function SettingsPage() {
         actor: userProfile.name || 'You',
         action: 'Upgrade Plan Subscription',
         target: `${targetPlan} (${billingCycle})`,
-        ip: '192.168.1.42',
-      };
+        ip: '192.168.1.42' };
       setAuditLogs(prev => [newAudit, ...prev]);
     }, 1500);
   };
@@ -574,8 +550,7 @@ export default function SettingsPage() {
                       actor: userProfile.name || 'You',
                       action: 'Update Workspace Meta',
                       target: `${workspaceName} (url: ${workspaceUrl})`,
-                      ip: '192.168.1.42',
-                    };
+                      ip: '192.168.1.42' };
                     setAuditLogs(prev => [newAudit, ...prev]);
                   }}
                   className="w-fit bg-foreground text-background hover:opacity-90 h-8 text-xs font-bold"
@@ -1190,8 +1165,7 @@ export default function SettingsPage() {
                           primary: e.target.value,
                           background: themeConfig.name === 'custom' ? themeConfig.background : undefined,
                           sidebar: themeConfig.name === 'custom' ? themeConfig.sidebar : undefined,
-                          accent: themeConfig.name === 'custom' ? themeConfig.accent : undefined,
-                        })}
+                          accent: themeConfig.name === 'custom' ? themeConfig.accent : undefined })}
                         className="w-7 h-7 rounded border border-border cursor-pointer bg-transparent"
                       />
                     </div>
@@ -1205,8 +1179,7 @@ export default function SettingsPage() {
                           background: e.target.value,
                           primary: themeConfig.name === 'custom' ? themeConfig.primary : undefined,
                           sidebar: themeConfig.name === 'custom' ? themeConfig.sidebar : undefined,
-                          accent: themeConfig.name === 'custom' ? themeConfig.accent : undefined,
-                        })}
+                          accent: themeConfig.name === 'custom' ? themeConfig.accent : undefined })}
                         className="w-7 h-7 rounded border border-border cursor-pointer bg-transparent"
                       />
                     </div>
@@ -1220,8 +1193,7 @@ export default function SettingsPage() {
                           sidebar: e.target.value,
                           primary: themeConfig.name === 'custom' ? themeConfig.primary : undefined,
                           background: themeConfig.name === 'custom' ? themeConfig.background : undefined,
-                          accent: themeConfig.name === 'custom' ? themeConfig.accent : undefined,
-                        })}
+                          accent: themeConfig.name === 'custom' ? themeConfig.accent : undefined })}
                         className="w-7 h-7 rounded border border-border cursor-pointer bg-transparent"
                       />
                     </div>
@@ -1235,8 +1207,7 @@ export default function SettingsPage() {
                           accent: e.target.value,
                           primary: themeConfig.name === 'custom' ? themeConfig.primary : undefined,
                           background: themeConfig.name === 'custom' ? themeConfig.background : undefined,
-                          sidebar: themeConfig.name === 'custom' ? themeConfig.sidebar : undefined,
-                        })}
+                          sidebar: themeConfig.name === 'custom' ? themeConfig.sidebar : undefined })}
                         className="w-7 h-7 rounded border border-border cursor-pointer bg-transparent"
                       />
                     </div>

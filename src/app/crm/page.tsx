@@ -28,12 +28,11 @@ const STAGES: { id: Stage; label: string; color: string; bg: string }[] = [
   { id: 'proposal', label: 'Proposal', color: 'border-t-amber-500', bg: 'bg-amber-50/20 dark:bg-amber-950/10' },
   { id: 'negotiation', label: 'Negotiation', color: 'border-t-purple-500', bg: 'bg-purple-50/20 dark:bg-purple-950/10' },
   { id: 'won', label: 'Won', color: 'border-t-emerald-500', bg: 'bg-emerald-50/20 dark:bg-emerald-950/10' },
-  { id: 'lost', label: 'Lost', color: 'border-t-red-500', bg: 'bg-red-50/20 dark:bg-red-950/10' },
-];
+  { id: 'lost', label: 'Lost', color: 'border-t-red-500', bg: 'bg-red-50/20 dark:bg-red-950/10' }];
 
 export default function CRMPage() {
   const { 
-    setActivePage, deals, updateDealStage, addDeal, deleteDeal, 
+    deals, updateDealStage, addDeal, deleteDeal, 
     selectedDealId, setSelectedDealId, syncDeals, user, emails, calendarEvents, workspace,
     addEmail, addNotification
   } = useWorkspace();
@@ -58,8 +57,7 @@ export default function CRMPage() {
     { id: 'funnel', title: 'Funnel & Win/Loss Analysis', visible: true },
     { id: 'forecast', title: 'AI Forecast & Weighted Pipeline', visible: true },
     { id: 'rotting', title: 'Rotting Deals & Stale Alerts', visible: true },
-    { id: 'reports', title: 'Scheduled Automated Reports', visible: true },
-  ]);
+    { id: 'reports', title: 'Scheduled Automated Reports', visible: true }]);
 
   // Dialog states
   const [isAddDealOpen, setIsAddDealOpen] = useState(false);
@@ -82,7 +80,7 @@ export default function CRMPage() {
 
   // Real-time Pipeline Channel Subscription
   useEffect(() => {
-    setActivePage('crm');
+    
     if (!workspace) return;
     
     const channelName = `crm-${workspace.id}`;
@@ -106,7 +104,7 @@ export default function CRMPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [workspace, user?.id, setActivePage, syncDeals]);
+  }, [workspace, user?.id, syncDeals]);
 
   const broadcastDeals = (updatedDeals: Deal[]) => {
     if (channelRef.current && user) {

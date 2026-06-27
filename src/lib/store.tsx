@@ -592,6 +592,42 @@ interface WorkspaceState {
 
 const WorkspaceContext = createContext<WorkspaceState | undefined>(undefined);
 
+export const TimerContext = createContext<any>(undefined);
+export const NavigationContext = createContext<any>(undefined);
+export const UserContext = createContext<any>(undefined);
+export const WorkspaceDataContext = createContext<any>(undefined);
+export const WorkspaceActionsContext = createContext<any>(undefined);
+
+export function useWorkspaceTimer() {
+  const context = useContext(TimerContext);
+  if (!context) throw new Error('useWorkspaceTimer must be used within WorkspaceProvider');
+  return context;
+}
+
+export function useWorkspaceNavigation() {
+  const context = useContext(NavigationContext);
+  if (!context) throw new Error('useWorkspaceNavigation must be used within WorkspaceProvider');
+  return context;
+}
+
+export function useWorkspaceUser() {
+  const context = useContext(UserContext);
+  if (!context) throw new Error('useWorkspaceUser must be used within WorkspaceProvider');
+  return context;
+}
+
+export function useWorkspaceData() {
+  const context = useContext(WorkspaceDataContext);
+  if (!context) throw new Error('useWorkspaceData must be used within WorkspaceProvider');
+  return context;
+}
+
+export function useWorkspaceActions() {
+  const context = useContext(WorkspaceActionsContext);
+  if (!context) throw new Error('useWorkspaceActions must be used within WorkspaceProvider');
+  return context;
+}
+
 export const SEED_DEALS: Deal[] = [];
 
 export const SEED_AI_INBOX: AiInboxItem[] = [];
@@ -872,18 +908,33 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const hydrateTeamAccess = useCallback(async (person: Person, profiles: Person[] = []) => {
-    const { data: memberships, error } = await supabase
+    const { data: myMemberships, error: myMemError } = await supabase
       .from('workspace_members')
-      .select('workspace_id, user_id, role, status, added_by, joined_at, workspaces(id, name, slug, owner_id, created_at, invite_code)')
+      .select('workspace_id')
+      .eq('user_id', person.id)
       .eq('status', 'active');
 
-    if (error) throw error;
+    if (myMemError) throw myMemError;
 
-    const activeMemberships = (memberships || []) as any[];
-    const myWorkspaceIds = activeMemberships
+    const myWorkspaceIds = myMemberships?.map(m => m.workspace_id) || [];
+    let memberships: any[] = [];
+
+    if (myWorkspaceIds.length > 0) {
+      const { data: teamMemberships, error } = await supabase
+        .from('workspace_members')
+        .select('workspace_id, user_id, role, status, added_by, joined_at, workspaces(id, name, slug, owner_id, created_at, invite_code)')
+        .in('workspace_id', myWorkspaceIds)
+        .eq('status', 'active');
+
+      if (error) throw error;
+      memberships = teamMemberships || [];
+    }
+
+    const activeMemberships = memberships;
+    const activeWorkspaceIds = activeMemberships
       .filter(member => member.user_id === person.id)
       .map(member => member.workspace_id);
-    const visibleMemberships = activeMemberships.filter(member => myWorkspaceIds.includes(member.workspace_id));
+    const visibleMemberships = activeMemberships.filter(member => activeWorkspaceIds.includes(member.workspace_id));
 
     const mappedMembers: WorkspaceMemberRecord[] = visibleMemberships.map(member => ({
       workspaceId: member.workspace_id,
@@ -1273,6 +1324,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         // Hydrate profile and set user immediately to avoid layout flashes or race conditions
         let authenticatedUser: Person | null = null;
         let mappedProfilesList: Person[] = [];
+        let workspaceIds: string[] = [];
+        let teammateIds: string[] = [];
+        let visibleUserIds: string[] = [];
         
         if (session && session.user) {
           let name = session.user.email?.split('@')[0] || 'User';
@@ -1311,6 +1365,95 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           localStorage.setItem('nexus_user_status', authenticatedUser.status || 'online');
         }
 
+        // Fetch all profiles from public.profiles FIRST to identify teammates
+        try {
+          const { data: dbProfiles } = await supabase.from('profiles').select('*');
+          if (dbProfiles && dbProfiles.length > 0) {
+            mappedProfilesList = dbProfiles.map((p: any) => ({
+              id: p.id,
+              name: p.username,
+              email: p.email,
+              avatar: p.avatar || '',
+              role: p.role || 'Member',
+              tag: p.tag || '1000',
+              status: p.status || 'offline',
+              lastSeenAt: p.last_seen_at
+            }));
+          }
+        } catch (profilesErr) {
+          console.warn('Failed to fetch profiles:', profilesErr);
+        }
+
+        // Fetch team memberships and DMs involving this user.
+        if (currentUserId && authenticatedUser) {
+          const currentPerson = mappedProfilesList.find(profile => profile.id === currentUserId) || authenticatedUser;
+          
+          // Hydrate team access first so we have memberships and workspaces
+          await hydrateTeamAccess(currentPerson, mappedProfilesList);
+
+          // Get workspace IDs and teammate IDs
+          const { data: memberships } = await supabase
+            .from('workspace_members')
+            .select('workspace_id, user_id')
+            .eq('user_id', currentUserId)
+            .eq('status', 'active');
+            
+          const activeMembers = memberships || [];
+          workspaceIds = activeMembers.map(m => m.workspace_id);
+          
+          if (workspaceIds.length > 0) {
+            const { data: allMemberships } = await supabase
+              .from('workspace_members')
+              .select('user_id')
+              .in('workspace_id', workspaceIds)
+              .eq('status', 'active');
+            teammateIds = Array.from(new Set((allMemberships || []).map(m => m.user_id)));
+          }
+          visibleUserIds = Array.from(new Set([currentUserId, ...teammateIds]));
+        }
+
+        // Formulate optimized Supabase queries
+        let docsQueryBuilder = supabase.from('documents').select('*');
+        let tasksQueryBuilder = supabase.from('tasks').select('*');
+        let emailsQueryBuilder = supabase.from('emails').select('*');
+        let convosQueryBuilder = supabase.from('conversations').select('*, messages(*)');
+        let channelsQueryBuilder = supabase.from('channels').select('*');
+        let channelMessagesQueryBuilder = supabase.from('channel_messages').select('*');
+
+        if (currentUserId) {
+          if (visibleUserIds.length > 0) {
+            docsQueryBuilder = docsQueryBuilder.or(visibleUserIds.map(uid => `uploaded_by->>id.eq.${uid}`).join(',') + `,uploaded_by->>email.ilike.${currentUserEmail}`);
+            tasksQueryBuilder = tasksQueryBuilder.or(visibleUserIds.map(uid => `assignee->>id.eq.${uid}`).join(',') + `,assignee->>email.ilike.${currentUserEmail},assignee.is.null`);
+          } else {
+            docsQueryBuilder = docsQueryBuilder.or(`uploaded_by->>id.eq.${currentUserId},uploaded_by->>email.ilike.${currentUserEmail}`);
+            tasksQueryBuilder = tasksQueryBuilder.or(`assignee->>id.eq.${currentUserId},assignee->>email.ilike.${currentUserEmail},assignee.is.null`);
+          }
+
+          if (currentUserEmail) {
+            const teammateEmails = mappedProfilesList.filter(p => visibleUserIds.includes(p.id)).map(p => p.email).filter(Boolean);
+            const allVisibleEmails = Array.from(new Set([currentUserEmail, ...teammateEmails]));
+            const emailOrFilters = allVisibleEmails.map(email => `to.ilike.%${email}%,from_email.ilike.%${email}%`).join(',');
+            emailsQueryBuilder = emailsQueryBuilder.or(emailOrFilters);
+          }
+
+          if (workspaceIds.length > 0) {
+            const convoOrFilters = [
+              `id.like.conv-%`,
+              ...workspaceIds.map(wsId => `id.like.%${wsId}%`)
+            ];
+            convosQueryBuilder = convosQueryBuilder.or(convoOrFilters.join(','));
+            channelsQueryBuilder = channelsQueryBuilder.in('workspace_id', workspaceIds);
+            
+            // Join channels to messages
+            channelMessagesQueryBuilder = supabase
+              .from('channel_messages')
+              .select('*, channels!inner(workspace_id)')
+              .in('channels.workspace_id', workspaceIds);
+          } else {
+            convosQueryBuilder = convosQueryBuilder.like('id', 'conv-%');
+          }
+        }
+
         const [
           docsQuery,
           tasksQuery,
@@ -1323,14 +1466,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           reactionsQuery,
           readsQuery,
         ] = await Promise.all([
-          supabase.from('documents').select('*').order('uploaded_at', { ascending: false }),
-          supabase.from('tasks').select('*').order('created_at', { ascending: false }),
+          docsQueryBuilder.order('uploaded_at', { ascending: false }),
+          tasksQueryBuilder.order('created_at', { ascending: false }),
           supabase.from('calendar_events').select('*'),
-          supabase.from('emails').select('*').order('created_at', { ascending: false }),
-          supabase.from('conversations').select('*, messages(*)'),
+          emailsQueryBuilder.order('created_at', { ascending: false }),
+          convosQueryBuilder,
           supabase.from('ai_insights').select('*').order('created_at', { ascending: false }),
-          supabase.from('channels').select('*').order('created_at', { ascending: true }),
-          supabase.from('channel_messages').select('*').order('timestamp', { ascending: true }),
+          channelsQueryBuilder.order('created_at', { ascending: true }),
+          channelMessagesQueryBuilder.order('timestamp', { ascending: true }),
           supabase.from('message_reactions').select('*'),
           supabase.from('message_reads').select('*'),
         ]);
@@ -1366,31 +1509,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           setActiveConversationId(convos[0].id);
         }
 
-        // Sync authentication profiles, channels, direct messages with Supabase
-        try {
-          // Fetch all profiles from public.profiles
-          const { data: dbProfiles } = await supabase.from('profiles').select('*');
-          if (dbProfiles && dbProfiles.length > 0) {
-            mappedProfilesList = dbProfiles.map((p: any) => ({
-              id: p.id,
-              name: p.username,
-              email: p.email,
-              avatar: p.avatar || '',
-              role: p.role || 'Member',
-              tag: p.tag || '1000',
-              status: p.status || 'offline',
-              lastSeenAt: p.last_seen_at
-            }));
-            if (!currentUserId) {
-              setAllUsers([]);
-            }
-          }
-
-          // Fetch team memberships and DMs involving this user.
-          if (currentUserId && authenticatedUser) {
-            const currentPerson = mappedProfilesList.find(profile => profile.id === currentUserId) || authenticatedUser;
-            await hydrateTeamAccess(currentPerson, mappedProfilesList);
-
+        // Direct messages and notifications
+        if (currentUserId && authenticatedUser) {
+          try {
             const { data: dms } = await supabase
               .from('direct_messages')
               .select('*')
@@ -1430,8 +1551,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                 senderName: n.sender_name || 'System'
               })));
             }
+          } catch (notifErr) {
+            console.warn('Failed to load notifications/DMs:', notifErr);
           }
-
+        }
+        try {
           // Hydrate Channels & Channel Messages from database
           if (!channelsQuery.error && channelsQuery.data) {
             const dbChs = channelsQuery.data.map((c: any) => ({
@@ -4906,10 +5030,69 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     isSlackConnected, isNotionConnected, connectSlack, connectNotion, disconnectSlack, disconnectNotion,
   };
 
+  const timerValue = useMemo(() => ({
+    activeTimerTask, isTimerRunning, timerElapsed, startTimer, pauseTimer, resetTimer, logTimer
+  }), [activeTimerTask, isTimerRunning, timerElapsed, startTimer, pauseTimer, resetTimer, logTimer]);
+
+  const navigationValue = useMemo(() => ({
+    leftSidebarOpen, toggleLeftSidebar, rightSidebarOpen, toggleRightSidebar
+  }), [leftSidebarOpen, rightSidebarOpen, toggleLeftSidebar, toggleRightSidebar]);
+
+  const userValue = useMemo(() => ({
+    user, userStatus, setUserStatus, logout, customStatus, setCustomStatus, dnd, setDnd, allUsers, friendIds, canManageTeamMembers, updateProfile, deleteAccount
+  }), [user, userStatus, setUserStatus, logout, customStatus, setCustomStatus, dnd, setDnd, allUsers, friendIds, canManageTeamMembers, updateProfile, deleteAccount]);
+
+  const dataValue = {
+    documents: filteredDocuments, tasks: filteredTasks, calendarEvents: filteredCalendarEvents, emails: filteredEmails,
+    conversations: filteredConversations, insights, meetings, theme, themeConfig, notifications, mentionBadgeCount, aiInbox,
+    channels, channelMessages, activeChannelId, activeDmUserId, deals, selectedDealId, typingUsers, onlinePresence, dmReactions,
+    workspace, myWorkspaces, workspaceMembers, workspaceInvites, joinRequests, auditLogs, feedbackItems, aiUsage,
+    searchQuery, commandPaletteOpen, isOnline, isAppLoading, selectedDocumentId, selectedTaskId, taskView, inboundEmailAddress,
+    isSyncingEmails, emailRedirect, activeConversationId, activePage
+  };
+
+  const actionsValue = useMemo(() => ({
+    addDocument, deleteDocument, setSelectedDocumentId, addTask, deleteTask, moveTask, updateTask, setTaskView, setSelectedTaskId,
+    setSelectedDate, addEventToCalendar, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent, setWorkspace,
+    switchWorkspace, createInviteLink, submitFeedback, trackAiUsage, login, sendOtp, verifyOtp, register,
+    sendTeamMessage, editTeamMessage, deleteTeamMessage, createWorkspace, joinWorkspaceByCode, createJoinRequest,
+    reviewJoinRequest, regenerateWorkspaceInviteCode, updateMemberRole, removeWorkspaceMember, banWorkspaceMember,
+    unbanWorkspaceMember, deleteWorkspace, sendChannelMessage, sendChannelReply, setActiveChannelId, setActiveDmUserId,
+    addGoal, updateGoal, deleteGoal, addRole, saveMeetingRecord, connectSlack, connectNotion, disconnectSlack,
+    disconnectNotion, setEmailRedirect, setActiveConversationId, addMessage, createConversation, deleteConversation,
+    toggleTheme, setThemeConfig, markNotificationsAsRead, addNotification, clearMentionBadge, addAiInboxItem,
+    completeAiInboxItem, setSearchQuery, setCommandPaletteOpen, broadcastTyping, setDmReactions, toggleStarChannel,
+    editChannelMessage, deleteChannelMessage, addReaction, removeReaction, togglePinMessage, markMessageAsRead,
+    createChannel, syncDeals, setActivePage
+  }), [
+    addDocument, deleteDocument, setSelectedDocumentId, addTask, deleteTask, moveTask, updateTask, setTaskView, setSelectedTaskId,
+    setSelectedDate, addEventToCalendar, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent, setWorkspace,
+    switchWorkspace, createInviteLink, submitFeedback, trackAiUsage, login, sendOtp, verifyOtp, register,
+    sendTeamMessage, editTeamMessage, deleteTeamMessage, createWorkspace, joinWorkspaceByCode, createJoinRequest,
+    reviewJoinRequest, regenerateWorkspaceInviteCode, updateMemberRole, removeWorkspaceMember, banWorkspaceMember,
+    unbanWorkspaceMember, deleteWorkspace, sendChannelMessage, sendChannelReply, setActiveChannelId, setActiveDmUserId,
+    addGoal, updateGoal, deleteGoal, addRole, saveMeetingRecord, connectSlack, connectNotion, disconnectSlack,
+    disconnectNotion, setEmailRedirect, setActiveConversationId, addMessage, createConversation, deleteConversation,
+    toggleTheme, setThemeConfig, markNotificationsAsRead, addNotification, clearMentionBadge, addAiInboxItem,
+    completeAiInboxItem, setSearchQuery, setCommandPaletteOpen, broadcastTyping, setDmReactions, toggleStarChannel,
+    editChannelMessage, deleteChannelMessage, addReaction, removeReaction, togglePinMessage, markMessageAsRead,
+    createChannel, syncDeals, setActivePage
+  ]);
+
   return (
-    <WorkspaceContext.Provider value={value}>
-      {children}
-    </WorkspaceContext.Provider>
+    <WorkspaceActionsContext.Provider value={actionsValue}>
+      <NavigationContext.Provider value={navigationValue}>
+        <TimerContext.Provider value={timerValue}>
+          <UserContext.Provider value={userValue}>
+            <WorkspaceDataContext.Provider value={dataValue}>
+              <WorkspaceContext.Provider value={value}>
+                {children}
+              </WorkspaceContext.Provider>
+            </WorkspaceDataContext.Provider>
+          </UserContext.Provider>
+        </TimerContext.Provider>
+      </NavigationContext.Provider>
+    </WorkspaceActionsContext.Provider>
   );
 }
 

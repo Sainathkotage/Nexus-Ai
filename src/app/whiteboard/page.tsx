@@ -13,7 +13,7 @@ const Excalidraw = dynamic(
 );
 
 export default function WhiteboardPage() {
-  const { setActivePage, workspace, user, theme } = useWorkspace();
+  const { workspace, user, theme } = useWorkspace();
   const [excalidrawAPI, setExcalidrawAPI] = useState<any>(null);
   const [initialElements, setInitialElements] = useState<any[]>([]);
   const [isInitialized, setIsInitialized] = useState(false);
@@ -24,9 +24,7 @@ export default function WhiteboardPage() {
   const debounceTimeoutRef = useRef<any>(null);
 
   // Set active page
-  useEffect(() => {
-    setActivePage('whiteboard');
-  }, [setActivePage]);
+  
 
   // Load initial elements when workspace is loaded/ready or changed
   useEffect(() => {

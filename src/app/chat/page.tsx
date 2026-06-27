@@ -17,7 +17,6 @@ import { toast } from 'sonner';
 
 export default function ChatPage() {
   const { 
-    setActivePage, 
     conversations, 
     activeConversationId, 
     setActiveConversationId,
@@ -46,13 +45,13 @@ export default function ChatPage() {
   );
 
   useEffect(() => {
-    setActivePage('chat');
+    
     if (typeof window !== 'undefined') {
       if (window.innerWidth < 768) {
         setSidebarCollapsed(true);
       }
     }
-  }, [setActivePage]);
+  }, []);
 
   // Default select all documents on load
   useEffect(() => {
@@ -109,15 +108,13 @@ export default function ChatPage() {
         title: newTitle,
         messages: [],
         createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
+        updatedAt: new Date().toISOString() };
     }
 
     // Add user message locally
     const newUserMessage = {
       role: 'user' as const,
-      content: text,
-    };
+      content: text };
     
     addMessage(targetConvo.id, newUserMessage);
     setInputValue('');
@@ -129,8 +126,7 @@ export default function ChatPage() {
         setIsTyping(false);
         addMessage(targetConvo.id, {
           role: 'assistant',
-          content: usage.message,
-        });
+          content: usage.message });
         return;
       }
 
@@ -157,8 +153,7 @@ export default function ChatPage() {
           users: allUsers,
           currentUser: user ? { id: user.id, name: user.name, email: user.email } : null,
           currentDate: new Date().toISOString()
-        }),
-      });
+        }) });
 
       if (!response.ok) {
         let errorMsg = 'Failed to fetch AI response';
@@ -172,8 +167,7 @@ export default function ChatPage() {
         setIsTyping(false);
         addMessage(targetConvo.id, {
           role: 'assistant',
-          content: `Sorry, I encountered an error: ${errorMsg}. Please check your API key configuration in your .env.local file or your internet connection.`,
-        });
+          content: `Sorry, I encountered an error: ${errorMsg}. Please check your API key configuration in your .env.local file or your internet connection.` });
         return;
       }
 
@@ -295,8 +289,7 @@ export default function ChatPage() {
       setIsTyping(false);
       addMessage(targetConvo.id, {
         role: 'assistant',
-        content: `Sorry, I encountered a connection or network error: ${error?.message || 'Unknown error'}. Please verify that your dev server is running and connected.`,
-      });
+        content: `Sorry, I encountered a connection or network error: ${error?.message || 'Unknown error'}. Please verify that your dev server is running and connected.` });
     }
   };
 

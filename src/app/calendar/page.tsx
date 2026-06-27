@@ -22,7 +22,6 @@ import { CalendarEvent } from '@/types';
 
 export default function CalendarPage() {
   const { 
-    setActivePage, 
     calendarEvents, 
     selectedDate, 
     setSelectedDate, 
@@ -104,9 +103,7 @@ export default function CalendarPage() {
     toast.success('Event deleted successfully');
   };
 
-  useEffect(() => {
-    setActivePage('calendar');
-  }, [setActivePage]);
+  
 
   // Sync date form field with selectedDate state
   useEffect(() => {
@@ -184,8 +181,7 @@ export default function CalendarPage() {
       isAiExtracted: false,
       addedToCalendar: true,
       attendees: [],
-      color: getCategoryColor(newCategory),
-    });
+      color: getCategoryColor(newCategory) });
 
     setNewTitle('');
     setNewDescription('');

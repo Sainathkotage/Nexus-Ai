@@ -20,7 +20,6 @@ import { Email } from '@/types';
 
 export default function EmailsPage() {
   const { 
-    setActivePage, 
     emails, 
     addEmail, 
     editEmail, 
@@ -29,8 +28,7 @@ export default function EmailsPage() {
     inboundEmailAddress,
     isSyncingEmails,
     syncInboundEmails,
-    user,
-  } = useWorkspace();
+    user } = useWorkspace();
   const { confirm } = usePopup();
 
   const [activeTab, setActiveTab] = useState<'inbox' | 'drafts' | 'sent'>('inbox');
@@ -58,9 +56,7 @@ export default function EmailsPage() {
     setComposeOpen(true);
   };
 
-  useEffect(() => {
-    setActivePage('emails');
-  }, [setActivePage]);
+  
 
   // Set the first available email in the active tab as selected by default
   useEffect(() => {
@@ -155,8 +151,7 @@ export default function EmailsPage() {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages }),
-      });
+        body: JSON.stringify({ messages }) });
 
       if (!response.ok) {
         let errorMsg = 'AI failed to write email';

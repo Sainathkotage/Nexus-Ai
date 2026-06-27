@@ -30,7 +30,6 @@ export default function TeamChatPage() {
     teamMessages, 
     addFriendByTag,
     sendTeamMessage, 
-    setActivePage,
     channels,
     channelMessages,
     sendChannelMessage,
@@ -905,14 +904,14 @@ export default function TeamChatPage() {
 
   // Request push permission on load
   useEffect(() => {
-    setActivePage('team-chat');
+    
     clearMentionBadge();
     if (typeof window !== 'undefined' && 'Notification' in window) {
       if (Notification.permission === 'default') {
         Notification.requestPermission();
       }
     }
-  }, [setActivePage, clearMentionBadge]);
+  }, [clearMentionBadge]);
 
   // Scroll to bottom on message/thread updates
   useEffect(() => {
@@ -1143,8 +1142,7 @@ export default function TeamChatPage() {
                 isActive: true,
                 type: 'audio',
                 status: 'ringing',
-                friend: caller,
-              });
+                friend: caller });
               toast.info(`Incoming secure call from ${caller.name}`);
             }
             break;
@@ -1404,7 +1402,7 @@ export default function TeamChatPage() {
     if (content.startsWith('[reply:')) {
       const match = content.match(/^\[reply:([^:]+):([^\]]+)\]([\s\S]*)$/);
       if (match) {
-        const [, senderName, originalText, remainingText] = match;
+        const [ senderName, originalText, remainingText] = match;
         return (
           <div className="flex flex-col gap-1">
             <div className="flex items-center gap-1.5 text-[9px] text-muted-foreground/80 border-l-2 border-indigo-500/50 pl-2 py-0.5 mb-1 bg-muted/20 dark:bg-zinc-800/40 rounded-r select-none">
@@ -1442,8 +1440,7 @@ export default function TeamChatPage() {
         const newReaction: MessageReaction = {
           messageId,
           userId: user?.id || '',
-          emoji: emojiStr,
-        };
+          emoji: emojiStr };
         updated = [...current, newReaction];
       }
       const newDmReactions = {

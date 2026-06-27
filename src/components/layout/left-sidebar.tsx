@@ -1,17 +1,18 @@
 'use client';
 
 import React from 'react';
-import { useWorkspace } from '@/lib/store';
+import { useWorkspaceNavigation, useWorkspaceUser, useWorkspaceData, useWorkspaceActions } from '@/lib/store';
 import { PageId } from '@/types';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Sparkles, LayoutDashboard, FileText, MessageSquare, 
   CheckSquare, Calendar, Mail, Settings, Plus, Search,
-  ChevronDown, Users, Check, LogOut, Palette, BarChart3, Smile, Inbox, Briefcase
+  ChevronDown, Users, Check, LogOut, Palette, BarChart3, Smile, Inbox, Briefcase, Video
 } from 'lucide-react';
 import { cn, getWorkspaceFavicon, getAvatarStyle } from '@/lib/utils';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
+import Link from 'next/link';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 const navItems: { id: PageId; label: string; icon: React.ElementType }[] = [
@@ -26,6 +27,7 @@ const navItems: { id: PageId; label: string; icon: React.ElementType }[] = [
   { id: 'tasks', label: 'Tasks', icon: CheckSquare },
   { id: 'calendar', label: 'Calendar', icon: Calendar },
   { id: 'emails', label: 'Emails', icon: Mail },
+  { id: 'calls', label: 'Video Rooms', icon: Video },
 ];
 
 interface LeftSidebarProps {
@@ -33,36 +35,32 @@ interface LeftSidebarProps {
 }
 
 export function LeftSidebar({ onOpenSearch }: LeftSidebarProps) {
+  const { leftSidebarOpen } = useWorkspaceNavigation();
   const { 
-    activePage, 
-    setActivePage, 
-    leftSidebarOpen,
-    user,
-    userStatus,
-    setUserStatus,
-    logout,
-    customStatus,
-    setCustomStatus,
-    dnd,
-    setDnd,
-    workspace,
-    setWorkspace,
-    myWorkspaces,
-    switchWorkspace,
-    mentionBadgeCount,
-    clearMentionBadge,
-    aiInbox
-  } = useWorkspace();
+    user, userStatus, setUserStatus, logout, customStatus, setCustomStatus, dnd, setDnd 
+  } = useWorkspaceUser();
+  const { 
+    workspace, myWorkspaces, mentionBadgeCount, aiInbox 
+  } = useWorkspaceData();
+  const { 
+    setWorkspace, switchWorkspace, clearMentionBadge 
+  } = useWorkspaceActions();
+
   const router = useRouter();
+  const pathname = usePathname();
   const [showUserMenu, setShowUserMenu] = React.useState(false);
   const [showWorkspaceDropdown, setShowWorkspaceDropdown] = React.useState(false);
 
-  const handleNav = (id: PageId) => {
-    setActivePage(id);
+  const activePage = React.useMemo(() => {
+    if (pathname === '/') return 'dashboard';
+    const firstSegment = pathname.split('/')[1];
+    return (firstSegment || 'dashboard') as PageId;
+  }, [pathname]);
+
+  const handleNavClick = (id: PageId) => {
     if (id === 'team-chat') {
       clearMentionBadge();
     }
-    router.push(id === 'dashboard' ? '/' : `/${id}`);
   };
 
   const getInitials = (name: string) => {
@@ -107,7 +105,7 @@ export function LeftSidebar({ onOpenSearch }: LeftSidebarProps) {
                 Your Workspaces
               </div>
               <div className="flex flex-col gap-0.5 max-h-48 overflow-y-auto">
-                {myWorkspaces.map(ws => (
+                {myWorkspaces.map((ws: any) => (
                   <button
                     key={ws.id}
                     onClick={() => {
@@ -136,7 +134,6 @@ export function LeftSidebar({ onOpenSearch }: LeftSidebarProps) {
               <button
                 onClick={() => {
                   setWorkspace(null);
-                  setActivePage('dashboard');
                   router.push('/');
                   setShowWorkspaceDropdown(false);
                 }}
@@ -169,9 +166,10 @@ export function LeftSidebar({ onOpenSearch }: LeftSidebarProps) {
         </div>
         
         {navItems.map((item) => (
-          <button
+          <Link
             key={item.id}
-            onClick={() => handleNav(item.id)}
+            href={item.id === 'dashboard' ? '/' : `/${item.id}`}
+            onClick={() => handleNavClick(item.id)}
             className={cn(
               "flex items-center gap-2.5 px-3 py-1.5 rounded-full transition-apple text-sm w-full text-left relative",
               activePage === item.id 
@@ -184,18 +182,19 @@ export function LeftSidebar({ onOpenSearch }: LeftSidebarProps) {
             {item.id === 'team-chat' && mentionBadgeCount > 0 && activePage !== 'team-chat' && (
               <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
             )}
-            {item.id === 'ai-inbox' && aiInbox.filter(x => x.status === 'pending').length > 0 && (
+            {item.id === 'ai-inbox' && aiInbox.filter((x: any) => x.status === 'pending').length > 0 && (
               <span className="bg-indigo-500 text-white text-[9.5px] font-extrabold px-1.5 py-0.2 rounded-full shrink-0 font-mono">
-                {aiInbox.filter(x => x.status === 'pending').length}
+                {aiInbox.filter((x: any) => x.status === 'pending').length}
               </span>
             )}
-          </button>
+          </Link>
         ))}
 
         <div className="my-2 h-px bg-border mx-1" />
 
-        <button
-          onClick={() => handleNav('settings')}
+        <Link
+          href="/settings"
+          onClick={() => handleNavClick('settings')}
           className={cn(
             "flex items-center gap-2.5 px-2 py-1.5 rounded-md transition-colors text-sm w-full text-left",
             activePage === 'settings'
@@ -205,7 +204,7 @@ export function LeftSidebar({ onOpenSearch }: LeftSidebarProps) {
         >
           <Settings className="w-4 h-4 shrink-0" />
           <span>Settings</span>
-        </button>
+        </Link>
       </div>
 
       {/* Bottom */}

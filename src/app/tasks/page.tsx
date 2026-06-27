@@ -28,19 +28,16 @@ const COLUMNS: { id: TaskStatus; title: string; color: string }[] = [
   { id: 'todo', title: 'To Do', color: 'border-t-blue-500' },
   { id: 'in-progress', title: 'In Progress', color: 'border-t-amber-500' },
   { id: 'review', title: 'In Review', color: 'border-t-purple-500' },
-  { id: 'done', title: 'Done', color: 'border-t-emerald-500' },
-];
+  { id: 'done', title: 'Done', color: 'border-t-emerald-500' }];
 
 const priorityColors: Record<Priority, string> = {
   low: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
   medium: 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
   high: 'bg-orange-50 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
-  urgent: 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-};
+  urgent: 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400' };
 
 export default function TasksPage() {
   const { 
-    setActivePage, 
     tasks, 
     moveTask, 
     addTask, 
@@ -105,9 +102,7 @@ export default function TasksPage() {
   const [timelineMonth, setTimelineMonth] = useState(new Date());
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
 
-  useEffect(() => {
-    setActivePage('tasks');
-  }, [setActivePage]);
+  
 
   // Filter tasks based on query
   const filteredTasks = useMemo(() => {

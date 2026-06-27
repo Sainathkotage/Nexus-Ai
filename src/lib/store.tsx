@@ -717,7 +717,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [dnd, setDndState] = useState(false);
 
   // AI Model Selection State
-  const [selectedModelId, setSelectedModelIdState] = useState<string>('google/gemini-2.5-flash:free');
+  const [selectedModelId, setSelectedModelIdState] = useState<string>('google/gemini-2.5-flash');
 
   useEffect(() => {
     if (typeof window !== 'undefined') {

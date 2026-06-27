@@ -12,7 +12,7 @@ export interface AIModel {
 // Single source of truth for verified OpenRouter free models
 export const FREE_MODELS_REGISTRY: AIModel[] = [
   {
-    id: 'google/gemini-2.5-flash:free',
+    id: 'google/gemini-2.5-flash',
     name: 'Nexus Pro',
     provider: 'Google',
     contextLength: 1048576,
@@ -22,7 +22,7 @@ export const FREE_MODELS_REGISTRY: AIModel[] = [
     isActive: true
   },
   {
-    id: 'meta-llama/llama-3-8b-instruct:free',
+    id: 'meta-llama/llama-3-8b-instruct',
     name: 'Nexus Lite',
     provider: 'Meta',
     contextLength: 8192,
@@ -32,7 +32,7 @@ export const FREE_MODELS_REGISTRY: AIModel[] = [
     isActive: true
   },
   {
-    id: 'qwen/qwen-2.5-72b-instruct:free',
+    id: 'qwen/qwen-2.5-72b-instruct',
     name: 'Nexus Think',
     provider: 'Alibaba',
     contextLength: 32768,
@@ -42,7 +42,7 @@ export const FREE_MODELS_REGISTRY: AIModel[] = [
     isActive: true
   },
   {
-    id: 'deepseek/deepseek-chat:free',
+    id: 'deepseek/deepseek-chat',
     name: 'Nexus',
     provider: 'DeepSeek',
     contextLength: 64000,
@@ -53,7 +53,7 @@ export const FREE_MODELS_REGISTRY: AIModel[] = [
   }
 ];
 
-export const DEFAULT_AI_MODEL_ID = 'google/gemini-2.5-flash:free';
+export const DEFAULT_AI_MODEL_ID = 'google/gemini-2.5-flash';
 
 export function getModelById(modelId: string): AIModel {
   return FREE_MODELS_REGISTRY.find(m => m.id === modelId) || FREE_MODELS_REGISTRY[0];

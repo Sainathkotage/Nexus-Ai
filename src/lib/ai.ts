@@ -42,6 +42,7 @@ export async function callLLM(messages: Message[], options: LLMOptions = {}): Pr
         model: options.model || openRouterModel,
         messages: formattedMessages,
         temperature: temp,
+        max_tokens: 4096
       };
 
       if (options.jsonMode) {

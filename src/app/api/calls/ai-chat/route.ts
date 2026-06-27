@@ -79,7 +79,7 @@ Role & Response Instructions:
                 'Content-Type': 'application/json',
               },
               body: JSON.stringify({
-                model: modelId || process.env.OPENROUTER_MODEL || 'google/gemini-2.5-flash:free',
+                model: modelId || process.env.OPENROUTER_MODEL || 'google/gemini-2.5-flash',
                 messages: formattedMessages,
                 stream: true,
                 temperature: 0.5

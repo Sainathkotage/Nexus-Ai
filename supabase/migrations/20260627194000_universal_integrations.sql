@@ -23,7 +23,7 @@ CREATE TABLE public.connectors (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 2. Installed integrations in workspaces (workspace_id matches text workspaces.id)
+-- 2. Installed integrations in workspaces (workspace_id TEXT matches public.workspaces.id TEXT)
 CREATE TABLE public.workspace_integrations (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     workspace_id TEXT REFERENCES public.workspaces(id) ON DELETE CASCADE,
@@ -93,13 +93,13 @@ ALTER TABLE public.credentials ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.workflows ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.execution_logs ENABLE ROW LEVEL SECURITY;
 
--- workspace_integrations policies
+-- workspace_integrations policies (user_id TEXT matches auth.uid()::text)
 DROP POLICY IF EXISTS "Allow members access to active integrations" ON public.workspace_integrations;
 CREATE POLICY "Allow members access to active integrations" ON public.workspace_integrations
     FOR ALL TO authenticated USING (
         EXISTS (
             SELECT 1 FROM public.workspace_members 
-            WHERE workspace_id = workspace_integrations.workspace_id AND member_id = auth.uid()
+            WHERE workspace_id = workspace_integrations.workspace_id AND user_id = auth.uid()::text
         )
     );
 
@@ -108,13 +108,13 @@ DROP POLICY IF EXISTS "Block direct credential access by clients" ON public.cred
 CREATE POLICY "Block direct credential access by clients" ON public.credentials
     FOR ALL TO service_role USING (true);
 
--- workflows policies
+-- workflows policies (user_id TEXT matches auth.uid()::text)
 DROP POLICY IF EXISTS "Allow members access to workflows" ON public.workflows;
 CREATE POLICY "Allow members access to workflows" ON public.workflows
     FOR ALL TO authenticated USING (
         EXISTS (
             SELECT 1 FROM public.workspace_members 
-            WHERE workspace_id = workflows.workspace_id AND member_id = auth.uid()
+            WHERE workspace_id = workflows.workspace_id AND user_id = auth.uid()::text
         )
     );
 

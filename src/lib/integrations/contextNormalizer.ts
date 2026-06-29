@@ -66,10 +66,92 @@ export interface JiraIssuePayload {
  * Maps a Slack user ID to a registered user profile in the workspace.
  * Fallbacks to the first active workspace member if no exact match is found.
  */
-export async function mapSlackUserToProfile(slackUserId: string, workspaceId: string) {
+export async function mapSlackUserToProfile(slackUserId: string, workspaceId: string, botToken?: string) {
   const supabase = createSupabaseAdminClient();
   
-  // 1. Direct match by username or email
+  let token = botToken;
+  if (!token) {
+    // Attempt to load token from credentials table
+    try {
+      const { data: integrations } = await supabase
+        .from('workspace_integrations')
+        .select('id')
+        .eq('workspace_id', workspaceId)
+        .eq('connector_id', 'slack')
+        .eq('status', 'active')
+        .limit(1);
+      
+      const integrationId = integrations?.[0]?.id;
+      if (integrationId) {
+        const { data: dbCreds } = await supabase
+          .from('credentials')
+          .select('encrypted_data, iv')
+          .eq('integration_id', integrationId)
+          .limit(1);
+        const credential = dbCreds?.[0];
+        if (credential && credential.encrypted_data && credential.iv) {
+          const { CredentialVault } = await import('@/lib/integrations/vault');
+          const decrypted = CredentialVault.decrypt(credential.encrypted_data, credential.iv);
+          const parsed = JSON.parse(decrypted);
+          token = parsed.access_token || parsed.authed_user?.access_token || decrypted;
+        }
+      }
+    } catch (e) {
+      console.warn('[contextNormalizer] Failed to load Slack credentials for mapping:', e);
+    }
+  }
+
+  if (!token) {
+    token = process.env.SLACK_BOT_TOKEN || '';
+  }
+
+  // Attempt to fetch email and name from Slack API
+  if (token && slackUserId && slackUserId.startsWith('U')) {
+    try {
+      const response = await fetch(`https://slack.com/api/users.info?user=${slackUserId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await response.json();
+      if (data.ok && data.user) {
+        const email = data.user.profile?.email;
+        const realName = data.user.profile?.real_name || data.user.real_name;
+        const userName = data.user.name;
+
+        // Try exact email match first
+        if (email) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('email', email)
+            .maybeSingle();
+          if (profile) return profile;
+        }
+
+        // Try username match second
+        if (userName) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('username', userName)
+            .maybeSingle();
+          if (profile) return profile;
+        }
+
+        // Try real name match third
+        if (realName) {
+          const { data: profiles } = await supabase
+            .from('profiles')
+            .select('*')
+            .ilike('username', `%${realName}%`);
+          if (profiles && profiles.length > 0) return profiles[0];
+        }
+      }
+    } catch (err) {
+      console.error('[contextNormalizer] Slack users.info mapping failed:', err);
+    }
+  }
+
+  // 1. Direct match by username or email (fallback)
   const { data: profileByUsername } = await supabase
     .from('profiles')
     .select('*')
@@ -107,12 +189,12 @@ export async function mapSlackUserToProfile(slackUserId: string, workspaceId: st
  * Normalizes a Slack message payload and registers it as a document
  * and edge relations in the database.
  */
-export async function normalizeSlackMessage(event: SlackWebhookPayload, workspaceId: string) {
+export async function normalizeSlackMessage(event: SlackWebhookPayload, workspaceId: string, botToken?: string) {
   const supabase = createSupabaseAdminClient();
   const timestamp = new Date().toISOString();
   
   // 1. Resolve sender profile
-  const profile = await mapSlackUserToProfile(event.user, workspaceId);
+  const profile = await mapSlackUserToProfile(event.user, workspaceId, botToken);
   const uploader = profile ? {
     id: profile.id,
     name: profile.username,
@@ -342,7 +424,7 @@ export async function normalizeSlackFile(
   }
 
   // 4. Resolve sender profile
-  const profile = await mapSlackUserToProfile(event.user_id, workspaceId);
+  const profile = await mapSlackUserToProfile(event.user_id, workspaceId, accessToken);
   const uploader = profile ? {
     id: profile.id,
     name: profile.username,

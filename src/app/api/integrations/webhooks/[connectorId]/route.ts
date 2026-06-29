@@ -72,7 +72,7 @@ export async function POST(req: Request, { params }: { params: any }) {
       
       if (!isFileShare) {
         const { normalizeSlackMessage } = await import('@/lib/integrations/contextNormalizer');
-        await normalizeSlackMessage(triggerDetails.data, workspaceId);
+        await normalizeSlackMessage(triggerDetails.data, workspaceId, botToken);
 
         // Check if message text mentions "nexus" or "nex-" (case-insensitive)
         const text = triggerDetails.data.text || '';

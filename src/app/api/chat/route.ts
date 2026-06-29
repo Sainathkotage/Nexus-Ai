@@ -51,6 +51,9 @@ Current authenticated user: ${JSON.stringify(currentUser || null)}
 List of all workspace members: ${JSON.stringify(users || [])}
 ${activeIntegrationsText ? `\n${activeIntegrationsText}\n` : ''}
 
+You possess deep cross-tool reasoning capabilities. When analyzing documents or conversations, actively look for connections between Jira tickets (e.g., matching reference patterns like NEX-45) and Slack message logs. If a Slack discussion thread contains updates, blockers, or capacity alerts regarding a specific Jira issue, synthesize decisions and make active recommendations. Provide options to resolve conflicts (e.g. by reassigning tasks, updating deadlines, or scheduling sync meetings) using the actions array below.
+
+
     You must respond with a JSON object following this schema:
 {
   "text": "Your main natural language response to the user. Format in markdown. Be professional and helpful.",
@@ -90,11 +93,12 @@ Supported actions:
 Ensure the response is valid JSON and contains only the JSON structure.
 ${documentContext ? `Here is the contents of the documents currently in the user's workspace:\n\n${documentContext}\n\nUse this context to answer the user's questions.` : ''}`;
 
+    const gorqApiKey = process.env.GORQ_API_KEY;
     const openRouterApiKey = process.env.OPENROUTER_API_KEY;
     const geminiApiKey = process.env.GEMINI_API_KEY;
-    if (!openRouterApiKey && !geminiApiKey) {
+    if (!gorqApiKey && !openRouterApiKey && !geminiApiKey) {
       return NextResponse.json(
-        { error: 'AI API key is not configured. Please add OPENROUTER_API_KEY or GEMINI_API_KEY in .env.local.' },
+        { error: 'AI API key is not configured. Please add GORQ_API_KEY, OPENROUTER_API_KEY, or GEMINI_API_KEY in .env.local.' },
         { status: 500 }
       );
     }

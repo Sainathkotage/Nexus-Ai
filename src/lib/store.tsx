@@ -768,14 +768,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       if (isPrivate) {
         return doc.uploadedBy?.id === user.id || doc.uploadedBy?.email?.toLowerCase() === user.email?.toLowerCase();
       }
-      // Show if uploaded by current user
-      if (doc.uploadedBy?.id === user.id || doc.uploadedBy?.email?.toLowerCase() === user.email?.toLowerCase()) return true;
-      // Show if uploaded by an integration connector (Slack, Jira, etc.) within this workspace
-      if (integrationDocUploaderIds.includes(doc.uploadedBy?.id)) return true;
-      // Or if uploaded by a member of the active workspace
-      return workspaceMembers.some(m => m.workspaceId === workspace.id && m.userId === doc.uploadedBy?.id);
+
+      // If it belongs to this workspace and is not private, any member can view it!
+      return true;
     });
-  }, [documents, user, workspace, workspaceMembers]);
+  }, [documents, user, workspace]);
 
   const filteredTasks = useMemo(() => {
     if (!user || !workspace) return [];
@@ -1443,13 +1440,23 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         const integrationUploaderIds = ['slack-system', 'jira-connector'];
 
         if (currentUserId) {
+          const workspaceFilters = workspaceIds.length > 0
+            ? workspaceIds.flatMap(wsId => [`uploaded_by->>workspaceId.eq.${wsId}`, `uploaded_by->>workspace_id.eq.${wsId}`]).join(',')
+            : '';
+
           if (visibleUserIds.length > 0) {
             const integrationFilters = integrationUploaderIds.map(iid => `uploaded_by->>id.eq.${iid}`).join(',');
-            docsQueryBuilder = docsQueryBuilder.or(visibleUserIds.map(uid => `uploaded_by->>id.eq.${uid}`).join(',') + `,uploaded_by->>email.ilike.${currentUserEmail},${integrationFilters}`);
+            let orCondition = visibleUserIds.map(uid => `uploaded_by->>id.eq.${uid}`).join(',') + `,uploaded_by->>email.ilike.${currentUserEmail},${integrationFilters}`;
+            if (workspaceFilters) orCondition += `,${workspaceFilters}`;
+            
+            docsQueryBuilder = docsQueryBuilder.or(orCondition);
             tasksQueryBuilder = tasksQueryBuilder.or(visibleUserIds.map(uid => `assignee->>id.eq.${uid}`).join(',') + `,assignee->>email.ilike.${currentUserEmail},assignee.is.null`);
           } else {
             const integrationFilters = integrationUploaderIds.map(iid => `uploaded_by->>id.eq.${iid}`).join(',');
-            docsQueryBuilder = docsQueryBuilder.or(`uploaded_by->>id.eq.${currentUserId},uploaded_by->>email.ilike.${currentUserEmail},${integrationFilters}`);
+            let orCondition = `uploaded_by->>id.eq.${currentUserId},uploaded_by->>email.ilike.${currentUserEmail},${integrationFilters}`;
+            if (workspaceFilters) orCondition += `,${workspaceFilters}`;
+
+            docsQueryBuilder = docsQueryBuilder.or(orCondition);
             tasksQueryBuilder = tasksQueryBuilder.or(`assignee->>id.eq.${currentUserId},assignee->>email.ilike.${currentUserEmail},assignee.is.null`);
           }
 
@@ -1502,13 +1509,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           supabase.from('message_reads').select('*'),
         ]);
 
-        const docs = (!docsQuery.error && docsQuery.data ? docsQuery.data.map(mapDbDoc) : []).filter(doc => 
-          !currentUserId || 
-          doc.uploadedBy?.id === currentUserId || 
-          doc.uploadedBy?.email === currentUserEmail ||
-          visibleUserIds.includes(doc.uploadedBy?.id) ||
-          integrationUploaderIds.includes(doc.uploadedBy?.id)
-        );
+        const docs = (!docsQuery.error && docsQuery.data ? docsQuery.data.map(mapDbDoc) : []).filter(doc => {
+          if (!currentUserId) return true;
+          const docWorkspaceId = doc.workspaceId || doc.uploadedBy?.workspaceId || doc.uploadedBy?.workspace_id;
+          return (
+            doc.uploadedBy?.id === currentUserId || 
+            doc.uploadedBy?.email === currentUserEmail ||
+            (docWorkspaceId && workspaceIds.includes(docWorkspaceId)) ||
+            visibleUserIds.includes(doc.uploadedBy?.id) ||
+            integrationUploaderIds.includes(doc.uploadedBy?.id)
+          );
+        });
         const tasks = !tasksQuery.error && tasksQuery.data ? tasksQuery.data.map(mapDbTask) : [];
         const events = !eventsQuery.error && eventsQuery.data ? eventsQuery.data.map(mapDbEvent) : [];
         const emails = !emailsQuery.error && emailsQuery.data ? emailsQuery.data.map(mapDbEmail) : [];

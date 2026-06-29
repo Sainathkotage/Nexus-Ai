@@ -1506,6 +1506,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           !currentUserId || 
           doc.uploadedBy?.id === currentUserId || 
           doc.uploadedBy?.email === currentUserEmail ||
+          visibleUserIds.includes(doc.uploadedBy?.id) ||
           integrationUploaderIds.includes(doc.uploadedBy?.id)
         );
         const tasks = !tasksQuery.error && tasksQuery.data ? tasksQuery.data.map(mapDbTask) : [];
@@ -1961,7 +1962,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           if (eventType === 'INSERT') {
             const d = payload.new;
             // Only add if it belongs to current workspace
-            if (d.workspace_id !== workspace.id) return;
+            const dWorkspaceId = d.workspace_id || d.uploaded_by?.workspaceId || d.uploaded_by?.workspace_id;
+            if (dWorkspaceId && dWorkspaceId !== workspace.id) return;
             
             setDocuments(prev => {
               if (prev.some(x => x.id === d.id)) return prev;

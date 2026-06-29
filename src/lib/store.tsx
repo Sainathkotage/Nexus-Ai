@@ -753,6 +753,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [timerElapsed, setTimerElapsed] = useState(0);
 
   // Dynamically filter workspace items client-side to prevent cross-workspace leak and BOLA / IDOR
+  // Known integration-source IDs for documents uploaded by connectors (Slack, Jira, etc.)
+  const integrationDocUploaderIds = ['slack-system', 'jira-connector'];
+
   const filteredDocuments = useMemo(() => {
     if (!user || !workspace) return [];
     return documents.filter(doc => {
@@ -767,6 +770,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       }
       // Show if uploaded by current user
       if (doc.uploadedBy?.id === user.id || doc.uploadedBy?.email?.toLowerCase() === user.email?.toLowerCase()) return true;
+      // Show if uploaded by an integration connector (Slack, Jira, etc.) within this workspace
+      if (integrationDocUploaderIds.includes(doc.uploadedBy?.id)) return true;
       // Or if uploaded by a member of the active workspace
       return workspaceMembers.some(m => m.workspaceId === workspace.id && m.userId === doc.uploadedBy?.id);
     });
@@ -1434,12 +1439,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         let channelsQueryBuilder = supabase.from('channels').select('*');
         let channelMessagesQueryBuilder = supabase.from('channel_messages').select('*');
 
+        // Known integration-source IDs for documents uploaded by connectors (Slack, Jira, etc.)
+        const integrationUploaderIds = ['slack-system', 'jira-connector'];
+
         if (currentUserId) {
           if (visibleUserIds.length > 0) {
-            docsQueryBuilder = docsQueryBuilder.or(visibleUserIds.map(uid => `uploaded_by->>id.eq.${uid}`).join(',') + `,uploaded_by->>email.ilike.${currentUserEmail}`);
+            const integrationFilters = integrationUploaderIds.map(iid => `uploaded_by->>id.eq.${iid}`).join(',');
+            docsQueryBuilder = docsQueryBuilder.or(visibleUserIds.map(uid => `uploaded_by->>id.eq.${uid}`).join(',') + `,uploaded_by->>email.ilike.${currentUserEmail},${integrationFilters}`);
             tasksQueryBuilder = tasksQueryBuilder.or(visibleUserIds.map(uid => `assignee->>id.eq.${uid}`).join(',') + `,assignee->>email.ilike.${currentUserEmail},assignee.is.null`);
           } else {
-            docsQueryBuilder = docsQueryBuilder.or(`uploaded_by->>id.eq.${currentUserId},uploaded_by->>email.ilike.${currentUserEmail}`);
+            const integrationFilters = integrationUploaderIds.map(iid => `uploaded_by->>id.eq.${iid}`).join(',');
+            docsQueryBuilder = docsQueryBuilder.or(`uploaded_by->>id.eq.${currentUserId},uploaded_by->>email.ilike.${currentUserEmail},${integrationFilters}`);
             tasksQueryBuilder = tasksQueryBuilder.or(`assignee->>id.eq.${currentUserId},assignee->>email.ilike.${currentUserEmail},assignee.is.null`);
           }
 
@@ -1495,7 +1505,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         const docs = (!docsQuery.error && docsQuery.data ? docsQuery.data.map(mapDbDoc) : []).filter(doc => 
           !currentUserId || 
           doc.uploadedBy?.id === currentUserId || 
-          doc.uploadedBy?.email === currentUserEmail
+          doc.uploadedBy?.email === currentUserEmail ||
+          integrationUploaderIds.includes(doc.uploadedBy?.id)
         );
         const tasks = !tasksQuery.error && tasksQuery.data ? tasksQuery.data.map(mapDbTask) : [];
         const events = !eventsQuery.error && eventsQuery.data ? eventsQuery.data.map(mapDbEvent) : [];
@@ -1931,6 +1942,100 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       supabase.removeChannel(channel);
     };
   }, [user]);
+
+  // Realtime subscription for documents
+  useEffect(() => {
+    if (!workspace) return;
+
+    const channel = supabase
+      .channel('realtime_documents')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'documents'
+        },
+        (payload: any) => {
+          const eventType = payload.eventType;
+          if (eventType === 'INSERT') {
+            const d = payload.new;
+            // Only add if it belongs to current workspace
+            if (d.workspace_id !== workspace.id) return;
+            
+            setDocuments(prev => {
+              if (prev.some(x => x.id === d.id)) return prev;
+              
+              // Map DB doc payload format to match store format
+              return [{
+                id: d.id,
+                title: d.title,
+                type: d.type || 'txt',
+                size: d.size || '0 KB',
+                uploadedAt: d.uploaded_at || new Date().toISOString(),
+                summary: d.summary || '',
+                tags: d.tags || [],
+                keyPoints: d.key_points || [],
+                extractedTasks: d.extracted_tasks || [],
+                processingStatus: d.processing_status || 'completed',
+                url: d.url || '',
+                uploadedBy: d.uploaded_by || { name: 'Slack Integration' }
+              }, ...prev];
+            });
+          } else if (eventType === 'DELETE') {
+            setDocuments(prev => prev.filter(x => x.id !== payload.old.id));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [workspace]);
+
+  // Realtime subscription for AI insights
+  useEffect(() => {
+    if (!workspace) return;
+
+    const channel = supabase
+      .channel('realtime_insights')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'ai_insights'
+        },
+        (payload: any) => {
+          const eventType = payload.eventType;
+          if (eventType === 'INSERT') {
+            const ins = payload.new;
+            if (ins.workspace_id !== workspace.id) return;
+
+            setInsights(prev => {
+              if (prev.some(x => x.id === ins.id)) return prev;
+              return [{
+                id: ins.id,
+                type: ins.type,
+                title: ins.title,
+                description: ins.description,
+                priority: ins.priority,
+                timestamp: ins.created_at || new Date().toISOString(),
+                createdAt: ins.created_at
+              }, ...prev];
+            });
+          } else if (eventType === 'DELETE') {
+            setInsights(prev => prev.filter(x => x.id !== payload.old.id));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [workspace]);
 
   // Fetch join requests and subscribe to updates when workspace changes
   useEffect(() => {

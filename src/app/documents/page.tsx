@@ -13,12 +13,12 @@ import { UploadZone } from '@/components/documents/upload-zone';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
-const typeFilters = ['all', 'pdf', 'txt', 'meeting', 'research'] as const;
+const typeFilters = ['all', 'documents', 'photos', 'text'] as const;
 
 export default function DocumentsPage() {
   const { 
     documents, selectedDocumentId, setSelectedDocumentId, user,
-    addTask, addDocument 
+    addTask, addDocument, deleteDocument, isAppLoading 
   } = useWorkspace();
 
   // Find a document with extracted tasks or any document to convert notes
@@ -142,6 +142,16 @@ export default function DocumentsPage() {
   const userDocuments = documents;
   const selectedDocument = userDocuments.find(d => d.id === selectedDocumentId) || null;
 
+  const handleDeleteAll = async () => {
+    if (window.confirm("Are you sure you want to delete all documents in this workspace? This action cannot be undone.")) {
+      const docIds = userDocuments.map(d => d.id);
+      for (const id of docIds) {
+        deleteDocument(id);
+      }
+      toast.success("All documents deleted successfully!");
+    }
+  };
+
   if (selectedDocument) {
     return (
       <NotebookWorkspace 
@@ -153,7 +163,18 @@ export default function DocumentsPage() {
 
   const filteredDocuments = userDocuments.filter(doc => {
     const matchesSearch = doc.title.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesType = typeFilter === 'all' || doc.type === typeFilter;
+    
+    let matchesType = true;
+    const docTypeLower = doc.type?.toLowerCase() || '';
+    
+    if (typeFilter === 'documents') {
+      matchesType = ['pdf', 'docx', 'xlsx', 'xls', 'doc', 'ppt', 'pptx', 'keynote', 'pages', 'numbers'].includes(docTypeLower);
+    } else if (typeFilter === 'photos') {
+      matchesType = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg', 'heic', 'tiff', 'bmp'].includes(docTypeLower);
+    } else if (typeFilter === 'text') {
+      matchesType = ['txt', 'md', 'html', 'json', 'xml', 'csv', 'meeting', 'research'].includes(docTypeLower);
+    }
+    
     return matchesSearch && matchesType;
   });
 
@@ -177,19 +198,32 @@ export default function DocumentsPage() {
           <p className="text-sm text-muted-foreground">{userDocuments.length} documents in this workspace</p>
         </div>
         
-        {!isGuest ? (
-          <Button 
-            onClick={() => setUploadOpen(true)}
-            className="bg-foreground text-background hover:opacity-90 gap-2 shrink-0 h-8 text-sm"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            Upload
-          </Button>
-        ) : (
-          <Badge variant="outline" className="text-muted-foreground text-[10px] py-1 border-dashed">
-            View-only Guest Access
-          </Badge>
-        )}
+        <div className="flex items-center gap-2">
+          {userDocuments.length > 0 && !isGuest && (
+            <Button 
+              onClick={handleDeleteAll}
+              variant="destructive"
+              className="gap-2 shrink-0 h-8 text-sm cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              Delete All
+            </Button>
+          )}
+
+          {!isGuest ? (
+            <Button 
+              onClick={() => setUploadOpen(true)}
+              className="bg-foreground text-background hover:opacity-90 gap-2 shrink-0 h-8 text-sm"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Upload
+            </Button>
+          ) : (
+            <Badge variant="outline" className="text-muted-foreground text-[10px] py-1 border-dashed">
+              View-only Guest Access
+            </Badge>
+          )}
+        </div>
       </div>
 
       {/* AI Suggestions Widget */}
@@ -255,7 +289,26 @@ export default function DocumentsPage() {
 
       {/* Content */}
       <div className="flex-1 overflow-auto p-6 md:p-8">
-        {filteredDocuments.length === 0 ? (
+        {isAppLoading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 animate-pulse">
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+              <div key={i} className="h-48 rounded-2xl bg-muted/40 border border-border/60 p-5 flex flex-col justify-between">
+                <div className="flex flex-col gap-2.5">
+                  <div className="h-4 bg-muted-foreground/15 rounded-md w-3/4" />
+                  <div className="h-3 bg-muted-foreground/10 rounded-md w-1/2" />
+                  <div className="space-y-1.5 mt-2">
+                    <div className="h-2 bg-muted-foreground/10 rounded-md w-full" />
+                    <div className="h-2 bg-muted-foreground/10 rounded-md w-11/12" />
+                  </div>
+                </div>
+                <div className="flex items-center justify-between pt-4 border-t border-border/40">
+                  <div className="h-3 bg-muted-foreground/10 rounded-md w-1/4" />
+                  <div className="h-4 bg-muted-foreground/10 rounded-full w-12" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : filteredDocuments.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center py-16 max-w-xl mx-auto select-none">
             <div className="relative mb-6">
               <div className="w-14 h-14 rounded-2xl bg-indigo-500/10 dark:bg-indigo-500/20 flex items-center justify-center text-indigo-600 dark:text-indigo-400 border border-indigo-500/10">

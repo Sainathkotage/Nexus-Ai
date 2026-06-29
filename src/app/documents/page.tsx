@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { useWorkspace } from '@/lib/store';
 import { motion } from 'motion/react';
-import { FileText, Search, Plus, Filter, Sparkles } from 'lucide-react';
+import { FileText, Search, Plus, Filter, Sparkles, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { DocumentCard } from '@/components/documents/document-card';

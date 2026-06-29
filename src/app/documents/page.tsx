@@ -139,7 +139,7 @@ export default function DocumentsPage() {
     }
   };
 
-  const userDocuments = user ? documents.filter(doc => doc.uploadedBy?.id === user.id || doc.uploadedBy?.email === user.email) : [];
+  const userDocuments = documents;
   const selectedDocument = userDocuments.find(d => d.id === selectedDocumentId) || null;
 
   if (selectedDocument) {
@@ -174,7 +174,7 @@ export default function DocumentsPage() {
       <div className="p-6 md:p-8 shrink-0 flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-border">
         <div className="flex flex-col gap-1">
           <h1 className="text-2xl font-semibold tracking-tight">Documents</h1>
-          <p className="text-sm text-muted-foreground">{userDocuments.length} documents uploaded by you</p>
+          <p className="text-sm text-muted-foreground">{userDocuments.length} documents in this workspace</p>
         </div>
         
         {!isGuest ? (

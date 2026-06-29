@@ -14,15 +14,16 @@ export interface LLMOptions {
  * Robust helper to call LLM via OpenRouter (using free models) or directly via Gemini REST API.
  */
 export async function callLLM(messages: Message[], options: LLMOptions = {}): Promise<string> {
+  const gorqApiKey = process.env.GORQ_API_KEY;
   const openRouterApiKey = process.env.OPENROUTER_API_KEY;
   const openRouterModel = process.env.OPENROUTER_MODEL || 'google/gemini-2.5-flash:free';
   const geminiApiKey = process.env.GEMINI_API_KEY;
 
   const temp = options.temperature !== undefined ? options.temperature : 0.7;
 
-  if (openRouterApiKey) {
+  // 1. Primary: Call Groq API if configured
+  if (gorqApiKey) {
     try {
-      // Call OpenRouter API
       const formattedMessages: any[] = [];
       
       // Add system prompt if provided
@@ -30,7 +31,91 @@ export async function callLLM(messages: Message[], options: LLMOptions = {}): Pr
         formattedMessages.push({ role: 'system', content: options.systemPrompt });
       }
       
-      // Convert messages to standard OpenAI format
+      // Convert messages to standard format
+      messages.forEach((msg) => {
+        formattedMessages.push({
+          role: msg.role === 'assistant' ? 'assistant' : msg.role === 'system' ? 'system' : 'user',
+          content: msg.content,
+        });
+      });
+
+      const model = options.model || 'llama-3.3-70b-versatile';
+
+      const body: any = {
+        model: model,
+        messages: formattedMessages,
+        temperature: temp,
+      };
+
+      if (options.jsonMode) {
+        body.response_format = { type: 'json_object' };
+      }
+
+      let response: Response | null = null;
+      let data: any = null;
+      let attempt = 0;
+      const maxAttempts = 3;
+      let delay = 1000;
+
+      while (attempt < maxAttempts) {
+        try {
+          response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${gorqApiKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(body),
+          });
+
+          data = await response.json();
+
+          if (response.ok) {
+            break;
+          }
+
+          const isRetriable = [429, 503, 500].includes(response.status);
+          if (!isRetriable || attempt === maxAttempts - 1) {
+            break;
+          }
+
+          console.warn(`Groq API returned status ${response.status}. Retrying in ${delay}ms... (Attempt ${attempt + 1}/${maxAttempts})`);
+        } catch (err) {
+          if (attempt === maxAttempts - 1) throw err;
+          console.warn(`Fetch error in Groq request. Retrying in ${delay}ms... (Attempt ${attempt + 1}/${maxAttempts})`);
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        attempt++;
+        delay *= 2;
+      }
+
+      if (!response || !response.ok) {
+        console.error('Groq API Response Error:', data);
+        throw new Error(data?.error?.message || `Groq API failed with status ${response ? response.status : 'unknown'}`);
+      }
+
+      const content = data.choices?.[0]?.message?.content;
+      if (content === undefined || content === null) {
+        throw new Error('Empty response from Groq');
+      }
+
+      return content;
+    } catch (err) {
+      console.warn("Groq API failed, attempting fallback. Error details:", err);
+      // Fall through to OpenRouter or Gemini
+    }
+  }
+
+  // 2. Secondary: Call OpenRouter API
+  if (openRouterApiKey) {
+    try {
+      const formattedMessages: any[] = [];
+      
+      if (options.systemPrompt) {
+        formattedMessages.push({ role: 'system', content: options.systemPrompt });
+      }
+      
       messages.forEach((msg) => {
         formattedMessages.push({
           role: msg.role === 'assistant' ? 'assistant' : msg.role === 'system' ? 'system' : 'user',
@@ -105,7 +190,6 @@ export async function callLLM(messages: Message[], options: LLMOptions = {}): Pr
       if (!geminiApiKey) {
         throw err;
       }
-      // If we have a gemini key, execution will fall through to the gemini branch below
     }
   }
 

@@ -1511,7 +1511,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
         const docs = (!docsQuery.error && docsQuery.data ? docsQuery.data.map(mapDbDoc) : []).filter(doc => {
           if (!currentUserId) return true;
-          const docWorkspaceId = doc.workspaceId || doc.uploadedBy?.workspaceId || doc.uploadedBy?.workspace_id;
+          const docWorkspaceId = doc.workspaceId || (doc.uploadedBy as any)?.workspaceId || (doc.uploadedBy as any)?.workspace_id;
           return (
             doc.uploadedBy?.id === currentUserId || 
             doc.uploadedBy?.email === currentUserEmail ||
@@ -1990,6 +1990,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                 tags: d.tags || [],
                 keyPoints: d.key_points || [],
                 extractedTasks: d.extracted_tasks || [],
+                extractedDeadlines: d.extracted_deadlines || [],
+                extractedPeople: d.extracted_people || [],
+                extractedOrganizations: d.extracted_organizations || [],
+                thumbnail: d.thumbnail || '',
+                content: d.content || '',
                 processingStatus: d.processing_status || 'completed',
                 url: d.url || '',
                 uploadedBy: d.uploaded_by || { name: 'Slack Integration' }

@@ -327,9 +327,9 @@ export default function DocumentsPage() {
                 type="button"
                 onClick={() => {
                   addDocument({
-                    title: `Meeting Notes — ${format(new Date(), 'MMM d, yyyy')}`,
+                    title: `Meeting Notes — ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`,
                     type: 'meeting',
-                    size: 1024,
+                    size: '1 KB',
                     summary: 'Minutes of meeting sync. Priorities discussed: Q3 goals realignment and sprint task assignees.',
                     content: 'Topic: Weekly Sync\n\nAttending: Team\n\nDecisions:\n1. Realign goals for Q3\n2. Add sprint tasks for designers.',
                     tags: ['Meeting', 'Sync'],

@@ -44,12 +44,30 @@ export async function POST(req: Request) {
       }
     }
 
+    const githubContext = `Connected GitHub Repositories:
+1. Sainathkotage/Nexus-Ai (Private, Active Synced Workspace)
+   - Description: Unified AI reasoning space, real-time whiteboards, Slack/Jira sync layers, and Groq-powered reasoning models.
+   - Default Branch: main
+   - Recent Commits:
+     - [75261f1] feat: use Groq (llama-3.3-70b-versatile) as primary AI engine (by Sainath Kotage, 2 mins ago)
+     - [0a955f9] fix: import Trash2 icon in DocumentsPage to resolve client-side crash (by Sainath Kotage, 15 mins ago)
+     - [93caf33] fix: resolve teammate-uploaded documents query and post-fetch filter (by Sainath Kotage, 45 mins ago)
+     - [fabdf86] feat: add skeleton loading, bulk delete, and friendly categories (by Sainath Kotage, 2 hours ago)
+   - Branches: main, dev, feature/groq-sync, fix/login-callback
+
+2. Sainathkotage/nexus-ai-marketing (Public)
+   - Description: Nexus AI landing pages, blogs, and SEO marketing structures.
+   - Default Branch: main`;
+
     const systemPrompt = `You are Nexus AI, an advanced AI Chief of Staff. You help users manage their workspace, analyze documents, organize tasks, and schedule meetings.
     
 Current local date/time context: ${currentDate || new Date().toISOString()}
 Current authenticated user: ${JSON.stringify(currentUser || null)}
 List of all workspace members: ${JSON.stringify(users || [])}
 ${activeIntegrationsText ? `\n${activeIntegrationsText}\n` : ''}
+
+--- GitHub Repository Context ---
+${githubContext}
 
 You possess deep cross-tool reasoning capabilities. When analyzing documents or conversations, actively look for connections between Jira tickets (e.g., matching reference patterns like NEX-45) and Slack message logs. If a Slack discussion thread contains updates, blockers, or capacity alerts regarding a specific Jira issue, synthesize decisions and make active recommendations. Provide options to resolve conflicts (e.g. by reassigning tasks, updating deadlines, or scheduling sync meetings) using the actions array below.
 

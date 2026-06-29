@@ -448,27 +448,49 @@ export async function normalizeSlackFile(
   else if (mimetype.includes('sheet') || mimetype.includes('officedocument.spreadsheetml')) docType = 'xlsx';
   else if (mimetype.includes('image')) docType = 'png';
 
+  // 4.5. Parse text content from download file buffer
+  let extractedText = '';
+  if (docType === 'pdf') {
+    try {
+      const { PDFParse } = require('pdf-parse');
+      const parser = new PDFParse({ data: fileBuffer });
+      const result = await parser.getText();
+      extractedText = result.text || '';
+      await parser.destroy();
+    } catch (err: any) {
+      console.warn('[contextNormalizer] Failed to parse PDF text via pdf-parse, using fallback metadata:', err.message || err);
+    }
+  } else if (['txt', 'md', 'html', 'json', 'csv'].includes(docType) || mimetype.startsWith('text/')) {
+    try {
+      extractedText = new TextDecoder('utf-8').decode(fileBuffer);
+    } catch (err: any) {
+      console.warn('[contextNormalizer] Failed to decode text file:', err.message || err);
+    }
+  }
+
+  const docId = `slack-file-${file.id}`;
+
   // 5. Ingest into public.documents table
   const docPayload = {
-    id: `slack-file-${file.id}`,
+    id: docId,
     title: file.title || file.name,
     type: docType,
     size: `${(sizeBytes / 1024).toFixed(2)} KB`,
-    summary: `File shared in Slack by ${uploader.name}. Format: ${file.filetype?.toUpperCase() || 'Attachment'}`,
-    content: `Slack Shared File details:
+    summary: 'Processing document...',
+    content: extractedText || `Slack Shared File details:
 File ID: ${file.id}
 File Name: ${file.name}
 File Title: ${file.title || 'Untitled'}
 Mime Type: ${mimetype}
 Slack Download URL: ${file.url_private}
 Stored Path: documents/${fileName}`,
-    tags: ['slack', 'file', file.filetype || 'attachment'],
+    tags: ['slack', 'file', file.filetype || 'attachment', 'processing'],
     key_points: [],
     extracted_tasks: [],
     extracted_people: [uploader.name.toUpperCase()],
     extracted_organizations: [],
     uploaded_at: timestamp,
-    processing_status: 'completed',
+    processing_status: extractedText ? 'processing' : 'completed',
     uploaded_by: { ...uploader, workspaceId }
   };
 
@@ -481,6 +503,64 @@ Stored Path: documents/${fileName}`,
       .from('documents')
       .insert(docPayload);
     docErr = fallbackErr;
+  }
+
+  // If we have extracted text, trigger background LLM extraction
+  if (extractedText.trim().length > 0) {
+    (async () => {
+      try {
+        const { callLLM, parseRobustJson } = await import('@/lib/ai');
+        const prompt = `Analyze the following document content. Extract standard metadata and content analysis. 
+The output MUST be a JSON object with exactly the following fields (do not wrap in markdown code blocks, return raw json string):
+{
+  "summary": "A concise 3-sentence executive summary of the document",
+  "keyPoints": ["Key point 1", "Key point 2", "Key point 3", "Key point 4"],
+  "tasks": [
+    {"text": "Task description 1", "deadline": "YYYY-MM-DD or null", "assignee": "assignee name or null"}
+  ],
+  "deadlines": [
+    {"text": "Deadline name 1", "date": "YYYY-MM-DD"}
+  ],
+  "people": ["Name 1", "Name 2"],
+  "organizations": ["Org 1", "Org 2"],
+  "tags": ["tag1", "tag2", "tag3"]
+}
+
+If no tasks, deadlines, people, or organizations are found, return empty arrays.
+Document Content:
+${extractedText.substring(0, 15000)}`;
+
+        const rawText = await callLLM([{ role: 'user', content: prompt }], {
+          temperature: 0.2,
+          jsonMode: true
+        });
+
+        if (rawText) {
+          const cleanText = rawText.trim().replace(/^```json/i, '').replace(/^```/, '').trim();
+          const analysis = parseRobustJson(cleanText);
+
+          await supabase
+            .from('documents')
+            .update({
+              summary: analysis.summary || 'Uploaded from Slack.',
+              key_points: analysis.keyPoints || [],
+              extracted_tasks: analysis.tasks || [],
+              extracted_deadlines: analysis.deadlines || [],
+              extracted_people: analysis.people || [],
+              extracted_organizations: analysis.organizations || [],
+              tags: Array.from(new Set(['slack', 'file', docType, ...(analysis.tags || [])])),
+              processing_status: 'completed'
+            })
+            .eq('id', docId);
+        }
+      } catch (err) {
+        console.error('[contextNormalizer] Failed to extract text summary via LLM:', err);
+        await supabase
+          .from('documents')
+          .update({ processing_status: 'failed' })
+          .eq('id', docId);
+      }
+    })();
   }
 
   if (docErr) {

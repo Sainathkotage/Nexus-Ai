@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   Sparkles, LayoutDashboard, FileText, MessageSquare, 
   CheckSquare, Calendar, Mail, Settings, Plus, Search,
-  ChevronDown, Users, Check, LogOut, Palette, BarChart3, Smile, Inbox, Video, Plug, Boxes
+  ChevronDown, Users, Check, LogOut, Palette, BarChart3, Smile, Inbox, Video, Plug, Boxes, Code
 } from 'lucide-react';
 
 const GithubIcon = (props: React.SVGProps<SVGSVGElement>) => (
@@ -33,7 +33,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 const navItems: { id: PageId; label: string; icon: React.ElementType }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'ai-inbox', label: 'AI Inbox', icon: Inbox },
-  { id: 'github', label: 'GitHub Repo', icon: GithubIcon },
+  { id: 'code-writer', label: 'Code Writer', icon: Code },
   { id: 'documents', label: 'Documents', icon: FileText },
   { id: 'chat', label: 'AI Chat', icon: MessageSquare },
   { id: 'team-chat', label: 'Team Chat', icon: Users },

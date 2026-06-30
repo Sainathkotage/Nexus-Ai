@@ -35,6 +35,10 @@ export async function GET(req: Request) {
       tokenUrl = 'https://api.notion.com/v1/oauth/token';
       clientId = process.env.NOTION_CLIENT_ID || '';
       clientSecret = process.env.NOTION_CLIENT_SECRET || '';
+    } else if (connectorId === 'jira') {
+      tokenUrl = 'https://auth.atlassian.com/oauth/token';
+      clientId = process.env.JIRA_CLIENT_ID || '';
+      clientSecret = process.env.JIRA_CLIENT_SECRET || '';
     }
 
     if (!clientId || !clientSecret) {

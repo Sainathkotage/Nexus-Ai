@@ -33,8 +33,14 @@ const NotionIcon = (props: React.SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
+const JiraIcon = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+  </svg>
+);
+
 interface OAuthConnectButtonProps {
-  connectorId: 'slack' | 'github' | 'notion';
+  connectorId: 'slack' | 'github' | 'notion' | 'jira';
   workspaceId: string;
   className?: string;
   size?: 'default' | 'sm' | 'lg' | 'xs';
@@ -70,6 +76,13 @@ export function OAuthConnectButton({
           icon: <NotionIcon className="w-4 h-4 shrink-0 transition-transform group-hover/button:scale-110" />,
           colorClass: 'bg-slate-700 hover:bg-slate-800 text-white shadow-[0_2px_8px_rgba(71,85,105,0.2)] hover:shadow-[0_4px_12px_rgba(71,85,105,0.4)]',
           permissions: ['Index selected workspaces', 'Read pages & databases', 'Extract document content']
+        };
+      case 'jira':
+        return {
+          name: 'Jira',
+          icon: <JiraIcon className="w-4 h-4 shrink-0 transition-transform group-hover/button:scale-110" />,
+          colorClass: 'bg-blue-600 hover:bg-blue-700 text-white shadow-[0_2px_8px_rgba(37,99,235,0.2)] hover:shadow-[0_4px_12px_rgba(37,99,235,0.4)]',
+          permissions: ['Access sprint boards & milestones', 'Read & update issues', 'Map user workload assignments']
         };
     }
   };

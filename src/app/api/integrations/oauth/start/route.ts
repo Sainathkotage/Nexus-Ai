@@ -48,6 +48,13 @@ export async function GET(req: Request) {
       }
       // Notion oauth doesn't strictly require scope param since permissions are defined in the integration settings
       authUrl = `https://api.notion.com/v1/oauth/authorize?client_id=${clientId}&response_type=code&owner=user&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}`;
+    } else if (connectorId === 'jira') {
+      const clientId = process.env.JIRA_CLIENT_ID;
+      if (!clientId) {
+        return NextResponse.json({ error: 'Jira OAuth Client ID is not configured on the server' }, { status: 500 });
+      }
+      const scopes = 'read:jira-work write:jira-work read:jira-user';
+      authUrl = `https://auth.atlassian.com/authorize?audience=api.atlassian.com&client_id=${clientId}&scope=${encodeURIComponent(scopes)}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}&response_type=code&prompt=consent`;
     } else {
       return NextResponse.json({ error: `Unsupported connector: ${connectorId}` }, { status: 400 });
     }

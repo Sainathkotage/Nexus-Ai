@@ -35,6 +35,45 @@ export default function IntegrationsHubPage() {
   const [customTokenModal, setCustomTokenModal] = useState<{ open: boolean; connectorId: string | null }>({ open: false, connectorId: null });
   const [customTokenVal, setCustomTokenVal] = useState('');
 
+  // Developer OAuth App Credentials config states
+  const [devKeysModal, setDevKeysModal] = useState<{ open: boolean; connectorId: string | null }>({ open: false, connectorId: null });
+  const [devClientId, setDevClientId] = useState('');
+  const [devClientSecret, setDevClientSecret] = useState('');
+  const [isSavingKeys, setIsSavingKeys] = useState(false);
+
+  const handleSaveDevKeys = async () => {
+    if (!workspace || !devKeysModal.connectorId || !devClientId.trim() || !devClientSecret.trim()) return;
+    setIsSavingKeys(true);
+    const toastId = toast.loading('Encrypting and saving developer credentials...');
+    try {
+      const response = await fetch('/api/integrations/oauth/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          connectorId: devKeysModal.connectorId,
+          workspaceId: workspace.id,
+          clientId: devClientId.trim(),
+          clientSecret: devClientSecret.trim()
+        })
+      });
+
+      const resData = await response.json();
+      if (!response.ok) {
+        throw new Error(resData.error || 'Failed to save credentials');
+      }
+
+      toast.success(`OAuth app credentials saved! You can now use one-click connect for ${devKeysModal.connectorId.toUpperCase()}.`, { id: toastId });
+      setDevKeysModal({ open: false, connectorId: null });
+      setDevClientId('');
+      setDevClientSecret('');
+    } catch (e: any) {
+      console.error(e);
+      toast.error(e.message || 'Failed to save configuration', { id: toastId });
+    } finally {
+      setIsSavingKeys(false);
+    }
+  };
+
   // Handle OAuth Redirect URL Params
   useEffect(() => {
     if (!searchParams) return;
@@ -474,13 +513,22 @@ export default function IntegrationsHubPage() {
                   </div>
 
                   <div className="flex items-center justify-between pt-4 border-t border-border/40">
-                    <button
-                      type="button"
-                      onClick={() => setCustomTokenModal({ open: true, connectorId: connector.id })}
-                      className="text-3xs text-muted-foreground hover:text-foreground font-semibold hover:underline cursor-pointer transition-colors"
-                    >
-                      Use manual token
-                    </button>
+                    <div className="flex flex-col gap-1 items-start">
+                      <button
+                        type="button"
+                        onClick={() => setCustomTokenModal({ open: true, connectorId: connector.id })}
+                        className="text-[10px] text-muted-foreground hover:text-foreground font-semibold hover:underline cursor-pointer transition-colors text-left"
+                      >
+                        Use API token
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDevKeysModal({ open: true, connectorId: connector.id })}
+                        className="text-[10px] text-indigo-500 hover:text-indigo-400 font-semibold hover:underline cursor-pointer transition-colors text-left"
+                      >
+                        Set Client ID/Secret
+                      </button>
+                    </div>
                     {workspace && (
                       <OAuthConnectButton
                         connectorId={connector.id as any}
@@ -731,6 +779,77 @@ export default function IntegrationsHubPage() {
               className="text-3xs font-semibold h-8 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white transition-colors cursor-pointer"
             >
               Connect Integration
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Developer OAuth App Credentials Configuration Dialog */}
+      <Dialog open={devKeysModal.open} onOpenChange={(open) => !open && setDevKeysModal({ open: false, connectorId: null })}>
+        <DialogContent className="sm:max-w-md bg-background border border-border shadow-lg rounded-xl text-xs p-6 flex flex-col gap-4">
+          <DialogHeader>
+            <DialogTitle className="text-sm font-bold flex items-center gap-2 text-foreground">
+              <Settings className="w-5 h-5 text-indigo-500" />
+              Configure {devKeysModal.connectorId?.toUpperCase()} OAuth App Keys
+            </DialogTitle>
+            <DialogDescription className="text-3xs text-muted-foreground leading-relaxed mt-1">
+              Provide the Client ID and Client Secret for your custom {devKeysModal.connectorId?.toUpperCase()} OAuth application. This allows users to connect to this app directly from Nexus AI without configuring Vercel environment variables.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[10px] uppercase font-bold text-foreground/60 tracking-wider">OAuth Client ID</label>
+              <input
+                type="text"
+                placeholder="e.g. 11459637935765.11475..."
+                value={devClientId}
+                onChange={(e) => setDevClientId(e.target.value)}
+                className="w-full bg-muted border border-border rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-indigo-500 text-foreground"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[10px] uppercase font-bold text-foreground/60 tracking-wider">OAuth Client Secret</label>
+              <input
+                type="password"
+                placeholder="••••••••••••••••"
+                value={devClientSecret}
+                onChange={(e) => setDevClientSecret(e.target.value)}
+                className="w-full bg-muted border border-border rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-indigo-500 text-foreground"
+              />
+            </div>
+
+            <div className="text-[10px] text-muted-foreground flex flex-col gap-1 mt-2 p-3 bg-muted/40 border border-border/60 rounded-xl">
+              <span className="font-bold flex items-center gap-1 text-foreground"><Info className="w-3.5 h-3.5 text-indigo-500" /> Setup Instructions:</span>
+              <span className="leading-relaxed">
+                Configure your OAuth Redirect URL in the developer console to:
+              </span>
+              <span className="font-mono bg-background p-1.5 border border-border/80 rounded select-all block break-all text-foreground mt-1">
+                {typeof window !== 'undefined' ? `${window.location.origin}/api/integrations/oauth/callback` : 'https://app.aixentrix.com/api/integrations/oauth/callback'}
+              </span>
+            </div>
+          </div>
+
+          <DialogFooter className="flex flex-col sm:flex-row gap-2 mt-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setDevKeysModal({ open: false, connectorId: null });
+                setDevClientId('');
+                setDevClientSecret('');
+              }}
+              className="text-3xs font-semibold h-8 rounded-full border-border hover:bg-muted text-foreground transition-colors cursor-pointer"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={isSavingKeys || !devClientId.trim() || !devClientSecret.trim()}
+              onClick={handleSaveDevKeys}
+              className="text-3xs font-semibold h-8 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white transition-colors cursor-pointer"
+            >
+              Save Credentials
             </Button>
           </DialogFooter>
         </DialogContent>

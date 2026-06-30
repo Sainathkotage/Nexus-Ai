@@ -16,8 +16,39 @@ export async function GET(req: Request) {
   if (!workspaceId || !connectorId || !userId) {
     return NextResponse.redirect(new URL('/settings?error=oauth_invalid_state', req.url));
   }
-
   try {
+    // 1. Fetch custom configuration if it exists for this workspace
+    const supabaseAdmin = createSupabaseAdminClient();
+    const { data: configIntegration } = await supabaseAdmin
+      .from('workspace_integrations')
+      .select('id')
+      .eq('workspace_id', workspaceId)
+      .eq('connector_id', connectorId)
+      .eq('status', 'config')
+      .maybeSingle();
+
+    let customClientId = '';
+    let customClientSecret = '';
+
+    if (configIntegration) {
+      const { data: credential } = await supabaseAdmin
+        .from('credentials')
+        .select('*')
+        .eq('integration_id', configIntegration.id)
+        .maybeSingle();
+
+      if (credential) {
+        if (credential.auth_fields) {
+          customClientId = (credential.auth_fields as any).client_id || '';
+        }
+        try {
+          customClientSecret = CredentialVault.decrypt(credential.encrypted_data, credential.iv);
+        } catch (e) {
+          console.warn('[OAuth Callback API] Failed to decrypt custom client secret');
+        }
+      }
+    }
+
     let tokenUrl = '';
     let clientId = '';
     let clientSecret = '';
@@ -25,20 +56,20 @@ export async function GET(req: Request) {
     // Connector-specific OAuth client credentials
     if (connectorId === 'github') {
       tokenUrl = 'https://github.com/login/oauth/access_token';
-      clientId = process.env.GITHUB_CLIENT_ID || '';
-      clientSecret = process.env.GITHUB_CLIENT_SECRET || '';
+      clientId = customClientId || process.env.GITHUB_CLIENT_ID || '';
+      clientSecret = customClientSecret || process.env.GITHUB_CLIENT_SECRET || '';
     } else if (connectorId === 'slack') {
       tokenUrl = 'https://slack.com/api/oauth.v2.access';
-      clientId = process.env.SLACK_CLIENT_ID || '';
-      clientSecret = process.env.SLACK_CLIENT_SECRET || '';
+      clientId = customClientId || process.env.SLACK_CLIENT_ID || '';
+      clientSecret = customClientSecret || process.env.SLACK_CLIENT_SECRET || '';
     } else if (connectorId === 'notion') {
       tokenUrl = 'https://api.notion.com/v1/oauth/token';
-      clientId = process.env.NOTION_CLIENT_ID || '';
-      clientSecret = process.env.NOTION_CLIENT_SECRET || '';
+      clientId = customClientId || process.env.NOTION_CLIENT_ID || '';
+      clientSecret = customClientSecret || process.env.NOTION_CLIENT_SECRET || '';
     } else if (connectorId === 'jira') {
       tokenUrl = 'https://auth.atlassian.com/oauth/token';
-      clientId = process.env.JIRA_CLIENT_ID || '';
-      clientSecret = process.env.JIRA_CLIENT_SECRET || '';
+      clientId = customClientId || process.env.JIRA_CLIENT_ID || '';
+      clientSecret = customClientSecret || process.env.JIRA_CLIENT_SECRET || '';
     }
 
     if (!clientId || !clientSecret) {

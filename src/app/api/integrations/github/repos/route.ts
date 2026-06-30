@@ -23,6 +23,7 @@ async function getGitHubToken(workspaceId: string): Promise<string> {
     .select('id')
     .eq('workspace_id', workspaceId)
     .eq('connector_id', 'github')
+    .eq('status', 'active')
     .maybeSingle();
 
   if (integration) {

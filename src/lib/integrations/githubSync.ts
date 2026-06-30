@@ -80,6 +80,7 @@ export async function syncRepository(
       .select('id')
       .eq('workspace_id', workspaceId)
       .eq('connector_id', 'github')
+      .eq('status', 'active')
       .maybeSingle();
 
     if (integration) {
@@ -370,6 +371,7 @@ export async function syncWorkspaceGitHubContext(workspaceId: string): Promise<{
         .select('id')
         .eq('workspace_id', workspaceId)
         .eq('connector_id', 'github')
+        .eq('status', 'active')
         .maybeSingle();
 
       if (integration) {
@@ -466,6 +468,7 @@ export async function syncWorkspaceGitHubContext(workspaceId: string): Promise<{
       .select('id')
       .eq('workspace_id', workspaceId)
       .eq('connector_id', 'github')
+      .eq('status', 'active')
       .maybeSingle();
 
     if (integration) {

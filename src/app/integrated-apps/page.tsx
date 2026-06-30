@@ -116,7 +116,7 @@ export default function IntegratedAppsPage() {
           .from('documents')
           .select('*')
           .eq('workspace_id', workspace.id)
-          .contains('tags', [connectorId])
+          .contains('tags', JSON.stringify([connectorId]))
           .order('uploaded_at', { ascending: false });
 
         if (error) throw error;

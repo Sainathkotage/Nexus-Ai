@@ -148,7 +148,7 @@ export default function GitHubPage() {
           .from('documents')
           .select('*')
           .eq('workspace_id', workspace.id)
-          .contains('tags', ['commit'])
+          .contains('tags', JSON.stringify(['commit']))
           .order('uploaded_at', { ascending: false })
           .limit(6);
 

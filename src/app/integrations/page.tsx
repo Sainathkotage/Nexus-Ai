@@ -47,6 +47,14 @@ export default function IntegrationsHubPage() {
       toast.success(`${connector.toUpperCase()} connected successfully! Nexus AI is now ready to sync workspace context.`);
       // Clean query params
       window.history.replaceState({}, document.title, window.location.pathname);
+    } else if (error === 'oauth_missing_config') {
+      const provider = searchParams.get('provider') || 'Provider';
+      toast.error(`${provider} OAuth Client ID is not configured on the server. Please define the required environment variables in your deployment dashboard (e.g. GITHUB_CLIENT_ID / GITHUB_CLIENT_SECRET).`);
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } else if (error === 'oauth_unsupported') {
+      const conn = searchParams.get('connector') || 'unknown';
+      toast.error(`Unsupported OAuth connector: ${conn}`);
+      window.history.replaceState({}, document.title, window.location.pathname);
     } else if (error === 'oauth_failed') {
       toast.error(`OAuth connection failed: ${msg || 'Unknown error'}`);
       window.history.replaceState({}, document.title, window.location.pathname);

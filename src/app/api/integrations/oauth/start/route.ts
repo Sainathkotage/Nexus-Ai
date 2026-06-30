@@ -30,13 +30,13 @@ export async function GET(req: Request) {
     if (connectorId === 'github') {
       const clientId = process.env.GITHUB_CLIENT_ID;
       if (!clientId) {
-        return NextResponse.json({ error: 'GitHub OAuth Client ID is not configured on the server' }, { status: 500 });
+        return NextResponse.redirect(new URL(`/integrations?error=oauth_missing_config&provider=GitHub`, req.url));
       }
       authUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&scope=repo,read:user&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}`;
     } else if (connectorId === 'slack') {
       const clientId = process.env.SLACK_CLIENT_ID;
       if (!clientId) {
-        return NextResponse.json({ error: 'Slack OAuth Client ID is not configured on the server' }, { status: 500 });
+        return NextResponse.redirect(new URL(`/integrations?error=oauth_missing_config&provider=Slack`, req.url));
       }
       // Note: Slack scopes must be bot scopes under standard OAuth v2
       const scopes = 'channels:read,channels:history,chat:write,files:read,users:read';
@@ -44,19 +44,19 @@ export async function GET(req: Request) {
     } else if (connectorId === 'notion') {
       const clientId = process.env.NOTION_CLIENT_ID;
       if (!clientId) {
-        return NextResponse.json({ error: 'Notion OAuth Client ID is not configured on the server' }, { status: 500 });
+        return NextResponse.redirect(new URL(`/integrations?error=oauth_missing_config&provider=Notion`, req.url));
       }
       // Notion oauth doesn't strictly require scope param since permissions are defined in the integration settings
       authUrl = `https://api.notion.com/v1/oauth/authorize?client_id=${clientId}&response_type=code&owner=user&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}`;
     } else if (connectorId === 'jira') {
       const clientId = process.env.JIRA_CLIENT_ID;
       if (!clientId) {
-        return NextResponse.json({ error: 'Jira OAuth Client ID is not configured on the server' }, { status: 500 });
+        return NextResponse.redirect(new URL(`/integrations?error=oauth_missing_config&provider=Jira`, req.url));
       }
       const scopes = 'read:jira-work write:jira-work read:jira-user';
       authUrl = `https://auth.atlassian.com/authorize?audience=api.atlassian.com&client_id=${clientId}&scope=${encodeURIComponent(scopes)}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}&response_type=code&prompt=consent`;
     } else {
-      return NextResponse.json({ error: `Unsupported connector: ${connectorId}` }, { status: 400 });
+      return NextResponse.redirect(new URL(`/integrations?error=oauth_unsupported&connector=${connectorId}`, req.url));
     }
 
     return NextResponse.redirect(authUrl);

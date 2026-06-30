@@ -48,24 +48,35 @@ export default function CodeWriterPage() {
     async function loadWorkspaceRepos() {
       if (!workspace) return;
       try {
-        const { data, error } = await supabase
-          .from('github_repositories')
-          .select('*')
-          .eq('workspace_id', workspace.id);
-
-        if (error) throw error;
-
-        if (data && data.length > 0) {
-          setRepos(data);
-          setSelectedRepo(data[0].full_name);
-        } else {
-          // If no repos, fallback to check installations
-          const { data: installations } = await supabase
-            .from('github_installations')
-            .select('account_name')
+        let dbRepos: any[] = [];
+        try {
+          const { data, error } = await supabase
+            .from('github_repositories')
+            .select('*')
             .eq('workspace_id', workspace.id);
-            
-          console.log('[CodeWriter] Checked installations:', installations);
+          if (!error && data) {
+            dbRepos = data;
+          }
+        } catch (e) {
+          console.warn('[CodeWriter] Table github_repositories missing, falling back to dynamic API');
+        }
+
+        if (dbRepos.length > 0) {
+          setRepos(dbRepos);
+          setSelectedRepo(dbRepos[0].full_name);
+        } else {
+          const res = await fetch(`/api/integrations/github/repos?workspaceId=${workspace.id}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.repos && data.repos.length > 0) {
+              setRepos(data.repos);
+              setSelectedRepo(data.repos[0].full_name);
+            } else {
+              toast.error('No repositories found. Ensure you have authorized Nexus to access your repositories.');
+            }
+          } else {
+            throw new Error('Failed to fetch from dynamic repos API');
+          }
         }
       } catch (err: any) {
         console.error(err);

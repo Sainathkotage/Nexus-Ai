@@ -37,18 +37,20 @@ export async function POST(req: Request) {
       .from('credentials')
       .select('*')
       .eq('integration_id', integrationId)
-      .single();
+      .maybeSingle();
 
-    if (credErr || !credential) {
-      return NextResponse.json({ error: 'Credentials not found for this connection' }, { status: 404 });
-    }
-
-    // Decrypt credentials to simulate live API context fetch
     let decryptedToken = '';
-    try {
-      decryptedToken = CredentialVault.decrypt(credential.encrypted_data, credential.iv);
-    } catch (e) {
-      console.warn('[Sync API] Failed to decrypt credentials. Using fallback.');
+    if (integration.connector_id === 'slack' && process.env.SLACK_BOT_TOKEN) {
+      decryptedToken = process.env.SLACK_BOT_TOKEN;
+    } else if (credErr || !credential) {
+      return NextResponse.json({ error: 'Credentials not found for this connection' }, { status: 404 });
+    } else {
+      // Decrypt credentials to simulate live API context fetch
+      try {
+        decryptedToken = CredentialVault.decrypt(credential.encrypted_data, credential.iv);
+      } catch (e) {
+        console.warn('[Sync API] Failed to decrypt credentials. Using fallback.');
+      }
     }
 
     // 3. Resolve connector metadata
@@ -73,6 +75,27 @@ export async function POST(req: Request) {
     // 4. Perform connector-specific context syncing
     let docsToInsert: any[] = [];
     const timestamp = new Date().toISOString();
+
+    if (integration.connector_id === 'jira') {
+      const syncRes = await connector.syncContext({ accessToken: decryptedToken }, integration.workspace_id);
+      if (syncRes.status === 'failed') {
+        throw new Error(syncRes.error || 'Jira sync failed');
+      }
+
+      await adminClient
+        .from('sync_jobs')
+        .update({
+          status: 'completed',
+          last_synced_at: timestamp
+        })
+        .eq('id', job.id);
+
+      return NextResponse.json({ 
+        success: true, 
+        connector: 'jira',
+        docsSynced: syncRes.issuesSynced 
+      });
+    }
 
     if (integration.connector_id === 'github') {
       docsToInsert = [
@@ -118,6 +141,66 @@ Features:
         }
       ];
     } else if (integration.connector_id === 'slack') {
+      if (decryptedToken) {
+        console.log('[Sync API] Performing real Slack sync using bot token...');
+        try {
+          let botToken = decryptedToken;
+          try {
+            const parsed = JSON.parse(decryptedToken);
+            botToken = parsed.access_token || parsed.authed_user?.access_token || decryptedToken;
+          } catch (e) {}
+
+          const channelsRes = await fetch('https://slack.com/api/conversations.list?types=public_channel', {
+            headers: { 'Authorization': `Bearer ${botToken}` }
+          });
+          const channelsData = await channelsRes.json();
+
+          if (channelsData.ok && channelsData.channels) {
+            const { normalizeSlackMessage } = await import('@/lib/integrations/contextNormalizer');
+            let messagesSynced = 0;
+
+            for (const channel of channelsData.channels.slice(0, 3)) {
+              const historyRes = await fetch(`https://slack.com/api/conversations.history?channel=${channel.id}&limit=10`, {
+                headers: { 'Authorization': `Bearer ${botToken}` }
+              });
+              const historyData = await historyRes.json();
+
+              if (historyData.ok && historyData.messages) {
+                for (const msg of historyData.messages) {
+                  if (msg.type === 'message' && !msg.subtype) {
+                    await normalizeSlackMessage({
+                      client_msg_id: msg.client_msg_id || msg.ts,
+                      type: 'message',
+                      text: msg.text,
+                      user: msg.user,
+                      ts: msg.ts,
+                      channel: channel.name
+                    }, integration.workspace_id);
+                    messagesSynced++;
+                  }
+                }
+              }
+            }
+
+            await adminClient
+              .from('sync_jobs')
+              .update({
+                status: 'completed',
+                last_synced_at: timestamp
+              })
+              .eq('id', job.id);
+
+            return NextResponse.json({
+              success: true,
+              connector: 'slack',
+              docsSynced: messagesSynced
+            });
+          }
+        } catch (err: any) {
+          console.warn('[Sync API] Real Slack sync failed, falling back to mock data:', err.message);
+        }
+      }
+
       docsToInsert = [
         {
           title: `Slack: #general - Security Review Discussion`,

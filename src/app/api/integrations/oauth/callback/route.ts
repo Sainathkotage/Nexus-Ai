@@ -42,18 +42,33 @@ export async function GET(req: Request) {
     }
 
     // Exchange auth code for tokens
-    const response = await fetch(tokenUrl, {
-      method: 'POST',
-      headers: {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
+    let headers: Record<string, string> = {
+      'Accept': 'application/json'
+    };
+    let body: any;
+
+    if (connectorId === 'slack') {
+      headers['Content-Type'] = 'application/x-www-form-urlencoded';
+      const params = new URLSearchParams();
+      params.append('client_id', clientId);
+      params.append('client_secret', clientSecret);
+      params.append('code', code);
+      params.append('redirect_uri', `${new URL(req.url).origin}/api/integrations/oauth/callback`);
+      body = params.toString();
+    } else {
+      headers['Content-Type'] = 'application/json';
+      body = JSON.stringify({
         client_id: clientId,
         client_secret: clientSecret,
         code,
         redirect_uri: `${new URL(req.url).origin}/api/integrations/oauth/callback`
-      })
+      });
+    }
+
+    const response = await fetch(tokenUrl, {
+      method: 'POST',
+      headers,
+      body
     });
 
     const tokenData = await response.json();
@@ -102,11 +117,11 @@ export async function GET(req: Request) {
 
     if (credErr) throw credErr;
 
-    // Redirect user back to settings with success flag
-    return NextResponse.redirect(new URL(`/settings?success=integration_installed&connector=${connectorId}`, req.url));
+    // Redirect user back to integrations hub with success flag
+    return NextResponse.redirect(new URL(`/integrations?success=connected&connector=${connectorId}`, req.url));
 
   } catch (error: any) {
     console.error('[OAuth Callback API] Error:', error);
-    return NextResponse.redirect(new URL(`/settings?error=oauth_failed&msg=${encodeURIComponent(error.message || 'unknown')}`, req.url));
+    return NextResponse.redirect(new URL(`/integrations?error=oauth_failed&msg=${encodeURIComponent(error.message || 'unknown')}`, req.url));
   }
 }

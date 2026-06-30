@@ -25,7 +25,16 @@ export async function createSupabaseServerClient() {
   });
 }
 
+let mockAdminClient: any = null;
+
+export function setMockAdminClient(client: any) {
+  mockAdminClient = client;
+}
+
 export function createSupabaseAdminClient() {
+  if (mockAdminClient) {
+    return mockAdminClient;
+  }
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
   return createClient(url, serviceKey, {

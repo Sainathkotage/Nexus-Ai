@@ -6,10 +6,73 @@ import '@/lib/integrations/connectors';
 export async function POST(req: Request, { params }: { params: any }) {
   const resolvedParams = await (params instanceof Promise ? params : Promise.resolve(params));
   const { connectorId } = resolvedParams;
+  const supabase = createSupabaseAdminClient();
+  let webhookEventId: string | null = null;
   
   try {
-    const payload = await req.json();
+    let payload: any;
+    let rawBody = '';
+
+    if (connectorId === 'github') {
+      rawBody = await req.text();
+      payload = JSON.parse(rawBody);
+    } else {
+      payload = await req.json();
+    }
+
     console.log(`[WebhookGateway] Received event for connector: ${connectorId}`, payload);
+
+    // 1. Signature Verification for GitHub
+    if (connectorId === 'github') {
+      const crypto = await import('crypto');
+      const signature = req.headers.get('x-hub-signature-256') || '';
+      const webhookSecret = process.env.GITHUB_WEBHOOK_SECRET || '';
+
+      if (webhookSecret) {
+        const hmac = crypto.createHmac('sha256', webhookSecret);
+        const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
+        if (signature !== digest) {
+          console.warn('[WebhookGateway] Signature mismatch');
+          return NextResponse.json({ error: 'Signature mismatch' }, { status: 401 });
+        }
+      }
+
+      // 2. Replay attack / duplicate checks
+      const deliveryId = req.headers.get('x-github-delivery');
+      if (deliveryId) {
+        const { data: existingEvent } = await supabase
+          .from('webhook_events')
+          .select('id')
+          .eq('github_delivery_id', deliveryId)
+          .maybeSingle();
+
+        if (existingEvent) {
+          console.log(`[WebhookGateway] Duplicate event detected and ignored: ${deliveryId}`);
+          return NextResponse.json({ message: 'Duplicate event ignored' }, { status: 200 });
+        }
+      }
+
+      // 3. Log the event to webhook_events
+      const eventType = req.headers.get('x-github-event') || 'unknown';
+      const { data: newEvent, error: logErr } = await supabase
+        .from('webhook_events')
+        .insert({
+          connector_id: 'github',
+          event_type: eventType,
+          github_delivery_id: deliveryId ? deliveryId : null,
+          payload: payload,
+          processed: false
+        })
+        .select('id')
+        .maybeSingle();
+
+      if (newEvent) {
+        webhookEventId = newEvent.id;
+      }
+      if (logErr) {
+        console.error('[WebhookGateway] Failed to log webhook event:', logErr);
+      }
+    }
 
     // Handle Slack URL verification challenge immediately
     if (connectorId === 'slack' && payload.type === 'url_verification') {
@@ -27,8 +90,6 @@ export async function POST(req: Request, { params }: { params: any }) {
     if (connector.handleWebhook) {
       triggerDetails = await connector.handleWebhook(payload);
     }
-
-    const supabase = createSupabaseAdminClient();
 
     // 1. Query workspace_integrations to get integration ID and workspace ID
     const { data: integrations } = await supabase
@@ -90,7 +151,7 @@ export async function POST(req: Request, { params }: { params: any }) {
             const senderName = triggerDetails.data.user || 'Someone';
             const cleanText = text.length > 80 ? `${text.substring(0, 80)}...` : text;
             
-            const notificationPayloads = members.map((member, index) => ({
+            const notificationPayloads = members.map((member: any, index: number) => ({
               id: `notif-slack-mention-${Date.now()}-${index}`,
               user_id: member.user_id,
               title: `Slack Mention: Nexus`,
@@ -115,7 +176,7 @@ export async function POST(req: Request, { params }: { params: any }) {
         // Auto-triage and run decision service for ticket mentions
         const ticketRegex = /[A-Z]+-[0-9]+/g;
         const ticketMentions = text.match(ticketRegex) || [];
-        const uniqueTickets = Array.from(new Set(ticketMentions));
+        const uniqueTickets = Array.from(new Set(ticketMentions)) as string[];
 
         if (uniqueTickets.length > 0) {
           const { autoTriageSlackMention } = await import('@/lib/integrations/decisionService');
@@ -162,7 +223,7 @@ export async function POST(req: Request, { params }: { params: any }) {
     if (workflowErr) throw workflowErr;
 
     // Filter workflows locally to match trigger configuration (connector_id and event_type)
-    const matchingWorkflows = (workflows || []).filter(flow => {
+    const matchingWorkflows = (workflows || []).filter((flow: any) => {
       const config = flow.trigger_config || {};
       return config.connector_id === connectorId && config.event_type === triggerDetails.triggerId;
     });
@@ -216,9 +277,28 @@ export async function POST(req: Request, { params }: { params: any }) {
       }
     }
 
+    if (webhookEventId) {
+      await supabase
+        .from('webhook_events')
+        .update({ processed: true })
+        .eq('id', webhookEventId);
+    }
+
     return NextResponse.json({ success: true, processedCount: executionResults.length, results: executionResults });
   } catch (error: any) {
     console.error('[Webhook Gateway Route Error]:', error);
+    
+    if (webhookEventId) {
+      try {
+        await supabase
+          .from('webhook_events')
+          .update({ processed: false, error_log: error.message || 'Unknown processing error' })
+          .eq('id', webhookEventId);
+      } catch (dbErr) {
+        console.error('[WebhookGateway] Failed to update error log for webhook:', dbErr);
+      }
+    }
+
     return NextResponse.json({ error: error.message || 'Internal Webhook Processing Error' }, { status: 500 });
   }
 }

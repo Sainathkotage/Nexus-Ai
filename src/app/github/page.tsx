@@ -96,33 +96,102 @@ export default function GitHubPage() {
   const { workspace } = useWorkspace();
   const [isConnected, setIsConnected] = useState<boolean | null>(null);
   const [checkingConnection, setCheckingConnection] = useState(true);
-  const [selectedRepoId, setSelectedRepoId] = useState('nexus-ai');
+  const [repos, setRepos] = useState<any[]>([]);
+  const [selectedRepoId, setSelectedRepoId] = useState<string | null>(null);
+  const [commits, setCommits] = useState<any[]>([]);
   const [copiedText, setCopiedText] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
 
-  useEffect(() => {
-    async function checkGithubConnection() {
-      if (!workspace) return;
-      try {
-        const { data, error } = await supabase
-          .from('workspace_integrations')
-          .select('id')
-          .eq('workspace_id', workspace.id)
-          .eq('connector_id', 'github')
-          .maybeSingle();
+  async function loadGithubData() {
+    if (!workspace) return;
+    try {
+      const { data: integration } = await supabase
+        .from('workspace_integrations')
+        .select('id')
+        .eq('workspace_id', workspace.id)
+        .eq('connector_id', 'github')
+        .eq('status', 'active')
+        .maybeSingle();
 
-        setIsConnected(!!data);
-      } catch (e) {
-        console.error(e);
-        setIsConnected(false);
-      } finally {
-        setCheckingConnection(false);
+      setIsConnected(!!integration);
+
+      if (integration) {
+        // Fetch repositories from database
+        const { data: dbRepos } = await supabase
+          .from('github_repositories')
+          .select('*')
+          .eq('workspace_id', workspace.id);
+
+        if (dbRepos && dbRepos.length > 0) {
+          const mappedRepos = dbRepos.map(r => ({
+            id: String(r.id),
+            owner: r.full_name.split('/')[0],
+            name: r.name,
+            fullName: r.full_name,
+            description: r.full_name.includes('marketing') 
+              ? 'Nexus AI landing pages, blogs, and SEO marketing structures.'
+              : 'Unified AI reasoning space, real-time whiteboards, Slack/Jira sync layers, and Groq-powered reasoning models.',
+            url: `https://github.com/${r.full_name}`,
+            status: r.sync_status === 'completed' ? 'connected' : 'syncing',
+            branch: r.default_branch || 'main',
+            visibility: r.is_private ? 'private' : 'public',
+            stars: r.is_private ? 0 : 12,
+            forks: 0,
+            lastSync: r.last_full_sync_at ? 'Just now' : 'Never'
+          }));
+          setRepos(mappedRepos);
+          setSelectedRepoId(mappedRepos[0].id);
+        }
+
+        // Fetch commits from documents table
+        const { data: dbCommits } = await supabase
+          .from('documents')
+          .select('*')
+          .eq('workspace_id', workspace.id)
+          .contains('tags', ['commit'])
+          .order('uploaded_at', { ascending: false })
+          .limit(6);
+
+        if (dbCommits && dbCommits.length > 0) {
+          const formattedCommits = dbCommits.map(doc => {
+            const parts = doc.id.split('-');
+            const sha = parts[parts.length - 1] || 'unknown';
+            const author = doc.key_points?.[0]?.replace('Author: ', '') || 'Developer';
+            
+            const timeDiff = Date.now() - new Date(doc.uploaded_at).getTime();
+            const mins = Math.floor(timeDiff / 60000);
+            const hours = Math.floor(mins / 60);
+            const days = Math.floor(hours / 24);
+            let timeStr = 'Just now';
+            if (days > 0) timeStr = `${days}d ago`;
+            else if (hours > 0) timeStr = `${hours}h ago`;
+            else if (mins > 0) timeStr = `${mins}m ago`;
+
+            return {
+              hash: sha.substring(0, 7),
+              message: doc.title?.replace(/GitHub Commit [a-f0-9]+ - /i, '') || doc.summary || '',
+              author,
+              avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${author}`,
+              time: timeStr
+            };
+          });
+          setCommits(formattedCommits);
+        }
       }
+    } catch (e) {
+      console.error('[GitHubPage] Error:', e);
+    } finally {
+      setCheckingConnection(false);
     }
-    checkGithubConnection();
+  }
+
+  useEffect(() => {
+    loadGithubData();
   }, [workspace]);
 
-  const selectedRepo = reposList.find(r => r.id === selectedRepoId) || reposList[0];
+  const activeReposList = repos.length > 0 ? repos : reposList;
+  const activeCommitsList = commits.length > 0 ? commits : mockCommits;
+  const selectedRepo = activeReposList.find(r => r.id === selectedRepoId) || activeReposList[0];
 
   const handleCopy = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -135,7 +204,6 @@ export default function GitHubPage() {
     setSyncing(true);
     const toastId = toast.loading('Syncing repository metadata and commit logs...');
     try {
-      // Find the integration record to trigger a real sync
       const { data: integration } = await supabase
         .from('workspace_integrations')
         .select('id')
@@ -152,6 +220,7 @@ export default function GitHubPage() {
         const resData = await response.json();
         if (response.ok) {
           toast.success(`Repository successfully synchronized! Synced ${resData.docsSynced || 0} documents.`, { id: toastId });
+          await loadGithubData();
           setSyncing(false);
           return;
         }
@@ -262,7 +331,7 @@ export default function GitHubPage() {
           <div className="bg-card border border-border/60 rounded-2xl p-5 shadow-sm">
             <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3">Repositories</h3>
             <div className="flex flex-col gap-2">
-              {reposList.map((repo) => (
+              {activeReposList.map((repo) => (
                 <button
                   key={repo.id}
                   onClick={() => setSelectedRepoId(repo.id)}
@@ -420,7 +489,7 @@ export default function GitHubPage() {
           <div className="bg-card border border-border/60 rounded-2xl p-5 shadow-sm flex-1 flex flex-col min-h-[350px]">
             <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-4">Recent Commits</h3>
             <div className="relative border-l border-border/80 pl-4 ml-2.5 flex-1 flex flex-col justify-between">
-              {mockCommits.map((commit, index) => (
+              {activeCommitsList.map((commit, index) => (
                 <div key={commit.hash} className="mb-5 relative last:mb-0">
                   {/* Timeline Dot */}
                   <span className="absolute -left-[24.5px] top-1 p-0.5 bg-background rounded-full border border-border">

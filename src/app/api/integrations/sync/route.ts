@@ -98,26 +98,23 @@ export async function POST(req: Request) {
     }
 
     if (integration.connector_id === 'github') {
-      docsToInsert = [
-        {
-          title: `GitHub: PR #104 - Implement OAuth PKCE Security`,
-          type: 'pdf', // Fallback to compatible type in DocumentType enum
-          size: '1.2 KB',
-          summary: 'Pull Request details showing code changes for vault.ts, GCM encryption, and authorization redirections.',
-          content: `GitHub Pull Request #104.
-Author: Sainath Kotage
-Status: Merged
-Changes:
-- Added src/lib/integrations/vault.ts supporting AES-256-GCM.
-- Updated settings integrations marketplace components.
-- Closed issues relating to credentials encryption.`,
-          tags: ['github', 'pr', 'security'],
-          key_points: ['AES-256-GCM encryption added', 'Vercel settings page integration done'],
-          extracted_tasks: ['Run tsc verify check before shipping'],
-          uploaded_at: timestamp,
-          processing_status: 'completed'
-        }
-      ];
+      const { syncWorkspaceGitHubContext } = await import('@/lib/integrations/githubSync');
+      const syncRes = await syncWorkspaceGitHubContext(integration.workspace_id);
+
+      await adminClient
+        .from('sync_jobs')
+        .update({
+          status: 'completed',
+          last_synced_at: timestamp
+        })
+        .eq('id', job.id);
+
+      return NextResponse.json({ 
+        success: true, 
+        connector: 'github',
+        docsSynced: syncRes.totalDocs,
+        reposSynced: syncRes.reposSynced
+      });
     } else if (integration.connector_id === 'notion') {
       docsToInsert = [
         {

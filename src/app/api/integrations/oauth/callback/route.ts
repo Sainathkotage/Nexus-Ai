@@ -152,6 +152,86 @@ export async function GET(req: Request) {
 
     if (credErr) throw credErr;
 
+    // 4. Handle GitHub-specific App installation details and repository discovery
+    const installationId = searchParams.get('installation_id');
+    if (connectorId === 'github' && installationId) {
+      try {
+        const { getInstallationAccessToken, generateAppJWT } = await import('@/lib/integrations/githubHelper');
+        
+        const appId = process.env.GITHUB_APP_ID;
+        const privateKey = process.env.GITHUB_APP_PRIVATE_KEY;
+
+        if (appId && privateKey) {
+          const decodedPrivateKey = privateKey.includes('-----BEGIN RSA PRIVATE KEY-----')
+            ? privateKey
+            : Buffer.from(privateKey, 'base64').toString('utf8');
+
+          const appJwt = generateAppJWT(appId, decodedPrivateKey);
+
+          // Get GitHub installation metadata
+          const installRes = await fetch(`https://api.github.com/app/installations/${installationId}`, {
+            headers: {
+              'Authorization': `Bearer ${appJwt}`,
+              'Accept': 'application/vnd.github.v3+json',
+              'User-Agent': 'Nexus-AI-Integration'
+            }
+          });
+
+          if (installRes.ok) {
+            const installData = await installRes.json();
+            
+            // Insert or update installation
+            await supabase
+              .from('github_installations')
+              .upsert({
+                id: parseInt(installationId, 10),
+                workspace_id: workspaceId,
+                account_id: installData.account?.id,
+                account_name: installData.account?.login,
+                account_avatar: installData.account?.avatar_url,
+                repository_selection: installData.repository_selection || 'all'
+              });
+
+            // Retrieve installation access token to discover repositories
+            const { token: iat } = await getInstallationAccessToken(installationId);
+            
+            const reposRes = await fetch('https://api.github.com/installation/repositories', {
+              headers: {
+                'Authorization': `token ${iat}`,
+                'Accept': 'application/vnd.github.v3+json',
+                'User-Agent': 'Nexus-AI-Integration'
+              }
+            });
+
+            if (reposRes.ok) {
+              const reposData = await reposRes.json();
+              const repos = reposData.repositories || [];
+
+              const repoPayloads = repos.map((repo: any) => ({
+                id: repo.id,
+                installation_id: parseInt(installationId, 10),
+                workspace_id: workspaceId,
+                name: repo.name,
+                full_name: repo.full_name,
+                is_private: repo.private,
+                default_branch: repo.default_branch || 'main',
+                sync_status: 'pending'
+              }));
+
+              if (repoPayloads.length > 0) {
+                await supabase
+                  .from('github_repositories')
+                  .upsert(repoPayloads);
+              }
+            }
+          }
+        }
+      } catch (githubErr: any) {
+        console.error('[OAuth Callback API] GitHub integration sync warning:', githubErr);
+        // Do not crash the entire OAuth callback if metadata sync fails; let the user connect and retry sync
+      }
+    }
+
     // Redirect user back to integrations hub with success flag
     return NextResponse.redirect(new URL(`/integrations?success=connected&connector=${connectorId}`, req.url));
 

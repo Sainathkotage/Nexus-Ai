@@ -60,6 +60,33 @@ export default function IntegratedAppsPage() {
   const [appContents, setAppContents] = useState<Record<string, any[]>>({});
   const [loadingContents, setLoadingContents] = useState<Record<string, boolean>>({});
   const [expandedDocs, setExpandedDocs] = useState<Record<string, boolean>>({});
+  const [githubRepos, setGithubRepos] = useState<any[]>([]);
+  const [slackChannels, setSlackChannels] = useState<any[]>([]);
+  const [loadingMetadata, setLoadingMetadata] = useState(false);
+
+  useEffect(() => {
+    async function loadMetadata() {
+      if (!workspace) return;
+      setLoadingMetadata(true);
+      try {
+        const { data: dbChannels } = await supabase
+          .from('channels')
+          .select('*');
+        setSlackChannels(dbChannels || []);
+
+        const res = await fetch(`/api/integrations/github/repos?workspaceId=${workspace.id}`);
+        if (res.ok) {
+          const data = await res.json();
+          setGithubRepos(data.repos || []);
+        }
+      } catch (err) {
+        console.warn('[IntegratedApps] Metadata loading warning:', err);
+      } finally {
+        setLoadingMetadata(false);
+      }
+    }
+    loadMetadata();
+  }, [workspace]);
 
   useEffect(() => {
     async function loadWorkspaceApps() {
@@ -245,92 +272,170 @@ export default function IntegratedAppsPage() {
 
                   {/* Expanded Content Area */}
                   {isExpanded && (
-                    <div className="border-t border-border/60 bg-muted/20 px-6 py-5">
-                      {isContentLoading ? (
-                        <div className="py-8 flex flex-col items-center justify-center gap-2">
-                          <RefreshCw className="w-5 h-5 text-indigo-500 animate-spin" />
-                          <span className="text-[11px] text-muted-foreground">Crawling index directory...</span>
-                        </div>
-                      ) : contents.length === 0 ? (
-                        <div className="py-6 flex flex-col items-center justify-center text-center gap-2">
-                          <AlertCircle className="w-8 h-8 text-amber-500/70" />
-                          <span className="text-xs font-semibold text-foreground">No documents found</span>
-                          <span className="text-3xs text-muted-foreground max-w-sm">
-                            We haven't indexed any files for {app.name} yet. Trigger a sync in the Integrations dashboard.
-                          </span>
-                        </div>
-                      ) : (
-                        <div className="flex flex-col gap-3">
-                          <div className="flex items-center justify-between border-b border-border/40 pb-2 mb-1">
-                            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Indexed Documents ({contents.length})</span>
-                            <span className="text-3xs text-muted-foreground">Workspace context ready</span>
-                          </div>
-                          
-                          <div className="flex flex-col gap-2.5">
-                            {contents.map((doc) => {
-                              const isDocExpanded = !!expandedDocs[doc.id];
-                              return (
-                                <div key={doc.id} className="border border-border/40 bg-card rounded-xl overflow-hidden transition-all hover:border-border/80">
-                                  {/* Document Row Header */}
-                                  <button
-                                    onClick={() => toggleDocExpand(doc.id)}
-                                    className="w-full text-left p-3.5 flex items-center justify-between hover:bg-muted/10 transition-colors cursor-pointer"
-                                  >
-                                    <div className="flex items-center gap-3">
-                                      <div className="p-2 rounded bg-muted text-muted-foreground shrink-0">
-                                        <FileText className="w-4 h-4 text-indigo-500" />
-                                      </div>
-                                      <div>
-                                        <h4 className="text-xs font-bold text-foreground">{doc.title}</h4>
-                                        <div className="flex items-center gap-2 mt-1 flex-wrap">
-                                          <Badge variant="outline" className="text-[9px] px-1 py-0 border-border/40 text-muted-foreground">
-                                            {doc.type.toUpperCase()}
-                                          </Badge>
-                                          <span className="text-[10px] text-muted-foreground">{doc.size}</span>
-                                          <span className="w-1 h-1 rounded-full bg-border" />
-                                          <span className="text-[10px] text-muted-foreground">Synced {new Date(doc.uploaded_at).toLocaleString()}</span>
-                                        </div>
-                                      </div>
-                                    </div>
-                                    <div className="shrink-0 pl-4">
-                                      {isDocExpanded ? (
-                                        <ChevronUp className="w-4 h-4 text-muted-foreground" />
-                                      ) : (
-                                        <ChevronDown className="w-4 h-4 text-muted-foreground" />
-                                      )}
-                                    </div>
-                                  </button>
-
-                                  {/* Document Details Block */}
-                                  {isDocExpanded && (
-                                    <div className="border-t border-border/45 bg-muted/10 p-4 space-y-3.5 text-xs text-foreground">
-                                      {/* Key points if available */}
-                                      {doc.key_points && doc.key_points.length > 0 && (
-                                        <div className="space-y-1">
-                                          <h5 className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Key Details</h5>
-                                          <ul className="list-disc list-inside pl-1 space-y-0.5 text-muted-foreground text-[11px]">
-                                            {doc.key_points.map((pt: string, i: number) => (
-                                              <li key={i}>{pt}</li>
-                                            ))}
-                                          </ul>
-                                        </div>
-                                      )}
-
-                                      {/* Raw content snippet */}
-                                      <div className="space-y-1.5">
-                                        <h5 className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Extracted Text Content</h5>
-                                        <pre className="bg-muted/80 p-3 rounded-lg border border-border/30 text-[10px] font-mono whitespace-pre-wrap max-h-60 overflow-y-auto leading-relaxed select-text">
-                                          {doc.content}
-                                        </pre>
-                                      </div>
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
+                    <div className="border-t border-border/60 bg-muted/20 px-6 py-5 flex flex-col gap-5">
+                      
+                      {/* GitHub Specific Metadata: List Profile Repositories */}
+                      {app.connectorId === 'github' && (
+                        <div className="bg-card border border-border/60 rounded-xl p-4.5 shadow-2xs">
+                          <h4 className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-1.5 font-mono">
+                            <Layers className="w-3.5 h-3.5 text-indigo-500" /> Repositories in GitHub Profile ({githubRepos.length})
+                          </h4>
+                          {loadingMetadata ? (
+                            <div className="flex items-center gap-2 py-2 text-2xs text-muted-foreground animate-pulse">
+                              <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Fetching GitHub profile repositories...
+                            </div>
+                          ) : githubRepos.length === 0 ? (
+                            <div className="text-2xs text-muted-foreground py-2">
+                              No repositories found. Ensure you have authorized Nexus to access your repositories.
+                            </div>
+                          ) : (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1">
+                              {githubRepos.map((repo) => (
+                                <a 
+                                  key={repo.id}
+                                  href={repo.url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="flex items-center justify-between p-2.5 rounded-lg border border-border/40 hover:bg-muted/10 hover:border-border/80 transition-all text-xs font-semibold group/repo"
+                                >
+                                  <div className="flex items-center gap-2 truncate">
+                                    <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />
+                                    <span className="text-foreground truncate group-hover/repo:text-indigo-500 transition-colors">{repo.full_name}</span>
+                                    {repo.is_private && (
+                                      <Badge className="bg-amber-500/10 text-amber-600 border-0 hover:bg-amber-500/10 scale-90 origin-left px-1.5 font-semibold text-[8px] uppercase">
+                                        Private
+                                      </Badge>
+                                    )}
+                                  </div>
+                                  <span className="text-[10px] text-muted-foreground font-mono font-medium shrink-0 ml-2">
+                                    {repo.default_branch || 'main'}
+                                  </span>
+                                </a>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       )}
+
+                      {/* Slack Specific Metadata: List Channels */}
+                      {app.connectorId === 'slack' && (
+                        <div className="bg-card border border-border/60 rounded-xl p-4.5 shadow-2xs">
+                          <h4 className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-1.5 font-mono">
+                            <Layers className="w-3.5 h-3.5 text-indigo-500" /> Joined Slack Channels ({slackChannels.length})
+                          </h4>
+                          {loadingMetadata ? (
+                            <div className="flex items-center gap-2 py-2 text-2xs text-muted-foreground animate-pulse">
+                              <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Fetching Slack channels...
+                            </div>
+                          ) : slackChannels.length === 0 ? (
+                            <div className="text-2xs text-muted-foreground py-2">
+                              No synced channels found.
+                            </div>
+                          ) : (
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-56 overflow-y-auto pr-1">
+                              {slackChannels.map((ch) => (
+                                <div 
+                                  key={ch.id}
+                                  className="flex items-center gap-2 p-2.5 rounded-lg border border-border/40 text-xs font-semibold bg-card truncate"
+                                >
+                                  <span className="text-muted-foreground font-mono">#</span>
+                                  <span className="text-foreground truncate">{ch.name}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Document List */}
+                      <div>
+                        {isContentLoading ? (
+                          <div className="py-8 flex flex-col items-center justify-center gap-2">
+                            <RefreshCw className="w-5 h-5 text-indigo-500 animate-spin" />
+                            <span className="text-[11px] text-muted-foreground">Crawling index directory...</span>
+                          </div>
+                        ) : contents.length === 0 ? (
+                          <div className="py-8 flex flex-col items-center justify-center text-center gap-2 border border-dashed border-border/60 bg-card rounded-xl">
+                            <AlertCircle className="w-6 h-6 text-amber-500/70" />
+                            <span className="text-xs font-semibold text-foreground">No synced documents found</span>
+                            <span className="text-3xs text-muted-foreground max-w-sm px-4">
+                              We haven't indexed any commits or files for {app.name} yet. Trigger a sync in the Integrations dashboard.
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col gap-3">
+                            <div className="flex items-center justify-between border-b border-border/40 pb-2 mb-1">
+                              <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider font-mono">Indexed Documents ({contents.length})</span>
+                              <span className="text-3xs text-muted-foreground">Workspace context ready</span>
+                            </div>
+                            
+                            <div className="flex flex-col gap-2.5">
+                              {contents.map((doc) => {
+                                const isDocExpanded = !!expandedDocs[doc.id];
+                                return (
+                                  <div key={doc.id} className="border border-border/40 bg-card rounded-xl overflow-hidden transition-all hover:border-border/80">
+                                    {/* Document Row Header */}
+                                    <button
+                                      onClick={() => toggleDocExpand(doc.id)}
+                                      className="w-full text-left p-3.5 flex items-center justify-between hover:bg-muted/10 transition-colors cursor-pointer"
+                                    >
+                                      <div className="flex items-center gap-3">
+                                        <div className="p-2 rounded bg-muted text-muted-foreground shrink-0">
+                                          <FileText className="w-4 h-4 text-indigo-500" />
+                                        </div>
+                                        <div>
+                                          <h4 className="text-xs font-bold text-foreground">{doc.title}</h4>
+                                          <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                            <Badge variant="outline" className="text-[9px] px-1 py-0 border-border/40 text-muted-foreground">
+                                              {doc.type.toUpperCase()}
+                                            </Badge>
+                                            <span className="text-[10px] text-muted-foreground">{doc.size}</span>
+                                            <span className="w-1 h-1 rounded-full bg-border" />
+                                            <span className="text-[10px] text-muted-foreground">Synced {new Date(doc.uploaded_at).toLocaleString()}</span>
+                                          </div>
+                                        </div>
+                                      </div>
+                                      <div className="shrink-0 pl-4">
+                                        {isDocExpanded ? (
+                                          <ChevronUp className="w-4 h-4 text-muted-foreground" />
+                                        ) : (
+                                          <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                                        )}
+                                      </div>
+                                    </button>
+
+                                    {/* Document Details Block */}
+                                    {isDocExpanded && (
+                                      <div className="border-t border-border/45 bg-muted/10 p-4 space-y-3.5 text-xs text-foreground">
+                                        {/* Key points if available */}
+                                        {doc.key_points && doc.key_points.length > 0 && (
+                                          <div className="space-y-1">
+                                            <h5 className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider font-mono">Key Details</h5>
+                                            <ul className="list-disc list-inside pl-1 space-y-0.5 text-muted-foreground text-[11px]">
+                                              {doc.key_points.map((pt: string, i: number) => (
+                                                <li key={i}>{pt}</li>
+                                              ))}
+                                            </ul>
+                                          </div>
+                                        )}
+
+                                        {/* Raw content snippet */}
+                                        <div className="space-y-1.5">
+                                          <h5 className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider font-mono">Extracted Text Content</h5>
+                                          <pre className="bg-muted/80 p-3 rounded-lg border border-border/30 text-[10px] font-mono whitespace-pre-wrap max-h-60 overflow-y-auto leading-relaxed select-text">
+                                            {doc.content}
+                                          </pre>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
                     </div>
                   )}
                 </div>

@@ -118,6 +118,7 @@ export async function POST(req: Request) {
     } else if (integration.connector_id === 'notion') {
       docsToInsert = [
         {
+          id: 'notion-doc-universal-specs',
           title: `Notion: Product Specs - Universal Integrations Platform`,
           type: 'docx',
           size: '2.5 KB',
@@ -197,9 +198,9 @@ Features:
           console.warn('[Sync API] Real Slack sync failed, falling back to mock data:', err.message);
         }
       }
-
       docsToInsert = [
         {
+          id: 'slack-chat-security-discussion',
           title: `Slack: #general - Security Review Discussion`,
           type: 'txt',
           size: '0.8 KB',

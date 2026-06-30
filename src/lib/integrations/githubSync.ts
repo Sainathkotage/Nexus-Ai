@@ -68,8 +68,30 @@ export async function syncRepository(
     rateLimitReset: 0,
   };
 
-  // 1. Retrieve installation token
-  const { token } = await getInstallationAccessToken(installationId);
+  // 1. Retrieve token (App IAT, with fallback to OAuth access token)
+  let token = '';
+  try {
+    const { token: iat } = await getInstallationAccessToken(installationId);
+    token = iat;
+  } catch (err) {
+    console.log('[GitHubSync] App token exchange failed. Falling back to user OAuth credentials.');
+    const { data: integration } = await supabase
+      .from('workspace_integrations')
+      .select('id')
+      .eq('workspace_id', workspaceId)
+      .eq('connector_id', 'github')
+      .maybeSingle();
+
+    if (integration) {
+      const { getDecryptedGitHubCredentials } = await import('./githubHelper');
+      const creds = await getDecryptedGitHubCredentials(integration.id);
+      token = creds.access_token || creds.accessToken || '';
+    }
+  }
+
+  if (!token) {
+    throw new Error('Unable to acquire GitHub API token for sync');
+  }
 
   const fetchWithAuth = async (url: string) => {
     return fetch(url, {
@@ -325,13 +347,91 @@ export async function syncWorkspaceGitHubContext(workspaceId: string): Promise<{
   const supabase = createSupabaseAdminClient();
 
   // Find active GitHub installation for workspace
-  const { data: installation, error: instErr } = await supabase
+  let { data: installation, error: instErr } = await supabase
     .from('github_installations')
     .select('id')
     .eq('workspace_id', workspaceId)
     .maybeSingle();
 
   if (instErr || !installation) {
+    console.log('[GitHubSync] Installation not found. Attempting auto-registration via OAuth credentials.');
+    const { data: integration } = await supabase
+      .from('workspace_integrations')
+      .select('id')
+      .eq('workspace_id', workspaceId)
+      .eq('connector_id', 'github')
+      .maybeSingle();
+
+    if (integration) {
+      try {
+        const { getDecryptedGitHubCredentials } = await import('./githubHelper');
+        const creds = await getDecryptedGitHubCredentials(integration.id);
+        const userToken = creds.access_token || creds.accessToken;
+        
+        if (userToken) {
+          const userRes = await fetch('https://api.github.com/user', {
+            headers: {
+              'Authorization': `token ${userToken}`,
+              'User-Agent': 'Nexus-AI-Integration'
+            }
+          });
+
+          if (userRes.ok) {
+            const userData = await userRes.json();
+            const fakeInstallId = userData.id;
+
+            const { data: newInstall } = await supabase
+              .from('github_installations')
+              .upsert({
+                id: fakeInstallId,
+                workspace_id: workspaceId,
+                account_id: userData.id,
+                account_name: userData.login,
+                account_avatar: userData.avatar_url,
+                repository_selection: 'all'
+              })
+              .select()
+              .single();
+
+            if (newInstall) {
+              installation = newInstall;
+              
+              const reposRes = await fetch('https://api.github.com/user/repos?per_page=100', {
+                headers: {
+                  'Authorization': `token ${userToken}`,
+                  'User-Agent': 'Nexus-AI-Integration'
+                }
+              });
+
+              if (reposRes.ok) {
+                const reposData = await reposRes.json();
+                const repoPayloads = reposData.map((repo: any) => ({
+                  id: repo.id,
+                  installation_id: fakeInstallId,
+                  workspace_id: workspaceId,
+                  name: repo.name,
+                  full_name: repo.full_name,
+                  is_private: repo.private,
+                  default_branch: repo.default_branch || 'main',
+                  sync_status: 'pending'
+                }));
+
+                if (repoPayloads.length > 0) {
+                  await supabase
+                    .from('github_repositories')
+                    .upsert(repoPayloads);
+                }
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.error('[GitHubSync] Auto-registration failed:', err);
+      }
+    }
+  }
+
+  if (!installation) {
     throw new Error(`GitHub App installation not found for workspace: ${workspaceId}`);
   }
 

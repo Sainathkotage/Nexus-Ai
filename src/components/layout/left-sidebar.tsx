@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   Sparkles, LayoutDashboard, FileText, MessageSquare, 
   CheckSquare, Calendar, Mail, Settings, Plus, Search,
-  ChevronDown, Users, Check, LogOut, Palette, BarChart3, Smile, Inbox, Video, Plug
+  ChevronDown, Users, Check, LogOut, Palette, BarChart3, Smile, Inbox, Video, Plug, Boxes
 } from 'lucide-react';
 
 const GithubIcon = (props: React.SVGProps<SVGSVGElement>) => (
@@ -206,6 +206,20 @@ export function LeftSidebar({ onOpenSearch }: LeftSidebarProps) {
         ))}
 
         <div className="my-2 h-px bg-border mx-1" />
+
+        <Link
+          href="/integrated-apps"
+          onClick={() => handleNavClick('integrated-apps' as PageId)}
+          className={cn(
+            "flex items-center gap-2.5 px-3.5 py-2 rounded-lg text-sm w-full text-left relative transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)]",
+            (activePage as string) === 'integrated-apps'
+              ? "bg-accent/60 text-primary font-bold border-l-2 border-primary rounded-l-none pl-3" 
+              : "text-muted-foreground hover:bg-accent/20 hover:text-foreground"
+          )}
+        >
+          <Boxes className="w-4 h-4 shrink-0" />
+          <span>Integrated Apps</span>
+        </Link>
 
         <Link
           href="/integrations"

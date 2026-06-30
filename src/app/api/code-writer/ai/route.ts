@@ -18,7 +18,7 @@ export async function POST(req: Request) {
 Output ONLY the resulting code. Do NOT enclose the code in markdown code blocks (\`\`\`). Do NOT provide explanations, descriptions, or comments before or after the code.
 If the language is ${language || 'TypeScript'}, ensure the code strictly adheres to it.`;
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiApiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`;
 
     const response = await fetch(url, {
       method: 'POST',

@@ -200,7 +200,7 @@ export async function callLLM(messages: Message[], options: LLMOptions = {}): Pr
       parts: [{ text: msg.content }],
     }));
 
-    const geminiModel = options.model || 'gemini-3.5-flash';
+    const geminiModel = options.model || 'gemini-2.5-flash';
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiApiKey}`;
 
     const reqBody: any = {

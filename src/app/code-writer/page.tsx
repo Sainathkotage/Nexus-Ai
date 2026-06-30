@@ -1,9 +1,11 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useWorkspace } from '@/lib/store';
+import { supabase } from '@/lib/supabase';
 import { 
-  FileCode, Folder, FolderOpen, Save, Sparkles, Send, RefreshCw, 
-  ChevronRight, ChevronDown, Check, Code, ShieldAlert, Cpu, ArrowLeftRight
+  FileCode, Folder, FolderOpen, Save, Sparkles, RefreshCw, 
+  ChevronRight, ChevronDown, Check, Code, Cpu, ArrowLeftRight, GitBranch, Database, GitFork
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -17,10 +19,17 @@ interface FileNode {
 }
 
 export default function CodeWriterPage() {
+  const { workspace } = useWorkspace();
+  const [repos, setRepos] = useState<any[]>([]);
+  const [selectedRepo, setSelectedRepo] = useState<string>('');
+  const [defaultBranch, setDefaultBranch] = useState<string>('main');
+  
   const [fileTree, setFileTree] = useState<FileNode[]>([]);
-  const [loadingTree, setLoadingTree] = useState(true);
-  const [openFolders, setOpenFolders] = useState<Record<string, boolean>>({ 'src': true });
+  const [loadingTree, setLoadingTree] = useState(false);
+  const [openFolders, setOpenFolders] = useState<Record<string, boolean>>({});
+  
   const [activeFilePath, setActiveFilePath] = useState<string | null>(null);
+  const [activeFileSha, setActiveFileSha] = useState<string>('');
   const [fileContent, setFileContent] = useState<string>('');
   const [originalContent, setOriginalContent] = useState<string>('');
   const [loadingContent, setLoadingContent] = useState(false);
@@ -30,28 +39,79 @@ export default function CodeWriterPage() {
   const [aiResult, setAiResult] = useState('');
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
+  
+  // Custom Git Commit Settings
+  const [commitMessage, setCommitMessage] = useState('');
 
-  // File tree retrieval
-  async function loadFileTree() {
+  // 1. Fetch repositories connected to workspace
+  useEffect(() => {
+    async function loadWorkspaceRepos() {
+      if (!workspace) return;
+      try {
+        const { data, error } = await supabase
+          .from('github_repositories')
+          .select('*')
+          .eq('workspace_id', workspace.id);
+
+        if (error) throw error;
+
+        if (data && data.length > 0) {
+          setRepos(data);
+          setSelectedRepo(data[0].full_name);
+        } else {
+          // If no repos, fallback to check installations
+          const { data: installations } = await supabase
+            .from('github_installations')
+            .select('account_name')
+            .eq('workspace_id', workspace.id);
+            
+          console.log('[CodeWriter] Checked installations:', installations);
+        }
+      } catch (err: any) {
+        console.error(err);
+        toast.error('Failed to load workspace repositories');
+      }
+    }
+    loadWorkspaceRepos();
+  }, [workspace]);
+
+  // 2. Fetch repository file tree when selected repository changes
+  async function loadFileTree(repoFullName: string) {
+    if (!workspace) return;
     setLoadingTree(true);
+    setFileTree([]);
+    setActiveFilePath(null);
+    setFileContent('');
+    setOriginalContent('');
+    setAiResult('');
     try {
-      const response = await fetch('/api/code-writer/files');
-      if (!response.ok) throw new Error('Failed to load project files');
+      const response = await fetch(`/api/code-writer/files?repo=${encodeURIComponent(repoFullName)}&workspaceId=${workspace.id}`);
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || 'Failed to load repository file tree');
+      }
       const data = await response.json();
       setFileTree(data.files || []);
+      setDefaultBranch(data.defaultBranch || 'main');
       
-      // Auto-open first file if found
+      // Auto-open first source file if exists
       const firstFile = findFirstFile(data.files || []);
       if (firstFile) {
-        handleOpenFile(firstFile.path);
+        handleOpenFile(repoFullName, firstFile.path);
       }
     } catch (err: any) {
       console.error(err);
-      toast.error('Failed to load project file directory');
+      toast.error(err.message || 'Failed to load file index');
     } finally {
       setLoadingTree(false);
     }
   }
+
+  useEffect(() => {
+    if (selectedRepo && workspace) {
+      loadFileTree(selectedRepo);
+    }
+  }, [selectedRepo, workspace]);
 
   function findFirstFile(nodes: FileNode[]): FileNode | null {
     for (const node of nodes) {
@@ -64,21 +124,22 @@ export default function CodeWriterPage() {
     return null;
   }
 
-  useEffect(() => {
-    loadFileTree();
-  }, []);
-
-  // Open a file
-  async function handleOpenFile(pathStr: string) {
+  // 3. Open a file from GitHub repository
+  async function handleOpenFile(repoFullName: string, pathStr: string) {
+    if (!workspace) return;
     setActiveFilePath(pathStr);
     setLoadingContent(true);
     setAiResult('');
+    setCommitMessage(`Update ${pathStr.split('/').pop()} via Nexus AI Code Writer`);
     try {
-      const response = await fetch(`/api/code-writer/files?path=${encodeURIComponent(pathStr)}`);
-      if (!response.ok) throw new Error('Failed to read file');
+      const response = await fetch(
+        `/api/code-writer/files?repo=${encodeURIComponent(repoFullName)}&path=${encodeURIComponent(pathStr)}&workspaceId=${workspace.id}`
+      );
+      if (!response.ok) throw new Error('Failed to read file contents');
       const data = await response.json();
       setFileContent(data.content || '');
       setOriginalContent(data.content || '');
+      setActiveFileSha(data.sha || '');
     } catch (err: any) {
       console.error(err);
       toast.error(`Failed to open file: ${pathStr}`);
@@ -87,28 +148,43 @@ export default function CodeWriterPage() {
     }
   }
 
-  // Save changes
+  // 4. Save and commit changes directly to GitHub
   async function handleSaveFile() {
-    if (!activeFilePath) return;
+    if (!activeFilePath || !workspace || !selectedRepo || !activeFileSha) {
+      toast.error('Unable to commit: missing file descriptor metadata');
+      return;
+    }
     setSaving(true);
+    const toastId = toast.loading('Creating commit and pushing to GitHub...');
     try {
       const response = await fetch('/api/code-writer/files', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: activeFilePath, content: fileContent })
+        body: JSON.stringify({
+          repo: selectedRepo,
+          path: activeFilePath,
+          content: fileContent,
+          sha: activeFileSha,
+          workspaceId: workspace.id,
+          commitMessage: commitMessage || `Update ${activeFilePath} via Nexus AI Code Writer`
+        })
       });
-      if (!response.ok) throw new Error('Failed to save file changes');
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to push commit');
+      
       setOriginalContent(fileContent);
-      toast.success('Changes saved successfully!');
+      setActiveFileSha(data.newSha); // Update SHA to support subsequent edits in the same session
+      toast.success('Commit successfully pushed to GitHub default branch!', { id: toastId });
     } catch (err: any) {
       console.error(err);
-      toast.error('Failed to save changes');
+      toast.error(err.message || 'Failed to commit changes', { id: toastId });
     } finally {
       setSaving(false);
     }
   }
 
-  // Call Copilot AI
+  // 5. Query AI Copilot
   async function handleAskAI() {
     if (!fileContent || !instruction) {
       toast.warning('Please select a file and enter instructions for the AI');
@@ -146,7 +222,7 @@ export default function CodeWriterPage() {
     setFileContent(aiResult);
     setAiResult('');
     setInstruction('');
-    toast.success('AI changes applied to editor. Save changes to write to file.');
+    toast.success('AI changes applied to editor. Save file to commit to GitHub.');
   };
 
   // Toggle folder collapse
@@ -163,10 +239,10 @@ export default function CodeWriterPage() {
     return (
       <div key={node.path} className="select-none">
         <button
-          onClick={() => isFolder ? toggleFolder(node.path) : handleOpenFile(node.path)}
-          style={{ paddingLeft: `${depth * 12 + 8}px` }}
-          className={`w-full flex items-center gap-1.5 py-1 rounded text-xs transition-colors hover:bg-muted/40 cursor-pointer ${
-            isSelected ? 'bg-primary/15 text-primary font-semibold' : 'text-muted-foreground hover:text-foreground'
+          onClick={() => isFolder ? toggleFolder(node.path) : handleOpenFile(selectedRepo, node.path)}
+          style={{ paddingLeft: `${depth * 10 + 8}px` }}
+          className={`w-full flex items-center gap-1.5 py-1.2 rounded text-[11px] transition-colors hover:bg-muted/40 cursor-pointer ${
+            isSelected ? 'bg-primary/10 text-primary font-semibold border-l-2 border-primary rounded-l-none' : 'text-muted-foreground hover:text-foreground'
           }`}
         >
           {isFolder ? (
@@ -197,17 +273,36 @@ export default function CodeWriterPage() {
   return (
     <div className="flex-1 flex flex-col h-full bg-background overflow-hidden">
       {/* Header Banner */}
-      <div className="border-b border-border/60 bg-card/30 backdrop-blur-md px-6 py-4.5 flex items-center justify-between shrink-0">
-        <div>
-          <h1 className="text-xl font-bold tracking-tight text-foreground flex items-center gap-2">
-            <Code className="w-5 h-5 text-indigo-500" /> AI Code Writer
-          </h1>
-          <p className="text-xs text-muted-foreground mt-0.5">Explore your repository, request automated refactoring, and modify source code directly.</p>
+      <div className="border-b border-border/60 bg-card/30 backdrop-blur-md px-6 py-4 flex items-center justify-between shrink-0">
+        <div className="flex items-center gap-4">
+          <div>
+            <h1 className="text-lg font-bold tracking-tight text-foreground flex items-center gap-2">
+              <Code className="w-5 h-5 text-indigo-500" /> AI Code Writer
+            </h1>
+            <p className="text-3xs text-muted-foreground mt-0.5">Explore your connected repositories, request refactoring, and commit changes straight to GitHub.</p>
+          </div>
+          
+          {/* Repository Selector Dropdown */}
+          {repos.length > 0 && (
+            <div className="flex items-center gap-1.5 bg-muted/60 border border-border/40 rounded-full px-3 py-1 text-xs text-foreground font-semibold">
+              <GitFork className="w-3.5 h-3.5 text-indigo-500" />
+              <select
+                value={selectedRepo}
+                onChange={(e) => setSelectedRepo(e.target.value)}
+                className="bg-transparent border-0 outline-none text-xs font-semibold cursor-pointer max-w-[200px]"
+              >
+                {repos.map(r => (
+                  <option key={r.id} value={r.full_name}>{r.full_name}</option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
+
         <div className="flex items-center gap-2">
           {hasUnsavedChanges && (
             <Badge className="bg-amber-500/10 text-amber-600 border-0 mr-2 py-0.5 animate-pulse font-semibold">
-              Unsaved Changes
+              Unstaged changes
             </Badge>
           )}
           <Button 
@@ -217,28 +312,34 @@ export default function CodeWriterPage() {
             className="h-8 gap-1.5 text-xs font-semibold cursor-pointer rounded-full"
           >
             {saving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-            Save File
+            Commit & Push
           </Button>
         </div>
       </div>
 
-      {/* Main Workspace split panel */}
+      {/* Main Workspace Split Panel */}
       <div className="flex-1 flex overflow-hidden">
         
         {/* Panel 1: File Explorer (Left) */}
         <div className="w-56 border-r border-border/60 flex flex-col bg-card/10 shrink-0">
-          <div className="p-3 border-b border-border/40 shrink-0">
-            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Workspace files</span>
+          <div className="p-3 border-b border-border/40 shrink-0 flex items-center justify-between">
+            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Repository trees</span>
+            {selectedRepo && (
+              <Badge variant="outline" className="text-[9px] gap-1 font-semibold border-border/40 text-muted-foreground">
+                <GitBranch className="w-2.5 h-2.5 text-indigo-500" /> {defaultBranch}
+              </Badge>
+            )}
           </div>
           <div className="flex-1 overflow-auto p-2 flex flex-col gap-0.5">
             {loadingTree ? (
               <div className="p-4 flex flex-col items-center justify-center gap-2">
                 <RefreshCw className="w-4 h-4 text-muted-foreground animate-spin" />
-                <span className="text-[10px] text-muted-foreground">Mapping folder tree...</span>
+                <span className="text-[10px] text-muted-foreground">Fetching tree from GitHub...</span>
               </div>
             ) : fileTree.length === 0 ? (
-              <div className="p-4 text-center text-3xs text-muted-foreground italic">
-                No code files found in workspace root.
+              <div className="p-4 text-center text-3xs text-muted-foreground italic flex flex-col gap-1.5">
+                <Database className="w-6 h-6 mx-auto opacity-30 text-indigo-500" />
+                No source code files indexed. Connect GitHub App under integrations first.
               </div>
             ) : (
               fileTree.map(node => renderNode(node))
@@ -251,14 +352,14 @@ export default function CodeWriterPage() {
           {activeFilePath ? (
             <>
               {/* Filename Header */}
-              <div className="bg-card/50 border-b border-border/40 px-4 py-2 flex items-center justify-between shrink-0">
+              <div className="bg-card/50 border-b border-border/40 px-4 py-2.5 flex items-center justify-between shrink-0">
                 <span className="text-xs font-mono text-muted-foreground truncate font-semibold">{activeFilePath}</span>
                 <span className="text-[10px] uppercase bg-muted px-2 py-0.5 rounded text-muted-foreground border border-border/30">
                   {activeFilePath.split('.').pop()}
                 </span>
               </div>
 
-              {/* Code TextArea */}
+              {/* Code Editor Container */}
               <div className="flex-1 relative flex overflow-hidden">
                 {loadingContent ? (
                   <div className="absolute inset-0 flex items-center justify-center bg-background/50 backdrop-blur-3xs">
@@ -272,7 +373,7 @@ export default function CodeWriterPage() {
                         <div key={i}>{i + 1}</div>
                       ))}
                     </div>
-                    {/* Textarea code container */}
+                    {/* Textarea code space */}
                     <textarea
                       value={fileContent}
                       onChange={(e) => setFileContent(e.target.value)}
@@ -283,6 +384,20 @@ export default function CodeWriterPage() {
                   </div>
                 )}
               </div>
+
+              {/* Custom Git Commit Message Box */}
+              {activeFilePath && (
+                <div className="border-t border-border/60 bg-muted/20 px-4 py-2.5 shrink-0 flex items-center gap-3">
+                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider shrink-0">Commit Message:</span>
+                  <input
+                    type="text"
+                    value={commitMessage}
+                    onChange={(e) => setCommitMessage(e.target.value)}
+                    placeholder={`Update ${activeFilePath.split('/').pop()} via Nexus AI`}
+                    className="flex-1 bg-background border border-border/65 rounded-lg px-3 py-1 text-xs outline-none focus:border-indigo-500 font-semibold"
+                  />
+                </div>
+              )}
             </>
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center text-center p-6 gap-3">
@@ -290,7 +405,7 @@ export default function CodeWriterPage() {
               <div>
                 <h3 className="text-xs font-bold text-foreground">No file open</h3>
                 <p className="text-3xs text-muted-foreground max-w-[200px] mt-0.5 leading-normal">
-                  Select a code file from the left sidebar explorer to view or modify its contents.
+                  Select a repository file from the left sidebar explorer to load and edit its contents.
                 </p>
               </div>
             </div>

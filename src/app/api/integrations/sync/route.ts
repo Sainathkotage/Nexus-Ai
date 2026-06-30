@@ -116,14 +116,26 @@ export async function POST(req: Request) {
         reposSynced: syncRes.reposSynced
       });
     } else if (integration.connector_id === 'notion') {
-      docsToInsert = [
-        {
-          id: 'notion-doc-universal-specs',
-          title: `Notion: Product Specs - Universal Integrations Platform`,
-          type: 'docx',
-          size: '2.5 KB',
-          summary: 'Functional product specification defining Zapier-like workspace connectors, workflows, and logs.',
-          content: `Notion Document: Specs - Integrations & Automations.
+      let realSynced = 0;
+      try {
+        const { syncWorkspaceNotionContext } = await import('@/lib/integrations/notionSync');
+        const syncRes = await syncWorkspaceNotionContext(integration.workspace_id);
+        if (syncRes.success) {
+          realSynced = syncRes.docsSynced;
+        }
+      } catch (err: any) {
+        console.warn('[Sync API] Real Notion sync failed, falling back to mock data:', err.message);
+      }
+
+      if (realSynced === 0) {
+        docsToInsert = [
+          {
+            id: 'notion-doc-universal-specs',
+            title: `Notion: Product Specs - Universal Integrations Platform`,
+            type: 'docx',
+            size: '2.5 KB',
+            summary: 'Functional product specification defining Zapier-like workspace connectors, workflows, and logs.',
+            content: `Notion Document: Specs - Integrations & Automations.
 Last Edited: Sainath
 Overview:
 The platform allows users to link Github, Notion, and Slack to Nexus AI.
@@ -131,13 +143,28 @@ Features:
 - Connector SDK & Registry
 - Event Webhook dispatchers
 - In-context semantic searches`,
-          tags: ['notion', 'specification', 'product'],
-          key_points: ['Event driven trigger workflows', 'Marketplace settings directory'],
-          extracted_tasks: ['Create database schema migrations', 'Implement encryption vault service'],
-          uploaded_at: timestamp,
-          processing_status: 'completed'
-        }
-      ];
+            tags: ['notion', 'specification', 'product'],
+            key_points: ['Event driven trigger workflows', 'Marketplace settings directory'],
+            extracted_tasks: ['Create database schema migrations', 'Implement encryption vault service'],
+            uploaded_at: timestamp,
+            processing_status: 'completed'
+          }
+        ];
+      } else {
+        await adminClient
+          .from('sync_jobs')
+          .update({
+            status: 'completed',
+            last_synced_at: timestamp
+          })
+          .eq('id', job.id);
+
+        return NextResponse.json({ 
+          success: true, 
+          connector: 'notion',
+          docsSynced: realSynced 
+        });
+      }
     } else if (integration.connector_id === 'slack') {
       if (decryptedToken) {
         console.log('[Sync API] Performing real Slack sync using bot token...');

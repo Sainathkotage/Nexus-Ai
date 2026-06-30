@@ -24,8 +24,9 @@ export async function POST(req: Request) {
     }
 
 
-    // Fetch active integrations for the workspace
+    // Fetch active integrations and dynamic document contents for the workspace
     let activeIntegrationsText = '';
+    let integrationsDocContext = '';
     if (workspaceId) {
       try {
         const supabaseAdmin = createSupabaseAdminClient();
@@ -36,11 +37,25 @@ export async function POST(req: Request) {
           .eq('status', 'active');
         
         if (integrations && integrations.length > 0) {
-          const list = integrations.map(i => i.connector_id).join(', ');
+          const list = integrations.map((i: any) => i.connector_id).join(', ');
           activeIntegrationsText = `Active workspace integrations connected: [${list}]. Synced context files (like Notion pages, Slack chats, GitHub PRs) are available in the documents list. You can read, analyze, and summarize them directly.`;
         }
+
+        // Fetch up to 20 documents synced in the workspace (Notion, Slack, Github, Jira)
+        const { data: dbDocs } = await supabaseAdmin
+          .from('documents')
+          .select('title, content, tags')
+          .eq('workspace_id', workspaceId)
+          .limit(20);
+        
+        if (dbDocs && dbDocs.length > 0) {
+          integrationsDocContext = dbDocs.map((d: any) => {
+            const tagList = Array.isArray(d.tags) ? d.tags.join(', ') : '';
+            return `[Source: ${tagList || 'general'}] Title: ${d.title}\nContent:\n${d.content}`;
+          }).join('\n\n---\n\n');
+        }
       } catch (err) {
-        console.warn('Failed to fetch workspace integrations for system prompt:', err);
+        console.warn('Failed to fetch workspace integrations/docs for system prompt:', err);
       }
     }
 
@@ -109,7 +124,8 @@ Supported actions:
    - body: Professional email body text.
 
 Ensure the response is valid JSON and contains only the JSON structure.
-${documentContext ? `Here is the contents of the documents currently in the user's workspace:\n\n${documentContext}\n\nUse this context to answer the user's questions.` : ''}`;
+${documentContext ? `Here is the contents of the user selected documents:\n\n${documentContext}\n\n` : ''}
+${integrationsDocContext ? `Here is the integrated apps context (Slack, Notion, GitHub, Jira) synced in this workspace:\n\n${integrationsDocContext}\n\nUse this context to answer queries and make recommendations.` : ''}`;
 
     const gorqApiKey = process.env.GORQ_API_KEY;
     const openRouterApiKey = process.env.OPENROUTER_API_KEY;

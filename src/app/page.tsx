@@ -515,7 +515,8 @@ export default function DashboardPage() {
         body: JSON.stringify({
           tasks: tasks,
           calendarEvents: calendarEvents,
-          notifications: notifications
+          notifications: notifications,
+          workspaceId: workspace?.id
         })
       });
       const data = await res.json();
@@ -950,14 +951,20 @@ VALUES ('${log.id}', '${log.userId}', '${escapedName}', '${escapedRole}', '${log
                     <h4 className="text-xs font-bold uppercase tracking-wider text-indigo-500 font-mono">Nexus AI Briefing</h4>
                   </div>
                   
-                  <div>
-                    <h3 className="text-base font-bold text-foreground">Good morning, {user?.name || 'Raj'}.</h3>
-                    <p className="text-xs text-muted-foreground mt-0.5">Here's what needs your attention:</p>
-                    <ul className="mt-2.5 space-y-1 text-xs text-foreground font-medium list-disc list-inside pl-1.5">
-                      {dynamicBriefing.map((bItem, idx) => (
-                        <li key={idx}>{bItem}</li>
-                      ))}
-                    </ul>
+                  <div className="flex-1">
+                    <h3 className="text-base font-bold text-foreground">{greeting}, {user?.name || 'Raj'}.</h3>
+                    <p className="text-xs text-muted-foreground mt-0.5">Here's your morning AI briefing:</p>
+                    {briefingLoading ? (
+                      <div className="mt-3 space-y-2 animate-pulse max-w-xl">
+                        <div className="h-3 bg-muted rounded w-5/6"></div>
+                        <div className="h-3 bg-muted rounded w-3/4"></div>
+                        <div className="h-3 bg-muted rounded w-1/2"></div>
+                      </div>
+                    ) : (
+                      <div className="mt-3 text-xs text-foreground leading-relaxed whitespace-pre-wrap select-text max-w-2xl font-medium prose prose-sm dark:prose-invert">
+                        {briefingText}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

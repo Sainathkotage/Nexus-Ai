@@ -10,20 +10,7 @@ export async function middleware(request: NextRequest) {
     return supabaseResponse;
   }
 
-  const customFetch = (url: RequestInfo | URL, options?: RequestInit) => {
-    const controller = new AbortController();
-    const id = setTimeout(() => controller.abort(), 2000); // 2-second timeout
-
-    return fetch(url, {
-      ...options,
-      signal: controller.signal,
-    }).finally(() => clearTimeout(id));
-  };
-
   const supabase = createServerClient(url, anonKey, {
-    global: {
-      fetch: customFetch,
-    },
     cookies: {
       getAll() {
         return request.cookies.getAll();
@@ -43,6 +30,7 @@ export async function middleware(request: NextRequest) {
   } catch (error) {
     console.error('Supabase middleware auth check failed:', error);
   }
+
   return supabaseResponse;
 }
 
@@ -51,3 +39,4 @@ export const config = {
     '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 };
+

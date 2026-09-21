@@ -61,16 +61,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         router.push(`/invite/${inviteCode}`);
         return;
       }
-
-      const inviteQuery = inviteCode ? `inviteCode=${inviteCode}` : '';
-
-      if (!user && !hasAuthParam && !hasInviteParam && !isAuthCallbackOrInvite) {
-        const marketingUrl = process.env.NEXT_PUBLIC_MARKETING_URL || 'https://aixentrix.com';
-        const query = inviteQuery ? `?${inviteQuery}` : '';
-        window.location.href = `${marketingUrl}${query}`;
-      }
     }
-  }, [user, isAppLoading, hasAuthParam, hasInviteParam, isAuthCallbackOrInvite, router, searchParams]);
+  }, [user, isAppLoading, router, searchParams]);
 
   useEffect(() => {
     if (!user) return;
@@ -125,17 +117,18 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   };
 
   if (!user) {
-    if (hasInviteParam && guestMode && inviteCodeParam) {
+    if (hasInviteParam && guestMode && !hasAuthParam && inviteCodeParam) {
       return <GuestAutoJoin code={inviteCodeParam} onCancel={() => setGuestMode(false)} />;
     }
-    if (hasAuthParam || hasInviteParam || isAuthCallbackOrInvite) {
-      return <LoginScreen />;
-    }
-    return <LoginScreenSkeleton />;
+    return <LoginScreen />;
   }
 
   if (!user.emailVerified) {
     return <VerifyEmailScreen />;
+  }
+
+  if (!workspace) {
+    return <NoWorkspaceScreen />;
   }
 
   return (

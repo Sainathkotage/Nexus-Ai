@@ -119,12 +119,18 @@ export function LoginScreen() {
         
         {/* Logo and Header */}
         <div className="flex flex-col items-center text-center gap-2">
-          <a href={process.env.NEXT_PUBLIC_MARKETING_URL || 'http://localhost:4321'}>
+          <a href={process.env.NEXT_PUBLIC_MARKETING_URL || 'https://aixentrix.com'}>
             <img src="/logo.png" className="w-12 h-12 object-contain cursor-pointer hover:opacity-85 transition-opacity" alt="Nexus AI Logo" />
           </a>
           <h1 className="text-2xl font-bold tracking-tight text-[#37352f] dark:text-[#e3e3e2]">Welcome to Nexus AI</h1>
           <p className="text-xs text-muted-foreground">Collaborate on tasks, documents, emails, and chat in one place.</p>
         </div>
+
+        {searchParams?.get('inviteCode') && (
+          <div className="w-full p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/25 text-emerald-600 dark:text-emerald-400 text-xs text-center font-medium">
+            Workspace invite detected: {activeTab === 'signup' ? 'Create an account' : 'Sign in'} to join your team.
+          </div>
+        )}
 
         {/* Tab Switcher */}
         <div className="flex bg-black/5 dark:bg-white/10 rounded-full p-1 w-full border border-black/5 dark:border-white/5">

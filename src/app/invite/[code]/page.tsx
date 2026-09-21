@@ -152,6 +152,11 @@ export default function InvitePage() {
     router.push(`/?auth=signin&inviteCode=${code}`);
   };
 
+  const handleSignUp = () => {
+    // Redirect to signup page and preserve the invite code
+    router.push(`/?auth=signup&inviteCode=${code}`);
+  };
+
   if (loading) {
     return (
       <main className="min-h-screen bg-[#09090b] text-[#fafafa] flex items-center justify-center p-6">
@@ -211,17 +216,24 @@ export default function InvitePage() {
               isProject ? (
                 <OnboardingWizard inviteToken={code} />
               ) : (
-                <div className="w-full space-y-4">
+                <div className="w-full space-y-3">
                   <div className="bg-zinc-950/50 border border-zinc-800/60 rounded-xl p-4 text-left text-xs text-zinc-400 mb-2">
-                    <span className="font-semibold text-zinc-300 block mb-1">Sign-in Required</span>
-                    You must be authenticated to join. Sign up or log in to continue.
+                    <span className="font-semibold text-zinc-300 block mb-1">Account Required</span>
+                    Create an account or sign in with your existing account to join this workspace.
                   </div>
                   <button
-                    onClick={handleSignIn}
+                    onClick={handleSignUp}
                     className="w-full py-3 px-4 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-black font-semibold rounded-lg text-sm transition-all shadow-lg shadow-emerald-500/10 flex items-center justify-center gap-2 hover:scale-[1.01] cursor-pointer"
                   >
-                    <LogIn size={18} />
-                    Sign In to Join
+                    <UserPlus size={18} />
+                    Create Account to Join
+                  </button>
+                  <button
+                    onClick={handleSignIn}
+                    className="w-full py-2.5 px-4 bg-zinc-800/80 hover:bg-zinc-700/80 border border-zinc-700/50 text-zinc-200 hover:text-white font-medium rounded-lg text-sm transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <LogIn size={16} />
+                    I already have an account (Sign In)
                   </button>
                 </div>
               )

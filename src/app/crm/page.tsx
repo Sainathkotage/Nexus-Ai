@@ -8,7 +8,7 @@ import {
   BarChart3, Plus, Search, DollarSign, TrendingUp, Briefcase, 
   Trash2, ArrowRight, User, Settings, Check, X, AlertCircle, ChevronLeft, ChevronRight,
   Sparkles, Calendar as CalendarIcon, Mail as MailIcon, Sliders, Clock, UserCheck, Activity,
-  ArrowDown, Send, Lock, FileText, LayoutGrid
+  ArrowDown, Send, Lock, FileText, LayoutGrid, GripVertical, ChevronUp, ChevronDown
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
@@ -46,6 +46,9 @@ export default function CRMPage() {
   const [drillDownStage, setDrillDownStage] = useState<Stage | null>(null);
   const [showStaleOnly, setShowStaleOnly] = useState(false);
   const [dragOverStage, setDragOverStage] = useState<Stage | null>(null);
+  const [draggedDealId, setDraggedDealId] = useState<string | null>(null);
+  const [dragOverDealId, setDragOverDealId] = useState<string | null>(null);
+  const [dragDropPosition, setDragDropPosition] = useState<'before' | 'after' | null>(null);
 
   // Mobile Swipe Column Layout
   const [mobileActiveColumn, setMobileActiveColumn] = useState<Stage>('lead');
@@ -156,10 +159,82 @@ export default function CRMPage() {
       toast.warning('Guest account: Read-only access');
       return;
     }
+    const current = deals.find(d => d.id === dealId);
+    if (current && current.stage === stage) return;
     await updateDealStage(dealId, stage);
     const updated = deals.map(d => d.id === dealId ? { ...d, stage, stageUpdatedAt: new Date().toISOString() } : d);
     broadcastDeals(updated);
     toast.success(`Deal stage updated to ${stage}`);
+  };
+
+  const handleReorderDeal = (draggedId: string, targetId: string, position: 'before' | 'after', targetStage?: Stage) => {
+    if (isGuest) {
+      toast.warning('Guest account: Read-only access');
+      return;
+    }
+    if (draggedId === targetId && (!targetStage || deals.find(d => d.id === draggedId)?.stage === targetStage)) {
+      return;
+    }
+
+    const draggedDeal = deals.find(d => d.id === draggedId);
+    const targetDeal = deals.find(d => d.id === targetId);
+    if (!draggedDeal || !targetDeal) return;
+
+    const updatedDeal: Deal = (targetStage && targetStage !== draggedDeal.stage)
+      ? { ...draggedDeal, stage: targetStage, stageUpdatedAt: new Date().toISOString() }
+      : { ...draggedDeal };
+
+    // Remove dragged deal from the array
+    const remaining = deals.filter(d => d.id !== draggedId);
+    
+    // Find index of target deal in remaining
+    const targetIdx = remaining.findIndex(d => d.id === targetId);
+    if (targetIdx === -1) return;
+
+    const insertIdx = position === 'before' ? targetIdx : targetIdx + 1;
+    const newDeals = [
+      ...remaining.slice(0, insertIdx),
+      updatedDeal,
+      ...remaining.slice(insertIdx)
+    ];
+
+    syncDeals(newDeals);
+    broadcastDeals(newDeals);
+    toast.success('Deal rearranged');
+  };
+
+  const handleMoveDeal = (dealId: string, direction: 'up' | 'down') => {
+    if (isGuest) {
+      toast.warning('Guest account: Read-only access');
+      return;
+    }
+    const currentDeal = deals.find(d => d.id === dealId);
+    if (!currentDeal) return;
+
+    const stageDeals = filteredDeals.filter(d => d.stage === currentDeal.stage);
+    const stageIdx = stageDeals.findIndex(d => d.id === dealId);
+    if (stageIdx === -1) return;
+
+    const swapTargetIdx = direction === 'up' ? stageIdx - 1 : stageIdx + 1;
+    if (swapTargetIdx < 0 || swapTargetIdx >= stageDeals.length) return;
+
+    const targetDeal = stageDeals[swapTargetIdx];
+
+    // Reorder in deals array
+    const remaining = deals.filter(d => d.id !== dealId);
+    const targetInDealsIdx = remaining.findIndex(d => d.id === targetDeal.id);
+    if (targetInDealsIdx === -1) return;
+
+    const insertIdx = direction === 'up' ? targetInDealsIdx : targetInDealsIdx + 1;
+    const newDeals = [
+      ...remaining.slice(0, insertIdx),
+      currentDeal,
+      ...remaining.slice(insertIdx)
+    ];
+
+    syncDeals(newDeals);
+    broadcastDeals(newDeals);
+    toast.success(`Moved ${direction === 'up' ? 'up' : 'down'}`);
   };
 
   const handleAddDealSubmit = async (e: React.FormEvent) => {
@@ -754,10 +829,10 @@ export default function CRMPage() {
             const totalVal = stageDeals.reduce((sum, d) => sum + d.value, 0);
 
             return (
-              <div key={column.id} className="flex flex-col w-full min-h-[300px]">
+              <div key={column.id} className="flex flex-col w-full h-[400px] border border-border/80 rounded-xl overflow-hidden shadow-xs bg-card/20">
                 {/* Column Header */}
                 <div className={cn(
-                  "flex flex-col p-3 border-b border-border/60 border-t-2 rounded-t-xl shrink-0",
+                  "flex flex-col p-3 border-b border-border/60 border-t-2 shrink-0",
                   column.color, column.bg
                 )}>
                   <div className="flex items-center justify-between">
@@ -771,111 +846,199 @@ export default function CRMPage() {
                   </span>
                 </div>
 
-                {/* Column Body Cards */}
+                {/* Column Body Cards (Fixed height with scroll inside) */}
                 <div 
                   className={cn(
-                    "flex-1 bg-muted/5 border border-border border-t-0 rounded-b-xl p-2 flex flex-col gap-2.5 transition-colors duration-200",
+                    "flex-1 min-h-0 bg-muted/5 p-2 flex flex-col gap-2 overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent transition-colors duration-200 relative",
                     dragOverStage === column.id && "bg-indigo-500/5 border-dashed border-indigo-500/30"
                   )}
-                  onDragOver={(e) => e.preventDefault()}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    if (!isGuest) setDragOverStage(column.id);
+                  }}
                   onDragEnter={() => !isGuest && setDragOverStage(column.id)}
-                  onDragLeave={() => setDragOverStage(null)}
+                  onDragLeave={(e) => {
+                    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+                    setDragOverStage(null);
+                  }}
                   onDrop={(e) => {
                     e.preventDefault();
                     if (isGuest) return;
-                    const dealId = e.dataTransfer.getData('text/plain');
+                    const dealId = e.dataTransfer.getData('text/plain') || draggedDealId;
                     if (dealId) {
                       handleUpdateStage(dealId, column.id);
                     }
                     setDragOverStage(null);
+                    setDragOverDealId(null);
+                    setDragDropPosition(null);
+                    setDraggedDealId(null);
                   }}
                 >
                   <AnimatePresence>
-                    {stageDeals.map(deal => {
+                    {stageDeals.map((deal, dealIdx) => {
                       const rotting = isDealRotting(deal);
                       return (
-                        <motion.div
-                          key={deal.id}
-                          layoutId={deal.id}
-                          initial={{ opacity: 0, scale: 0.95 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          exit={{ opacity: 0, scale: 0.95 }}
-                          draggable={!isGuest}
-                          onDragStart={(e: any) => {
-                            if (isGuest) {
-                              e.preventDefault();
-                              return;
-                            }
-                            e.dataTransfer.setData('text/plain', deal.id);
-                          }}
-                          onClick={() => setDetailDeal(deal)}
-                          data-context-type="deal"
-                          data-context-id={deal.id}
-                          className={cn(
-                            "bg-card border hover:border-indigo-500/20 rounded-xl p-3 shadow-xs cursor-grab active:cursor-grabbing transition-all flex flex-col gap-1.5 relative group select-none",
-                            rotting && "border-red-500/40 bg-red-500/[0.02] shadow-sm hover:border-red-500/60"
+                        <React.Fragment key={deal.id}>
+                          {/* Drop indicator before card */}
+                          {dragOverDealId === deal.id && dragDropPosition === 'before' && (
+                            <div className="h-1 bg-indigo-500 rounded-full shadow-[0_0_8px_rgba(99,102,241,0.8)] -my-0.5 z-10 transition-all animate-pulse" />
                           )}
-                        >
-                          <div className="flex items-start justify-between">
-                            <h4 className="font-bold text-xs text-foreground truncate max-w-[170px]" title={deal.title}>{deal.title}</h4>
-                            {!isGuest && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDeleteDealClick(deal.id);
-                                }}
-                                className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-red-500 rounded transition-opacity shrink-0"
-                                title="Delete Deal"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
+
+                          <motion.div
+                            layoutId={deal.id}
+                            initial={{ opacity: 0, scale: 0.95 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.95 }}
+                            draggable={!isGuest}
+                            onDragStart={(e: any) => {
+                              if (isGuest) {
+                                e.preventDefault();
+                                return;
+                              }
+                              e.dataTransfer.setData('text/plain', deal.id);
+                              setDraggedDealId(deal.id);
+                            }}
+                            onDragEnd={() => {
+                              setDraggedDealId(null);
+                              setDragOverDealId(null);
+                              setDragDropPosition(null);
+                              setDragOverStage(null);
+                            }}
+                            onDragOver={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              if (isGuest) return;
+                              const rect = e.currentTarget.getBoundingClientRect();
+                              const midY = rect.top + rect.height / 2;
+                              const pos: 'before' | 'after' = e.clientY < midY ? 'before' : 'after';
+                              setDragOverDealId(deal.id);
+                              setDragDropPosition(pos);
+                            }}
+                            onDragLeave={(e) => {
+                              if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+                              if (dragOverDealId === deal.id) {
+                                setDragOverDealId(null);
+                                setDragDropPosition(null);
+                              }
+                            }}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              if (isGuest) return;
+                              const sourceDealId = e.dataTransfer.getData('text/plain') || draggedDealId;
+                              if (sourceDealId && sourceDealId !== deal.id) {
+                                handleReorderDeal(sourceDealId, deal.id, dragDropPosition || 'before', column.id);
+                              }
+                              setDragOverDealId(null);
+                              setDragDropPosition(null);
+                              setDraggedDealId(null);
+                              setDragOverStage(null);
+                            }}
+                            onClick={() => setDetailDeal(deal)}
+                            data-context-type="deal"
+                            data-context-id={deal.id}
+                            className={cn(
+                              "bg-card border hover:border-indigo-500/30 rounded-xl p-2.5 shadow-xs cursor-grab active:cursor-grabbing transition-all flex flex-col gap-1.5 relative group select-none shrink-0",
+                              rotting && "border-red-500/40 bg-red-500/[0.02] shadow-sm hover:border-red-500/60",
+                              draggedDealId === deal.id && "opacity-40 border-dashed border-indigo-500"
                             )}
-                          </div>
+                          >
+                            <div className="flex items-start justify-between gap-1.5">
+                              <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                                {!isGuest && (
+                                  <GripVertical className="w-3 h-3 text-muted-foreground/40 group-hover:text-muted-foreground/80 shrink-0 cursor-grab" />
+                                )}
+                                <h4 className="font-bold text-xs text-foreground truncate" title={deal.title}>{deal.title}</h4>
+                              </div>
 
-                          <div className="flex items-center justify-between text-[10px] text-muted-foreground leading-normal">
-                            <div className="flex items-center gap-1 truncate">
-                              <User className="w-3 h-3 text-muted-foreground shrink-0" />
-                              <span className="truncate font-semibold">{deal.company}</span>
-                            </div>
-                            <span className="text-[9px] text-muted-foreground italic shrink-0">By {deal.ownerName?.split(' ')[0]}</span>
-                          </div>
-
-                          {/* AI Score Badge & Value */}
-                          <div className="flex items-center justify-between pt-1 mt-1 border-t border-border/20">
-                            <span className="text-xs font-bold font-mono text-emerald-600 dark:text-emerald-400">
-                              ${deal.value.toLocaleString()}
-                            </span>
-
-                            <div className="flex items-center gap-1.5">
-                              {rotting && (
-                                <Badge className="bg-red-500/10 text-red-500 border-red-500/20 text-[8px] font-bold uppercase py-0 px-1">
-                                  Stale
-                                </Badge>
+                              {!isGuest && (
+                                <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleMoveDeal(deal.id, 'up');
+                                    }}
+                                    disabled={dealIdx === 0}
+                                    className="p-1 hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-20 rounded transition-colors"
+                                    title="Move Up"
+                                  >
+                                    <ChevronUp className="w-3 h-3" />
+                                  </button>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleMoveDeal(deal.id, 'down');
+                                    }}
+                                    disabled={dealIdx === stageDeals.length - 1}
+                                    className="p-1 hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-20 rounded transition-colors"
+                                    title="Move Down"
+                                  >
+                                    <ChevronDown className="w-3 h-3" />
+                                  </button>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDeleteDealClick(deal.id);
+                                    }}
+                                    className="p-1 hover:bg-muted hover:text-red-500 text-muted-foreground rounded transition-colors"
+                                    title="Delete Deal"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
+                                </div>
                               )}
-                              
-                              {/* AI score rating */}
-                              {deal.score && (
-                                <Badge 
-                                  variant="outline" 
-                                  className={cn(
-                                    "text-[8px] py-0 px-1 font-bold uppercase",
-                                    deal.score >= 80 ? "text-emerald-600 bg-emerald-500/5 border-emerald-500/20" :
-                                    deal.score >= 50 ? "text-amber-600 bg-amber-500/5 border-amber-500/20" :
-                                    "text-red-500 bg-red-500/5 border-red-500/20"
-                                  )}
-                                >
-                                  {deal.score}% AI Match
-                                </Badge>
-                              )}
                             </div>
-                          </div>
-                        </motion.div>
+
+                            <div className="flex items-center justify-between text-[10px] text-muted-foreground leading-normal">
+                              <div className="flex items-center gap-1 truncate">
+                                <User className="w-3 h-3 text-muted-foreground shrink-0" />
+                                <span className="truncate font-semibold">{deal.company}</span>
+                              </div>
+                              <span className="text-[9px] text-muted-foreground italic shrink-0">By {deal.ownerName?.split(' ')[0]}</span>
+                            </div>
+
+                            {/* AI Score Badge & Value */}
+                            <div className="flex items-center justify-between pt-1 mt-0.5 border-t border-border/20">
+                              <span className="text-xs font-bold font-mono text-emerald-600 dark:text-emerald-400">
+                                ${deal.value.toLocaleString()}
+                              </span>
+
+                              <div className="flex items-center gap-1.5">
+                                {rotting && (
+                                  <Badge className="bg-red-500/10 text-red-500 border-red-500/20 text-[8px] font-bold uppercase py-0 px-1">
+                                    Stale
+                                  </Badge>
+                                )}
+                                
+                                {/* AI score rating */}
+                                {deal.score && (
+                                  <Badge 
+                                    variant="outline" 
+                                    className={cn(
+                                      "text-[8px] py-0 px-1 font-bold uppercase",
+                                      deal.score >= 80 ? "text-emerald-600 bg-emerald-500/5 border-emerald-500/20" :
+                                      deal.score >= 50 ? "text-amber-600 bg-amber-500/5 border-amber-500/20" :
+                                      "text-red-500 bg-red-500/5 border-red-500/20"
+                                    )}
+                                  >
+                                    {deal.score}% AI Match
+                                  </Badge>
+                                )}
+                              </div>
+                            </div>
+                          </motion.div>
+
+                          {/* Drop indicator after card */}
+                          {dragOverDealId === deal.id && dragDropPosition === 'after' && (
+                            <div className="h-1 bg-indigo-500 rounded-full shadow-[0_0_8px_rgba(99,102,241,0.8)] -my-0.5 z-10 transition-all animate-pulse" />
+                          )}
+                        </React.Fragment>
                       );
                     })}
                   </AnimatePresence>
 
                   {stageDeals.length === 0 && (
-                    <div className="p-8 text-center border border-dashed border-border rounded-xl text-[10px] text-muted-foreground opacity-55">
+                    <div className="m-auto p-6 text-center border border-dashed border-border/70 rounded-xl text-[10px] text-muted-foreground opacity-55">
                       Empty Pipeline Stage
                     </div>
                   )}
@@ -891,9 +1054,9 @@ export default function CRMPage() {
             const stageDeals = filteredDeals.filter(d => d.stage === column.id);
             const totalVal = stageDeals.reduce((sum, d) => sum + d.value, 0);
             return (
-              <div key={column.id} className="flex flex-col w-full h-full">
+              <div key={column.id} className="flex flex-col w-full h-full border border-border/80 rounded-xl overflow-hidden shadow-xs">
                 <div className={cn(
-                  "flex flex-col p-3.5 border-b border-border/60 border-t-2 rounded-t-xl shrink-0",
+                  "flex flex-col p-3.5 border-b border-border/60 border-t-2 shrink-0",
                   column.color, column.bg
                 )}>
                   <div className="flex items-center justify-between">
@@ -907,8 +1070,8 @@ export default function CRMPage() {
                   </span>
                 </div>
 
-                <div className="flex-1 bg-muted/5 border border-border border-t-0 rounded-b-xl p-2.5 flex flex-col gap-3">
-                  {stageDeals.map(deal => (
+                <div className="flex-1 min-h-0 bg-muted/5 p-2.5 flex flex-col gap-3 max-h-[60vh] overflow-y-auto">
+                  {stageDeals.map((deal, dealIdx) => (
                     <div
                       key={deal.id}
                       onClick={() => setDetailDeal(deal)}
@@ -918,16 +1081,44 @@ export default function CRMPage() {
                       )}
                     >
                       <div className="flex items-start justify-between">
-                        <h4 className="font-bold text-sm text-foreground truncate max-w-[200px]">{deal.title}</h4>
-                        <Badge 
-                          variant="outline"
-                          className={cn(
-                            "text-[8px] font-bold uppercase",
-                            (deal.score || 70) >= 80 ? "text-emerald-500 border-emerald-500/20" : "text-amber-500 border-amber-500/20"
+                        <h4 className="font-bold text-sm text-foreground truncate max-w-[170px]">{deal.title}</h4>
+                        <div className="flex items-center gap-1">
+                          <Badge 
+                            variant="outline"
+                            className={cn(
+                              "text-[8px] font-bold uppercase",
+                              (deal.score || 70) >= 80 ? "text-emerald-500 border-emerald-500/20" : "text-amber-500 border-amber-500/20"
+                            )}
+                          >
+                            {deal.score || 70}% AI Match
+                          </Badge>
+                          {!isGuest && (
+                            <div className="flex items-center gap-0.5 ml-1">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleMoveDeal(deal.id, 'up');
+                                }}
+                                disabled={dealIdx === 0}
+                                className="p-1 text-muted-foreground disabled:opacity-20 hover:text-foreground"
+                                title="Move Up"
+                              >
+                                <ChevronUp className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleMoveDeal(deal.id, 'down');
+                                }}
+                                disabled={dealIdx === stageDeals.length - 1}
+                                className="p-1 text-muted-foreground disabled:opacity-20 hover:text-foreground"
+                                title="Move Down"
+                              >
+                                <ChevronDown className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
                           )}
-                        >
-                          {deal.score || 70}% AI Match
-                        </Badge>
+                        </div>
                       </div>
                       <div className="flex items-center justify-between text-xs text-muted-foreground">
                         <span className="font-semibold">{deal.company}</span>

@@ -139,7 +139,7 @@ export default function DocumentsPage() {
     }
   };
 
-  const userDocuments = documents;
+  const userDocuments = documents.filter(d => d.type !== 'crm_deals_store');
   const selectedDocument = userDocuments.find(d => d.id === selectedDocumentId) || null;
 
   const handleDeleteAll = async () => {

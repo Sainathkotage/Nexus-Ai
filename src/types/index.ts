@@ -22,7 +22,7 @@ export interface Person {
 }
 
 // --- Documents ---
-export type DocumentType = 'pdf' | 'docx' | 'txt' | 'meeting' | 'research';
+export type DocumentType = 'pdf' | 'docx' | 'txt' | 'meeting' | 'research' | 'crm_deals_store';
 
 export interface DocumentFile {
   id: string;
@@ -312,6 +312,7 @@ export interface Deal {
   primaryContactEmail?: string;
   ownerId?: string;
   ownerName?: string;
+  ownerEmail?: string;
   notes?: string;
 }
 

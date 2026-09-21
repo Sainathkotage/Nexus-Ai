@@ -79,11 +79,96 @@ export default function CRMPage() {
   const [reportType, setReportType] = useState('pipeline_summary');
   const [reportFrequency, setReportFrequency] = useState('weekly_monday');
 
+  // Collapsible analytics state (persisted across sessions)
+  const [analyticsCollapsed, setAnalyticsCollapsed] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('nexus_crm_analytics_collapsed') === 'true';
+    }
+    return false;
+  });
+
+  const toggleAnalyticsCollapsed = () => {
+    setAnalyticsCollapsed(prev => {
+      const next = !prev;
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('nexus_crm_analytics_collapsed', String(next));
+      }
+      return next;
+    });
+  };
+
   const isGuest = user?.role === 'Guest';
 
-  // Real-time Pipeline Channel Subscription
+  // Persist deals directly to Supabase documents table for workspace teammate sharing
+  const persistDealsToDb = async (updatedDeals: Deal[]) => {
+    if (!workspace?.id) return;
+    try {
+      const content = JSON.stringify(updatedDeals);
+      await supabase.from('documents').upsert({
+        id: `crm-deals-${workspace.id}`,
+        title: `CRM Deals - ${workspace.name || 'Workspace'}`,
+        type: 'crm_deals_store',
+        workspace_id: workspace.id,
+        content,
+        size: `${Math.max(1, Math.round(content.length / 1024))} KB`,
+        uploaded_at: new Date().toISOString(),
+        uploaded_by: {
+          id: user?.id || 'system',
+          name: user?.name || 'User',
+          email: user?.email || '',
+          workspaceId: workspace.id
+        }
+      });
+    } catch (e) {
+      console.warn('Failed to persist CRM deals to database:', e);
+    }
+  };
+
+  // Fetch workspace deals from database on load/workspace change
   useEffect(() => {
-    
+    if (!workspace?.id) return;
+
+    const fetchRemoteWorkspaceDeals = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('documents')
+          .select('content')
+          .eq('id', `crm-deals-${workspace.id}`)
+          .maybeSingle();
+
+        if (!error && data?.content) {
+          try {
+            const parsed = JSON.parse(data.content);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              syncDeals(parsed);
+              return;
+            }
+          } catch (e) {
+            console.error('Failed to parse remote deals:', e);
+          }
+        } else if (!data) {
+          // If no remote record exists yet, seed local deals if any
+          const localStr = localStorage.getItem(`nexus_deals_${workspace.id}`) || localStorage.getItem('nexus_deals');
+          if (localStr) {
+            try {
+              const localDeals = JSON.parse(localStr);
+              if (Array.isArray(localDeals) && localDeals.length > 0) {
+                await persistDealsToDb(localDeals);
+                syncDeals(localDeals);
+              }
+            } catch (e) {}
+          }
+        }
+      } catch (err) {
+        console.warn('Error fetching workspace deals from remote database:', err);
+      }
+    };
+
+    fetchRemoteWorkspaceDeals();
+  }, [workspace?.id]);
+
+  // Real-time Pipeline Channel & Postgres Changes Subscription
+  useEffect(() => {
     if (!workspace) return;
     
     const channelName = `crm-${workspace.id}`;
@@ -98,6 +183,25 @@ export default function CRMPage() {
           }
         }
       })
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'documents',
+          filter: `id=eq.crm-deals-${workspace.id}`
+        },
+        (payload: any) => {
+          if (payload.new && payload.new.content) {
+            try {
+              const remoteDeals = JSON.parse(payload.new.content);
+              if (Array.isArray(remoteDeals)) {
+                syncDeals(remoteDeals);
+              }
+            } catch (e) {}
+          }
+        }
+      )
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
           console.log(`Subscribed to CRM channel: ${channelName}`);
@@ -164,6 +268,7 @@ export default function CRMPage() {
     await updateDealStage(dealId, stage);
     const updated = deals.map(d => d.id === dealId ? { ...d, stage, stageUpdatedAt: new Date().toISOString() } : d);
     broadcastDeals(updated);
+    persistDealsToDb(updated);
     toast.success(`Deal stage updated to ${stage}`);
   };
 
@@ -200,6 +305,7 @@ export default function CRMPage() {
 
     syncDeals(newDeals);
     broadcastDeals(newDeals);
+    persistDealsToDb(newDeals);
     toast.success('Deal rearranged');
   };
 
@@ -234,6 +340,7 @@ export default function CRMPage() {
 
     syncDeals(newDeals);
     broadcastDeals(newDeals);
+    persistDealsToDb(newDeals);
     toast.success(`Moved ${direction === 'up' ? 'up' : 'down'}`);
   };
 
@@ -261,12 +368,15 @@ export default function CRMPage() {
       primaryContactName: newContactName || 'Unknown Contact',
       primaryContactEmail: newContactEmail || `sales@${newCompany.toLowerCase().replace(/[^a-z0-9]/g, '') || 'company'}.com`,
       ownerId: user?.id || 'user-admin',
-      ownerName: user?.name || 'Sainath Kotage',
+      ownerName: user?.name || user?.email?.split('@')[0] || 'Team Member',
+      ownerEmail: user?.email || '',
       notes: newNotes
     };
 
+    const updated = [...deals, newDeal];
     await addDeal(newDeal);
-    broadcastDeals([...deals, newDeal]);
+    broadcastDeals(updated);
+    persistDealsToDb(updated);
 
     setNewTitle('');
     setNewCompany('');
@@ -289,6 +399,7 @@ export default function CRMPage() {
       await deleteDeal(id);
       const updated = deals.filter(d => d.id !== id);
       broadcastDeals(updated);
+      persistDealsToDb(updated);
       toast.info('Deal removed from pipeline');
       handleCloseDetailDeal();
     }
@@ -303,18 +414,54 @@ export default function CRMPage() {
     return difference > 7 * 24 * 60 * 60 * 1000; // 7 days
   };
 
+  // Helper to identify if a deal belongs to the current user
+  const isUserDeal = (deal: Deal) => {
+    if (!user) return false;
+    // Direct ID match
+    if (deal.ownerId && deal.ownerId === user.id) return true;
+    
+    // Direct email match
+    if (deal.ownerEmail && user.email && deal.ownerEmail.toLowerCase() === user.email.toLowerCase()) {
+      return true;
+    }
+
+    // Name matching (case-insensitive)
+    if (deal.ownerName && user.name) {
+      const dName = deal.ownerName.trim().toLowerCase();
+      const uName = user.name.trim().toLowerCase();
+      if (dName === uName) return true;
+      const dFirst = dName.split(' ')[0];
+      const uFirst = uName.split(' ')[0];
+      if (dFirst && uFirst && dFirst === uFirst && dFirst.length > 2) return true;
+    }
+
+    // Workspace owner/admin fallback for seed or default admin deals
+    const isCurrentUserAdminOrOwner = user.role === 'Admin' || user.role === 'Owner' || user.email?.toLowerCase().includes('sainath') || user.name?.toLowerCase().includes('sainath');
+    if (isCurrentUserAdminOrOwner && (deal.ownerId === 'user-admin' || deal.ownerName === 'Sainath Kotage')) {
+      return true;
+    }
+
+    return false;
+  };
+
   // Filter deals based on search, owner, drill-down stage, and stale status
   const filteredDeals = useMemo(() => {
     return deals.filter(d => {
       const matchesSearch = d.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
                             d.company.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesOwner = ownerFilter === 'all' || d.ownerId === user?.id;
+      // When 'all', show all workspace deals (teammates + current user). When 'my', show only current user's deals.
+      const matchesOwner = ownerFilter === 'all' ? true : isUserDeal(d);
       const matchesDrillDown = !drillDownStage || d.stage === drillDownStage;
       const matchesStale = !showStaleOnly || isDealRotting(d);
 
       return matchesSearch && matchesOwner && matchesDrillDown && matchesStale;
     });
   }, [deals, searchQuery, ownerFilter, drillDownStage, showStaleOnly, user]);
+
+  // My deals count for filter tab
+  const myDealsCount = useMemo(() => {
+    return deals.filter(isUserDeal).length;
+  }, [deals, user]);
 
   // Rotting counts
   const rottingDealsCount = useMemo(() => {
@@ -482,6 +629,22 @@ export default function CRMPage() {
           <Button 
             variant="outline"
             size="sm"
+            onClick={toggleAnalyticsCollapsed}
+            className="h-8 text-[11px] font-semibold gap-1.5 cursor-pointer"
+          >
+            {analyticsCollapsed ? (
+              <>
+                <ChevronDown className="w-3.5 h-3.5" /> Show Analytics
+              </>
+            ) : (
+              <>
+                <ChevronUp className="w-3.5 h-3.5" /> Hide Analytics
+              </>
+            )}
+          </Button>
+          <Button 
+            variant="outline"
+            size="sm"
             onClick={() => setShowDashboardConfig(!showDashboardConfig)}
             className="h-8 text-[11px] font-semibold gap-1 border-dashed cursor-pointer"
           >
@@ -543,8 +706,16 @@ export default function CRMPage() {
       )}
 
       {/* Dashboard Analytics Panel */}
-      <div className="px-4 py-4 shrink-0 grid grid-cols-1 md:grid-cols-2 gap-4 border-b border-border bg-muted/10">
-        {widgets.filter(w => w.visible).map(w => {
+      <AnimatePresence initial={false}>
+        {!analyticsCollapsed && (
+          <motion.div
+            initial={{ height: 0, opacity: 0, overflow: 'hidden' }}
+            animate={{ height: 'auto', opacity: 1, overflow: 'visible' }}
+            exit={{ height: 0, opacity: 0, overflow: 'hidden' }}
+            transition={{ duration: 0.25, ease: 'easeInOut' }}
+          >
+            <div className="px-4 py-4 shrink-0 grid grid-cols-1 md:grid-cols-2 gap-4 border-b border-border bg-muted/10">
+              {widgets.filter(w => w.visible).map(w => {
           if (w.id === 'funnel') {
             return (
               <div key={w.id} className="bg-card border border-border rounded-xl p-3 shadow-xs flex flex-col gap-2">
@@ -675,7 +846,10 @@ export default function CRMPage() {
           }
           return null;
         })}
-      </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* KPI Stats Row */}
       <div className="px-4 py-3 shrink-0 flex flex-wrap gap-3 border-b border-border bg-muted/10 items-center justify-between">
@@ -714,20 +888,32 @@ export default function CRMPage() {
             <button
               onClick={() => setOwnerFilter('all')}
               className={cn(
-                "px-2.5 py-1 text-[10px] font-semibold rounded-md transition-all cursor-pointer",
+                "px-2.5 py-1 text-[10px] font-semibold rounded-md transition-all cursor-pointer flex items-center gap-1.5",
                 ownerFilter === 'all' ? "bg-muted text-foreground" : "text-muted-foreground"
               )}
             >
-              All Deals
+              <span>All Deals</span>
+              <span className={cn(
+                "px-1.5 py-0.2 rounded-full text-[9px] font-mono",
+                ownerFilter === 'all' ? "bg-background text-foreground shadow-2xs" : "bg-muted/70 text-muted-foreground"
+              )}>
+                {deals.length}
+              </span>
             </button>
             <button
               onClick={() => setOwnerFilter('my')}
               className={cn(
-                "px-2.5 py-1 text-[10px] font-semibold rounded-md transition-all cursor-pointer",
+                "px-2.5 py-1 text-[10px] font-semibold rounded-md transition-all cursor-pointer flex items-center gap-1.5",
                 ownerFilter === 'my' ? "bg-muted text-foreground" : "text-muted-foreground"
               )}
             >
-              My Deals
+              <span>My Deals</span>
+              <span className={cn(
+                "px-1.5 py-0.2 rounded-full text-[9px] font-mono",
+                ownerFilter === 'my' ? "bg-background text-foreground shadow-2xs" : "bg-muted/70 text-muted-foreground"
+              )}>
+                {myDealsCount}
+              </span>
             </button>
           </div>
         </div>
@@ -994,7 +1180,7 @@ export default function CRMPage() {
                                 <User className="w-3 h-3 text-muted-foreground shrink-0" />
                                 <span className="truncate font-semibold">{deal.company}</span>
                               </div>
-                              <span className="text-[9px] text-muted-foreground italic shrink-0">By {deal.ownerName?.split(' ')[0]}</span>
+                              <span className="text-[9px] text-muted-foreground italic shrink-0">By {deal.ownerName ? deal.ownerName.split(' ')[0] : 'Team'}</span>
                             </div>
 
                             {/* AI Score Badge & Value */}
@@ -1298,7 +1484,7 @@ export default function CRMPage() {
                     <span className="text-[8px] uppercase tracking-wider text-muted-foreground font-bold">Deal Owner</span>
                     <span className="font-bold text-foreground flex items-center gap-1">
                       <UserCheck className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-                      {detailDeal.ownerName || 'Sainath Kotage'}
+                      {detailDeal.ownerName || 'Team Member'}
                     </span>
                     <span className="text-[10px] text-muted-foreground font-mono">ID: {detailDeal.ownerId || 'admin'}</span>
                   </div>

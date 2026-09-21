@@ -1010,23 +1010,83 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // Load workspace-specific deals and AI Inbox items from localStorage when active workspace changes
+  // Load workspace-specific deals and AI Inbox items from localStorage & remote database when active workspace changes
   useEffect(() => {
     if (!workspace) return;
 
-    // Workspace-specific deals
+    // Workspace-specific deals (load local cache first for instant render)
     const storedDeals = localStorage.getItem(`nexus_deals_${workspace.id}`);
     if (storedDeals) {
-      setDeals(JSON.parse(storedDeals));
+      try {
+        setDeals(JSON.parse(storedDeals));
+      } catch (e) {
+        setDeals(SEED_DEALS);
+      }
     } else {
       const globalDeals = localStorage.getItem('nexus_deals');
       if (globalDeals) {
-        setDeals(JSON.parse(globalDeals));
-        localStorage.setItem(`nexus_deals_${workspace.id}`, globalDeals);
+        try {
+          setDeals(JSON.parse(globalDeals));
+          localStorage.setItem(`nexus_deals_${workspace.id}`, globalDeals);
+        } catch (e) {
+          setDeals(SEED_DEALS);
+        }
       } else {
         setDeals(SEED_DEALS);
       }
     }
+
+    // Fetch latest workspace deals from remote database (so teammates see synced deals)
+    const fetchRemoteDeals = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('documents')
+          .select('content')
+          .eq('id', `crm-deals-${workspace.id}`)
+          .maybeSingle();
+
+        if (!error && data?.content) {
+          try {
+            const parsed = JSON.parse(data.content);
+            if (Array.isArray(parsed)) {
+              setDeals(parsed);
+              localStorage.setItem(`nexus_deals_${workspace.id}`, data.content);
+              return;
+            }
+          } catch (e) {
+            console.error('Error parsing remote deals:', e);
+          }
+        } else if (!data) {
+          // If remote does not exist yet, but local deals exist, seed them to the workspace document
+          const localStr = localStorage.getItem(`nexus_deals_${workspace.id}`) || localStorage.getItem('nexus_deals');
+          if (localStr) {
+            try {
+              const localParsed = JSON.parse(localStr);
+              if (Array.isArray(localParsed) && localParsed.length > 0) {
+                await supabase.from('documents').upsert({
+                  id: `crm-deals-${workspace.id}`,
+                  title: `CRM Deals - ${workspace.name}`,
+                  type: 'crm_deals_store',
+                  workspace_id: workspace.id,
+                  content: localStr,
+                  size: `${Math.max(1, Math.round(localStr.length / 1024))} KB`,
+                  uploaded_at: new Date().toISOString(),
+                  uploaded_by: {
+                    id: user?.id || 'system',
+                    name: user?.name || 'User',
+                    email: user?.email || '',
+                    workspaceId: workspace.id
+                  }
+                });
+              }
+            } catch (e) {}
+          }
+        }
+      } catch (err) {
+        console.warn('Deals database fetch warning:', err);
+      }
+    };
+    fetchRemoteDeals();
 
     // Workspace-specific AI Inbox
     const storedAiInbox = localStorage.getItem(`nexus_ai_inbox_${workspace.id}`);
@@ -1510,6 +1570,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         ]);
 
         const docs = (!docsQuery.error && docsQuery.data ? docsQuery.data.map(mapDbDoc) : []).filter(doc => {
+          if (doc.type === 'crm_deals_store') return false;
           if (!currentUserId) return true;
           const docWorkspaceId = doc.workspaceId || (doc.uploadedBy as any)?.workspaceId || (doc.uploadedBy as any)?.workspace_id;
           return (
@@ -1972,6 +2033,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           const eventType = payload.eventType;
           if (eventType === 'INSERT') {
             const d = payload.new;
+            if (d.type === 'crm_deals_store') return;
             // Only add if it belongs to current workspace
             const dWorkspaceId = d.workspace_id || d.uploaded_by?.workspaceId || d.uploaded_by?.workspace_id;
             if (dWorkspaceId && dWorkspaceId !== workspace.id) return;
@@ -4624,38 +4686,66 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
   }, [user]);
 
+  const persistDealsToDb = useCallback(async (dealsList: Deal[]) => {
+    if (!workspace?.id) return;
+    try {
+      const content = JSON.stringify(dealsList);
+      await supabase.from('documents').upsert({
+        id: `crm-deals-${workspace.id}`,
+        title: `CRM Deals - ${workspace.name || 'Workspace'}`,
+        type: 'crm_deals_store',
+        workspace_id: workspace.id,
+        content,
+        size: `${Math.max(1, Math.round(content.length / 1024))} KB`,
+        uploaded_at: new Date().toISOString(),
+        uploaded_by: {
+          id: user?.id || 'system',
+          name: user?.name || 'User',
+          email: user?.email || '',
+          workspaceId: workspace.id
+        }
+      });
+    } catch (e) {
+      console.warn("Failed to persist deals to database:", e);
+    }
+  }, [workspace, user]);
+
   const updateDealStage = useCallback(async (dealId: string, stage: Deal['stage']) => {
     setDeals(prev => {
-      const updated = prev.map(d => d.id === dealId ? { ...d, stage } : d);
+      const updated = prev.map(d => d.id === dealId ? { ...d, stage, stageUpdatedAt: new Date().toISOString() } : d);
       const key = workspace?.id ? `nexus_deals_${workspace.id}` : 'nexus_deals';
       localStorage.setItem(key, JSON.stringify(updated));
+      persistDealsToDb(updated);
       return updated;
     });
-  }, [workspace]);
+  }, [workspace, persistDealsToDb]);
 
   const addDeal = useCallback(async (deal: Deal) => {
     setDeals(prev => {
       const updated = [...prev, deal];
       const key = workspace?.id ? `nexus_deals_${workspace.id}` : 'nexus_deals';
       localStorage.setItem(key, JSON.stringify(updated));
+      persistDealsToDb(updated);
       return updated;
     });
-  }, [workspace]);
+  }, [workspace, persistDealsToDb]);
 
   const deleteDeal = useCallback(async (dealId: string) => {
     setDeals(prev => {
       const updated = prev.filter(d => d.id !== dealId);
       const key = workspace?.id ? `nexus_deals_${workspace.id}` : 'nexus_deals';
       localStorage.setItem(key, JSON.stringify(updated));
+      persistDealsToDb(updated);
       return updated;
     });
-  }, [workspace]);
+  }, [workspace, persistDealsToDb]);
 
   const syncDeals = useCallback((newDeals: Deal[]) => {
     setDeals(newDeals);
     const key = workspace?.id ? `nexus_deals_${workspace.id}` : 'nexus_deals';
     localStorage.setItem(key, JSON.stringify(newDeals));
-  }, [workspace]);
+    persistDealsToDb(newDeals);
+  }, [workspace, persistDealsToDb]);
 
   const addAiInboxItem = useCallback((item: Omit<AiInboxItem, 'id' | 'createdAt' | 'status'>) => {
     const newItem: AiInboxItem = {

@@ -448,6 +448,8 @@ interface WorkspaceState {
   trackAiUsage: () => Promise<{ ok: boolean; message: string }>;
   teamMessages: Record<string, ChatMessage[]>;
   login: (email: string, password: string) => Promise<boolean>;
+  resetPassword: (emailOrUsername: string) => Promise<{ success: boolean; email?: string; error?: string }>;
+  updatePassword: (newPassword: string) => Promise<{ success: boolean; error?: string }>;
   sendOtp: (emailOrPhone: string) => Promise<{ success: boolean; error?: string }>;
   verifyOtp: (emailOrPhone: string, token: string) => Promise<{ success: boolean; error?: string }>;
   register: (email: string, username: string, tag: string, role: string, password: string) => Promise<{ success: boolean; needsVerification?: boolean; error?: string }>;
@@ -3241,6 +3243,59 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const resetPassword = useCallback(async (usernameOrEmail: string) => {
+    let resolvedEmail = usernameOrEmail.trim();
+
+    // 1. Resolve email if it's a username (no @ symbol)
+    if (!resolvedEmail.includes('@')) {
+      try {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('email')
+          .ilike('username', resolvedEmail)
+          .maybeSingle();
+        if (profile && profile.email) {
+          resolvedEmail = profile.email;
+        }
+      } catch (err) {
+        console.warn('Could not resolve email from username in Supabase profiles:', err);
+      }
+    }
+
+    if (!resolvedEmail.includes('@')) {
+      return { success: false, error: 'Please enter a valid email address or username.' };
+    }
+
+    try {
+      const redirectTo = typeof window !== 'undefined'
+        ? `${window.location.origin}/auth/callback?next=/reset-password`
+        : undefined;
+
+      const { error } = await supabase.auth.resetPasswordForEmail(resolvedEmail, {
+        redirectTo
+      });
+
+      if (error) throw error;
+      return { success: true, email: resolvedEmail };
+    } catch (err: any) {
+      console.warn('Supabase resetPasswordForEmail failed:', err);
+      return { success: false, error: err?.message || 'Failed to send password reset email.' };
+    }
+  }, []);
+
+  const updatePassword = useCallback(async (newPassword: string) => {
+    try {
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword
+      });
+      if (error) throw error;
+      return { success: true };
+    } catch (err: any) {
+      console.warn('Supabase updateUser password failed:', err);
+      return { success: false, error: err?.message || 'Failed to update password.' };
+    }
+  }, []);
+
   const verifyOtp = useCallback(async (emailOrPhone: string, token: string) => {
     const isEmail = emailOrPhone.includes('@');
     try {
@@ -5235,7 +5290,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     user, userStatus, allUsers, friendIds, canManageTeamMembers,
     workspace, setWorkspace, myWorkspaces, workspaceMembers, workspaceInvites, joinRequests, auditLogs, feedbackItems, aiUsage,
     createInviteLink, submitFeedback, trackAiUsage,
-    teamMessages, login, sendOtp, verifyOtp, register, logout, setUserStatus, addFriendByTag, sendTeamMessage,
+    teamMessages, login, resetPassword, updatePassword, sendOtp, verifyOtp, register, logout, setUserStatus, addFriendByTag, sendTeamMessage,
     editTeamMessage, deleteTeamMessage,
     customStatus, dnd, setCustomStatus, setDnd,
     channels, channelMessages, sendChannelMessage, sendChannelReply, activeChannelId, setActiveChannelId, activeDmUserId, setActiveDmUserId,

@@ -47,6 +47,13 @@ export async function GET(request: Request) {
 
       return NextResponse.redirect(`${origin}${next}`);
     }
+    if (next.startsWith('/reset-password')) {
+      return NextResponse.redirect(`${origin}/reset-password?error=expired_or_invalid_link`);
+    }
+  }
+
+  if (next.startsWith('/reset-password')) {
+    return NextResponse.redirect(`${origin}/reset-password?error=missing_code`);
   }
 
   return NextResponse.redirect(`${origin}/?auth_error=sso_callback_failed`);

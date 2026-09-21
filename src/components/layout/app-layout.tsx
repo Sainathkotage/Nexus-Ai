@@ -83,8 +83,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     return <AppShellSkeleton />;
   }
 
-  // Allow invite paths to bypass user authentication, workspace, and verification gates
-  if (pathname.startsWith('/invite')) {
+  // Allow invite and password reset paths to bypass user authentication, workspace, and verification gates
+  if (pathname.startsWith('/invite') || pathname.startsWith('/reset-password')) {
     return <div className="min-h-screen w-full overflow-x-hidden">{children}</div>;
   }
 

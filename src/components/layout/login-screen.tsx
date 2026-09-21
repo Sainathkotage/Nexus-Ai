@@ -3,19 +3,21 @@
 import React, { useState } from 'react';
 import { isAdminLevelRole, useWorkspace } from '@/lib/store';
 import { Button } from '@/components/ui/button';
-import { Mail, Lock, User, Tag, Briefcase, Eye, EyeOff, Building2 } from 'lucide-react';
+import { Mail, Lock, User, Tag, Briefcase, Eye, EyeOff, Building2, ArrowLeft, MailCheck, KeyRound } from 'lucide-react';
 import { toast } from 'sonner';
 import { signInWithEnterpriseSso } from '@/lib/enterprise/sso';
 import { useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 
 export function LoginScreen() {
-  const { login, register, roles } = useWorkspace();
+  const { login, register, resetPassword, roles } = useWorkspace();
   const signupRoles = (roles || []).filter((r) => !isAdminLevelRole(r));
   const searchParams = useSearchParams();
-  const [activeTab, setActiveTab] = useState<'signin' | 'signup'>(() => {
+  const [activeTab, setActiveTab] = useState<'signin' | 'signup' | 'forgot'>(() => {
     const authType = searchParams ? searchParams.get('auth') : null;
-    return authType === 'signup' ? 'signup' : 'signin';
+    if (authType === 'signup') return 'signup';
+    if (authType === 'forgot' || authType === 'reset') return 'forgot';
+    return 'signin';
   });
 
   const [loading, setLoading] = useState(false);
@@ -28,6 +30,11 @@ export function LoginScreen() {
   const [tag, setTag] = useState('');
   const [role, setRole] = useState('Member');
   const [ssoDomain, setSsoDomain] = useState('');
+
+  // Forgot password state
+  const [resetEmailSent, setResetEmailSent] = useState(false);
+  const [sentToEmail, setSentToEmail] = useState('');
+  const [resetError, setResetError] = useState('');
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -45,6 +52,33 @@ export function LoginScreen() {
       }
     } catch (err) {
       toast.error('Authentication failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email.trim()) {
+      toast.error('Email or username is required');
+      setResetError('Please enter your email or username');
+      return;
+    }
+    setLoading(true);
+    setResetError('');
+    try {
+      const result = await resetPassword(email.trim());
+      if (result.success) {
+        setSentToEmail(result.email || email.trim());
+        setResetEmailSent(true);
+        toast.success('Password reset link sent! Check your inbox.');
+      } else {
+        setResetError(result.error || 'Failed to send reset link');
+        toast.error(result.error || 'Failed to send reset link');
+      }
+    } catch (err: any) {
+      setResetError(err?.message || 'An error occurred');
+      toast.error(err?.message || 'An error occurred');
     } finally {
       setLoading(false);
     }
@@ -132,40 +166,147 @@ export function LoginScreen() {
           </div>
         )}
 
-        {/* Tab Switcher */}
-        <div className="flex bg-black/5 dark:bg-white/10 rounded-full p-1 w-full border border-black/5 dark:border-white/5">
-          <button
-            onClick={() => {
-              setActiveTab('signin');
-              setEmail('');
-              setPassword('');
-            }}
-            className={`flex-1 py-1.5 text-xs font-semibold rounded-full transition-all ${
-              activeTab === 'signin'
-                ? 'bg-white dark:bg-white/10 text-primary shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            Sign In
-          </button>
-          <button
-            onClick={() => {
-              setActiveTab('signup');
-              setEmail('');
-              setPassword('');
-            }}
-            className={`flex-1 py-1.5 text-xs font-semibold rounded-full transition-all ${
-              activeTab === 'signup'
-                ? 'bg-white dark:bg-white/10 text-primary shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            Sign Up
-          </button>
-        </div>
+        {/* Tab Switcher / Navigation */}
+        {activeTab === 'forgot' ? (
+          <div className="flex items-center gap-2.5 px-1 py-0.5">
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('signin');
+                setResetEmailSent(false);
+                setResetError('');
+              }}
+              className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+              title="Back to Sign In"
+            >
+              <ArrowLeft className="w-4 h-4" />
+            </button>
+            <div className="flex-1 text-left">
+              <span className="text-xs font-bold text-foreground">Forgot Password</span>
+              <p className="text-[10px] text-muted-foreground">Request a password recovery link</p>
+            </div>
+          </div>
+        ) : (
+          <div className="flex bg-black/5 dark:bg-white/10 rounded-full p-1 w-full border border-black/5 dark:border-white/5">
+            <button
+              onClick={() => {
+                setActiveTab('signin');
+                setEmail('');
+                setPassword('');
+              }}
+              className={`flex-1 py-1.5 text-xs font-semibold rounded-full transition-all ${
+                activeTab === 'signin'
+                  ? 'bg-white dark:bg-white/10 text-primary shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              Sign In
+            </button>
+            <button
+              onClick={() => {
+                setActiveTab('signup');
+                setEmail('');
+                setPassword('');
+              }}
+              className={`flex-1 py-1.5 text-xs font-semibold rounded-full transition-all ${
+                activeTab === 'signup'
+                  ? 'bg-white dark:bg-white/10 text-primary shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              Sign Up
+            </button>
+          </div>
+        )}
 
         {/* Tabs Content */}
-        {activeTab === 'signin' ? (
+        {activeTab === 'forgot' ? (
+          <div className="flex flex-col gap-4">
+            {resetEmailSent ? (
+              <div className="flex flex-col items-center text-center gap-3 p-5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400">
+                <div className="w-11 h-11 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
+                  <MailCheck className="w-5 h-5" />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="font-bold text-sm text-foreground">Check your email</span>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    We sent a password reset link to <strong className="text-foreground">{sentToEmail}</strong>.
+                  </p>
+                </div>
+                <p className="text-[10px] text-muted-foreground/80 leading-normal">
+                  Click the link in your email to choose a new password. If you don't see it within a minute, check your spam folder.
+                </p>
+                <div className="flex gap-2 w-full mt-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setResetEmailSent(false)}
+                    className="flex-1 text-xs cursor-pointer h-8"
+                  >
+                    Try Another Email
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => {
+                      setActiveTab('signin');
+                      setResetEmailSent(false);
+                    }}
+                    className="flex-1 text-xs cursor-pointer h-8"
+                  >
+                    Back to Sign In
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <form onSubmit={handleForgotPassword} className="flex flex-col gap-4">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Email or Username</label>
+                  <div className="relative flex items-center">
+                    <Mail className="absolute left-3 w-4 h-4 text-muted-foreground" />
+                    <input
+                      type="text"
+                      value={email}
+                      onChange={(e) => {
+                        setEmail(e.target.value);
+                        setResetError('');
+                      }}
+                      placeholder="you@company.com or username"
+                      className="w-full rounded-lg border border-border/40 bg-black/[0.03] dark:bg-white/[0.05] pl-9 pr-4 py-2 text-sm transition-all duration-150 outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 placeholder:text-muted-foreground/60"
+                      autoFocus
+                    />
+                  </div>
+                </div>
+
+                {resetError && (
+                  <div className="text-xs text-red-500 bg-red-500/10 border border-red-500/20 p-2.5 rounded-lg text-center font-medium">
+                    {resetError}
+                  </div>
+                )}
+
+                <Button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full mt-1 cursor-pointer"
+                >
+                  {loading ? 'Sending reset link...' : 'Send Reset Link'}
+                </Button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('signin');
+                    setResetError('');
+                  }}
+                  className="text-xs text-center text-muted-foreground hover:text-foreground font-medium py-1 transition-colors cursor-pointer"
+                >
+                  Cancel and return to sign in
+                </button>
+              </form>
+            )}
+          </div>
+        ) : activeTab === 'signin' ? (
           <form onSubmit={handleSignIn} className="flex flex-col gap-4">
             <div className="flex flex-col gap-1.5">
               <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Email or Username</label>
@@ -182,7 +323,20 @@ export function LoginScreen() {
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Password</label>
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Password</label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('forgot');
+                    setResetEmailSent(false);
+                    setResetError('');
+                  }}
+                  className="text-[11px] text-primary hover:underline font-semibold cursor-pointer transition-colors"
+                >
+                  Forgot password?
+                </button>
+              </div>
               <div className="relative flex items-center">
                 <Lock className="absolute left-3 w-4 h-4 text-muted-foreground" />
                 <input
